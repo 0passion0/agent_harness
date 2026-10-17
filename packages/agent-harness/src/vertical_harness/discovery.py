@@ -4,7 +4,6 @@ from importlib.metadata import entry_points
 
 from vertical_harness.contracts import DomainPlugin, PluginManifest
 
-
 PLUGIN_GROUP = "vertical_agent.plugins"
 
 

@@ -10,6 +10,7 @@ from typing import Any, Literal, Protocol
 from deepagents import CompiledSubAgent
 from langchain.agents.middleware import AgentMiddleware
 from langchain_core.tools import BaseTool
+from langgraph.store.base import BaseStore
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
@@ -84,6 +85,7 @@ class BuildServices:
     """Host-provided build-time dependencies; no global singleton."""
 
     workspace_root: Path
+    store: BaseStore | None = None
 
 
 @dataclass(frozen=True)

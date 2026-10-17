@@ -1,11 +1,22 @@
 """Optional native LangChain model router driven by trusted runtime context."""
 
 from collections.abc import Callable
+from typing import Any
 
 from langchain.agents.middleware import ModelRequest, ModelResponse, wrap_model_call
 from langchain.chat_models import init_chat_model
 
 from vertical_harness.settings import HarnessSettings
+
+
+def init_configured_model(settings: HarnessSettings, model: str | None = None):
+    """Instantiate a LangChain chat model from validated VA_* settings."""
+    kwargs: dict[str, Any] = {}
+    if settings.api_key is not None:
+        kwargs["api_key"] = settings.api_key.get_secret_value()
+    if settings.base_url is not None:
+        kwargs["base_url"] = settings.base_url
+    return init_chat_model(model or settings.model, **kwargs)
 
 
 def make_router(settings: HarnessSettings):
@@ -20,8 +31,8 @@ def make_router(settings: HarnessSettings):
     if not settings.economy_model or not settings.quality_model:
         raise ValueError("Both VA_ECONOMY_MODEL and VA_QUALITY_MODEL must be set")
 
-    economy = init_chat_model(settings.economy_model)
-    quality = init_chat_model(settings.quality_model)
+    economy = init_configured_model(settings, settings.economy_model)
+    quality = init_configured_model(settings, settings.quality_model)
 
     @wrap_model_call
     def route_model(

@@ -3,16 +3,16 @@
 from __future__ import annotations
 
 from deepagents import FilesystemPermission, create_deep_agent
-from deepagents.backends import FilesystemBackend
 from deepagents.middleware import SkillsMiddleware
 from langchain.agents.middleware import ModelCallLimitMiddleware, TodoListMiddleware
-from vertical_harness.routing import make_router
 from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.store.base import BaseStore
 
 from vertical_harness.contracts import BuildServices, Exposure, RunContext, SideEffect
 from vertical_harness.discovery import discover_plugins
+from vertical_harness.routing import init_configured_model, make_router
 from vertical_harness.settings import HarnessSettings
-
+from vertical_harness.store import compose_backend, create_store
 
 BASE_PROMPT = (
     "You are an evidence-first domain agent. Use tools to verify claims. "
@@ -22,19 +22,25 @@ BASE_PROMPT = (
 )
 
 
-def build_agent(settings: HarnessSettings, *, checkpointer=None, store=None):
+def build_agent(
+    settings: HarnessSettings,
+    *,
+    checkpointer=None,
+    store: BaseStore | None = None,
+):
     """Assemble native framework objects from independently distributed plugins.
 
     :param settings: Validated host configuration.
     :param checkpointer: Optional externally managed durable checkpointer.
-    :param store: Optional LangGraph long-term store.
+    :param store: Optional LangGraph long-term store (defaults to configured SQLite/memory store).
     :return: A compiled Deep Agent.
     :raises ValueError: On colliding tools, names, or skill paths.
     """
     root = settings.workspace_root.expanduser().resolve()
     root.mkdir(parents=True, exist_ok=True)
-    backend = FilesystemBackend(root_dir=str(root), virtual_mode=True)
-    services = BuildServices(workspace_root=root)
+    active_store = store if store is not None else create_store(settings)
+    backend = compose_backend(root, active_store, memory_route=settings.memory_route)
+    services = BuildServices(workspace_root=root, store=active_store)
     plugins = discover_plugins(settings.enabled_plugins)
 
     eager_tools = []
@@ -98,7 +104,7 @@ def build_agent(settings: HarnessSettings, *, checkpointer=None, store=None):
         )
 
     return create_deep_agent(
-        model=settings.model,
+        model=init_configured_model(settings),
         tools=eager_tools,
         system_prompt="\n".join(instructions),
         backend=backend,
@@ -112,5 +118,6 @@ def build_agent(settings: HarnessSettings, *, checkpointer=None, store=None):
         interrupt_on=interrupts or None,
         context_schema=RunContext,
         checkpointer=checkpointer if checkpointer is not None else InMemorySaver(),
-        store=store,
+        store=active_store,
     )
+

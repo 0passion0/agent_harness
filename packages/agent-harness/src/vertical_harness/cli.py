@@ -7,6 +7,7 @@ import uuid
 from vertical_harness.compose import build_agent
 from vertical_harness.contracts import RunContext
 from vertical_harness.settings import HarnessSettings
+from vertical_harness.store import open_store
 
 
 def main() -> None:
@@ -28,13 +29,14 @@ def main() -> None:
         return
     if not args.prompt:
         parser.error("Please specify a prompt")
-    agent = build_agent(settings)
-    config = {"configurable": {"thread_id": args.thread_id or str(uuid.uuid4())}}
-    result = agent.invoke(
-        {"messages": [{"role": "user", "content": args.prompt}]},
-        config=config,
-        context=RunContext(tenant_id=args.tenant_id, user_id=args.user_id, task_tier=args.task_tier),
-    )
+    with open_store(settings) as store:
+        agent = build_agent(settings, store=store)
+        config = {"configurable": {"thread_id": args.thread_id or str(uuid.uuid4())}}
+        result = agent.invoke(
+            {"messages": [{"role": "user", "content": args.prompt}]},
+            config=config,
+            context=RunContext(tenant_id=args.tenant_id, user_id=args.user_id, task_tier=args.task_tier),
+        )
     print(result["messages"][-1].content)
     if "__interrupt__" in result:
         print("Execution interrupted; resume via LangGraph Command(resume=...) from an approval UI")
@@ -42,3 +44,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

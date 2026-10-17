@@ -8,7 +8,7 @@
 python -m venv .venv
 source .venv/bin/activate
 python -m pip install -e ./packages/agent-harness -e ./packages/research-citation
-export OPENAI_API_KEY=...  # 使用你选定模型的 API key
+cp .env.example .env  # 在 .env 中配置 VA_API_KEY 与 VA_MODEL（如 deepseek:deepseek-flash）
 vertical-agent --list-plugins
 vertical-agent '检查下面正文的参考文献索引：正文 [1] 和 [3]；参考文献依次为 A、B。'
 pytest -q

@@ -36,3 +36,24 @@ def test_verified_finding_requires_evidence():
 
     with pytest.raises(ValidationError):
         AuditFinding(claim="Citation claim", status="verified", evidence=[])
+
+
+def test_settings_require_explicit_model(monkeypatch):
+    """LLM model must never fall back to a hardcoded default when unconfigured."""
+    from vertical_harness.settings import HarnessSettings
+
+    monkeypatch.delenv("VA_MODEL", raising=False)
+    with pytest.raises(ValidationError):
+        HarnessSettings(_env_file=None)
+
+    settings = HarnessSettings(
+        _env_file=None,
+        model="deepseek:deepseek-flash",
+        api_key="sk-test",
+        base_url="https://api.deepseek.com",
+    )
+    assert settings.model == "deepseek:deepseek-flash"
+    assert settings.api_key is not None and settings.api_key.get_secret_value() == "sk-test"
+    assert settings.base_url == "https://api.deepseek.com"
+
+
