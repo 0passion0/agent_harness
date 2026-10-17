@@ -1,7 +1,6 @@
 """仅通过包入口点（entry point）加载的独立领域插件实现模块。"""
 
 from importlib.resources import files
-
 from vertical_harness.contracts import (
     BuildServices,
     Exposure,
@@ -47,4 +46,3 @@ class ResearchCitationPlugin:
             # 注入引导大模型优先使用引用审计技能且仅汇报核实不一致的指令
             instructions="Use numeric-citation-audit skill for bracket-numbered references. Report only verified inconsistencies.",
         )
-

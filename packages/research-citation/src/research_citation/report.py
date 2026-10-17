@@ -1,8 +1,7 @@
 """具有明确证据不确定性的研究审计产物模型模式定义模块。"""
 
-from typing import Literal
-
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+from typing import Literal
 
 
 class EvidenceRef(BaseModel):
@@ -59,4 +58,3 @@ class AuditReport(BaseModel):
     findings: list[AuditFinding] = Field(default_factory=list)
     # 审计过程中客观存在的局限性说明（如某些封闭文献无法获取）
     limitations: list[str] = Field(default_factory=list)
-

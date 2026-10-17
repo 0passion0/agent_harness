@@ -1,7 +1,6 @@
 """作为 LangChain 工具暴露的确定性学术引用检查实现模块。"""
 
 import re
-
 from langchain.tools import tool
 
 from research_citation.schemas import (
@@ -71,4 +70,3 @@ def scan_numeric(manuscript_text: str, bibliography: list[str]) -> str:
         cited_indices=sorted(cited),
         issues=issues,
     ).model_dump_json()
-

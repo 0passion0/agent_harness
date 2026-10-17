@@ -1,8 +1,7 @@
 """用于确定性数字引用检查的 Pydantic v2 数据模式定义模块。"""
 
-from typing import Literal
-
 from pydantic import BaseModel, ConfigDict, Field
+from typing import Literal
 
 
 class ReferenceCheckInput(BaseModel):
@@ -45,4 +44,3 @@ class ReferenceCheckResult(BaseModel):
     issues: list[ReferenceIssue]
     # 核验范围界定说明，提示模型本结果仅针对数字索引有效，不涉及事实与语义真实性
     verified_scope: str = "Numeric reference indexes only; not evidence or semantic validity"
-
