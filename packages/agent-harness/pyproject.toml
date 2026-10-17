@@ -1,0 +1,26 @@
+[build-system]
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
+
+[project]
+name = "vertical-agent-harness"
+version = "0.1.0"
+description = "Composable Deep Agents harness with Python distribution plugins"
+requires-python = ">=3.11"
+dependencies = [
+  "deepagents>=0.7.22,<0.8",
+  "langchain>=1.4,<2",
+  "langgraph>=1,<2",
+  "pydantic>=2.10,<3",
+  "pydantic-settings>=2.6,<3",
+]
+
+[project.optional-dependencies]
+postgres = ["langgraph-checkpoint-postgres>=2,<4"]
+dev = ["pytest>=8", "ruff>=0.9"]
+
+[project.scripts]
+vertical-agent = "vertical_harness.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/vertical_harness"]
