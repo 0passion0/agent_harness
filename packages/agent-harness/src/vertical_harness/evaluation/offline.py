@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
+import logging
 from collections import defaultdict
 from functools import wraps
 from pathlib import Path
 from statistics import mean
+from typing import Any
 
 from langmem import create_prompt_optimizer
 from langsmith import Client, aevaluate, traceable, tracing_context
@@ -22,6 +24,8 @@ from vertical_harness.evaluation.datasets import (
 from vertical_harness.evaluation.scoring import deterministic_scores, judge_payload, make_judge
 from vertical_harness.evaluation.targets import EvaluationTarget, make_target
 
+logger = logging.getLogger(__name__)
+
 
 async def evaluate_offline(
     settings: HarnessSettings,
@@ -34,8 +38,33 @@ async def evaluate_offline(
     upload: bool = False,
     judge: bool = True,
     experiment_prefix: str = "va-offline",
-) -> dict:
-    """一次实验固定输入集；本地模式禁用目标和评审的 trace 上传。"""
+) -> dict[str, Any]:
+    """执行 LangSmith 离线实验评测；固定样本输入集，并在本地模式下禁用目标和评审的 trace 上传。
+
+    :param settings: 宿主主配置实例。
+    :param evaluation: 评测专门配置实例。
+    :param client: LangSmith 客户端。
+    :param cases: 回归测试用例列表。
+    :param target: 评测目标对象（main / plugin / workflow）。
+    :param prompt: 可选覆盖的候选系统提示词。
+    :param upload: 是否向 LangSmith 上传完整实验快照与运行轨迹。
+    :param judge: 是否启用 LLM-as-a-Judge 语义评审。
+    :param experiment_prefix: 实验名称前缀。
+    :return: 包含各项评测指标、得分分布及单行明细的报告字典。
+    :raises ValueError: 当数据集为空或非文本输出缺少 judge 时抛出。
+    """
+    logger.info(
+        "evaluate_offline_started",
+        extra={
+            "event_fields": {
+                "case_count": len(cases),
+                "target": (target or EvaluationTarget()).name,
+                "upload": upload,
+                "judge": judge,
+                "experiment_prefix": experiment_prefix,
+            }
+        },
+    )
     if not cases:
         raise ValueError("Evaluation dataset is empty")
     if not judge and any("output" in case.outputs for case in cases):
@@ -149,7 +178,22 @@ async def evaluate_offline(
         return report
 
 
-def compare_reports(baseline: dict, candidate: dict) -> dict:
+def compare_reports(baseline: dict[str, Any], candidate: dict[str, Any]) -> dict[str, Any]:
+    """对比基线实验与候选实验的评测报告，计算分数增量、资源消耗变化与回归项。
+
+    :param baseline: 基线报告字典。
+    :param candidate: 候选报告字典。
+    :return: 包含 score_deltas、usage_deltas、recommendation 与 regressions 的对比分析字典。
+    """
+    logger.info(
+        "compare_reports_started",
+        extra={
+            "event_fields": {
+                "baseline_count": baseline.get("count", 0),
+                "candidate_count": candidate.get("count", 0),
+            }
+        },
+    )
     metrics = set(baseline["scores"]) | set(candidate["scores"])
     deltas = {
         key: candidate["scores"].get(key, 0) - baseline["scores"].get(key, 0) for key in metrics
@@ -188,10 +232,21 @@ def compare_reports(baseline: dict, candidate: dict) -> dict:
         and (any(delta > 0 for delta in deltas.values())
              or (usage_deltas is not None and usage_deltas["total_tokens"] < 0))
     )
+    recommendation = "review_candidate" if improved else "keep_baseline"
+    logger.info(
+        "compare_reports_completed",
+        extra={
+            "event_fields": {
+                "recommendation": recommendation,
+                "regression_count": len(regressions),
+                "improved": improved,
+            }
+        },
+    )
     return {
         "score_deltas": deltas,
         "usage_deltas": usage_deltas,
-        "recommendation": "review_candidate" if improved else "keep_baseline",
+        "recommendation": recommendation,
         "regressions": regressions,
         "production_changed": False,
     }
@@ -207,7 +262,31 @@ async def optimize_prompt(
     target: EvaluationTarget | None = None,
     output_dir: Path,
     upload: bool = False,
-) -> dict:
+) -> dict[str, Any]:
+    """基于训练集轨迹使用 LangMem 自动优化提示词，并在互斥的留出验证集上对比验证。
+
+    :param settings: 宿主系统配置实例。
+    :param evaluation: 评测专门配置实例。
+    :param client: LangSmith 客户端。
+    :param training: 训练集用例列表。
+    :param validation: 留出验证集用例列表。
+    :param target: 优化目标对象。
+    :param output_dir: 生成产物（提示词与报告）保存目录。
+    :param upload: 是否向 LangSmith 上传实验与追踪。
+    :return: 包含 training、baseline、candidate 和 comparison 的完整优化报告。
+    :raises ValueError: 当数据集为空或优化返回空提示词时抛出。
+    :raises RuntimeError: 当训练集评测存在执行或打分错误时抛出。
+    """
+    logger.info(
+        "optimize_prompt_started",
+        extra={
+            "event_fields": {
+                "training_count": len(training),
+                "validation_count": len(validation),
+                "output_dir": str(output_dir),
+            }
+        },
+    )
     if not training or not validation:
         raise ValueError("Training and held-out validation datasets must be nonempty")
     ensure_disjoint(training, validation)

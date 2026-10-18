@@ -95,6 +95,15 @@ def make_checkpoint_config(
     :param callbacks: 可选的回调处理器序列。
     :return: 标准 LangChain RunnableConfig 字典。
     """
+    logger.debug(
+        "make_checkpoint_config_invoked",
+        extra={
+            "event_fields": {
+                "has_checkpoint_id": checkpoint_id is not None,
+                "has_callbacks": callbacks is not None,
+            }
+        },
+    )
     configurable: dict[str, Any] = {
         "thread_id": thread_id,
         "checkpoint_ns": checkpoint_ns,
@@ -139,7 +148,14 @@ async def aget_checkpoint_history(
     checkpoint_ns: str = "",
     limit: int | None = None,
 ) -> list[CheckpointSummary]:
-    """异步查询指定线程的 Time Travel 检查点历史列表（按时间倒序，最新在前）。"""
+    """异步查询指定线程的 Time Travel 检查点历史列表（按时间倒序，最新在前）。
+
+    :param graph: 已绑定 Checkpointer 的编译状态图。
+    :param thread_id: 线程标识符。
+    :param checkpoint_ns: 子图检查点命名空间，默认 ''。
+    :param limit: 可选返回的最大检查点条数。
+    :return: CheckpointSummary 列表。
+    """
     config = make_checkpoint_config(thread_id, checkpoint_ns=checkpoint_ns)
     summaries: list[CheckpointSummary] = []
     async for snap in graph.aget_state_history(config, limit=limit):
@@ -169,6 +185,15 @@ def get_checkpoint_snapshot(
     :return: 匹配的 StateSnapshot。
     :raises ValueError: 当指定的线程或历史检查点不存在时抛出。
     """
+    logger.debug(
+        "get_checkpoint_snapshot_started",
+        extra={
+            "event_fields": {
+                "has_checkpoint_id": checkpoint_id is not None,
+                "subgraphs": subgraphs,
+            }
+        },
+    )
     config = make_checkpoint_config(thread_id, checkpoint_id, checkpoint_ns=checkpoint_ns)
     snapshot = graph.get_state(config, subgraphs=subgraphs)
     if not snapshot.values and not snapshot.next and snapshot.created_at is None:
@@ -186,7 +211,25 @@ async def aget_checkpoint_snapshot(
     checkpoint_ns: str = "",
     subgraphs: bool = False,
 ) -> StateSnapshot:
-    """异步获取指定线程及可选历史 `checkpoint_id` 的完整状态快照。"""
+    """异步获取指定线程及可选历史 `checkpoint_id` 的完整状态快照。
+
+    :param graph: 已绑定 Checkpointer 的编译状态图。
+    :param thread_id: 线程标识符。
+    :param checkpoint_id: 可选的历史检查点 ID；为 None 时获取最新检查点。
+    :param checkpoint_ns: 检查点命名空间。
+    :param subgraphs: 是否同时拉取嵌套子图状态。
+    :return: 匹配的 StateSnapshot。
+    :raises ValueError: 当指定的线程或历史检查点不存在时抛出。
+    """
+    logger.debug(
+        "aget_checkpoint_snapshot_started",
+        extra={
+            "event_fields": {
+                "has_checkpoint_id": checkpoint_id is not None,
+                "subgraphs": subgraphs,
+            }
+        },
+    )
     config = make_checkpoint_config(thread_id, checkpoint_id, checkpoint_ns=checkpoint_ns)
     snapshot = await graph.aget_state(config, subgraphs=subgraphs)
     if not snapshot.values and not snapshot.next and snapshot.created_at is None:
@@ -373,7 +416,24 @@ def _resolve_invoke_args(
     thread_id: str | None,
     input_state: dict[str, Any] | Command[Any] | None,
 ) -> tuple[str, dict[str, Any] | Command[Any] | None]:
-    """解析 `time_travel_invoke` 的位置与关键字参数，同时支持 (graph, thread_id) 与 (graph, inputs, *, thread_id=...)。"""
+    """解析 `time_travel_invoke` 的位置与关键字参数，同时支持 (graph, thread_id) 与 (graph, inputs, *, thread_id=...)。
+
+    :param thread_or_input: 位置参数传递的 thread_id 字符串或输入字典/命令。
+    :param thread_id: 显式关键字传递的线程 ID。
+    :param input_state: 显式关键字传递的状态输入字典或命令。
+    :return: 二元组 (resolved_thread_id, resolved_input)。
+    :raises ValueError: 当未能提取到有效的 thread_id 时抛出。
+    """
+    logger.debug(
+        "resolve_invoke_args_started",
+        extra={
+            "event_fields": {
+                "has_thread_str": isinstance(thread_or_input, str),
+                "has_thread_id": thread_id is not None,
+                "has_input_state": input_state is not None,
+            }
+        },
+    )
     if isinstance(thread_or_input, str) and thread_id is None:
         return thread_or_input, input_state
     if thread_id is not None:
@@ -405,6 +465,23 @@ def time_travel_invoke(
     - 若指定了 `values` 或 `fork_thread_id` / `new_thread_id`，先调用 `fork_checkpoint` 创建分叉检查点，再从分叉点继续运行；
     - 若仅指定 `checkpoint_id`（无 `values` 与 `fork_thread_id`），直接从该历史检查点回放（`input=None`）
       或注入新指令（`prompt` / `input_state`）分叉执行。
+
+    :param graph: 编译后的状态图。
+    :param thread_or_input: 目标线程标识符或输入字典。
+    :param thread_id: 可选关键字线程标识符。
+    :param checkpoint_id: 可选的历史检查点 ID。
+    :param prompt: 可选的用户指令提示词。
+    :param input_state: 可选的输入字典或 Command。
+    :param values: 可选的分叉状态增量字典。
+    :param as_node: 可选的更新来源节点名称。
+    :param fork_thread_id: 可选的新分叉线程 ID。
+    :param new_thread_id: 可选的新分叉线程 ID 别名。
+    :param checkpoint_ns: 检查点命名空间。
+    :param context: 可选的上下文对象。
+    :param callbacks: 可选的回调处理器列表。
+    :param run_id: 可选的运行 ID。
+    :param durability: 持久化级别，默认为 "sync"。
+    :return: 状态图执行输出。
     """
     resolved_thread_id, resolved_input = _resolve_invoke_args(
         thread_or_input, thread_id, input_state
@@ -482,7 +559,25 @@ async def atime_travel_invoke(
     run_id: Any = None,
     durability: Durability = DEFAULT_DURABILITY,
 ) -> dict[str, Any] | Any:
-    """结合 `durability="sync"` 异步执行智能体或工作流的 Time Travel 回放与 Time Travel Fork 重跑。"""
+    """结合 `durability="sync"` 异步执行智能体或工作流的 Time Travel 回放与 Time Travel Fork 重跑。
+
+    :param graph: 编译后的状态图。
+    :param thread_or_input: 目标线程标识符或输入字典。
+    :param thread_id: 可选关键字线程标识符。
+    :param checkpoint_id: 可选的历史检查点 ID。
+    :param prompt: 可选的用户指令提示词。
+    :param input_state: 可选的输入字典或 Command。
+    :param values: 可选的分叉状态增量字典。
+    :param as_node: 可选的更新来源节点名称。
+    :param fork_thread_id: 可选的新分叉线程 ID。
+    :param new_thread_id: 可选的新分叉线程 ID 别名。
+    :param checkpoint_ns: 检查点命名空间。
+    :param context: 可选的上下文对象。
+    :param callbacks: 可选的回调处理器列表。
+    :param run_id: 可选的运行 ID。
+    :param durability: 持久化级别，默认为 "sync"。
+    :return: 状态图执行输出。
+    """
     resolved_thread_id, resolved_input = _resolve_invoke_args(
         thread_or_input, thread_id, input_state
     )

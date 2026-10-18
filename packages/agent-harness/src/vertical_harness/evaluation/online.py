@@ -28,7 +28,18 @@ logger = logging.getLogger(__name__)
 
 
 def sampled(run_id: str, rate: float) -> bool:
-    return int.from_bytes(hashlib.sha256(run_id.encode()).digest()[:8], "big") / 2**64 < rate
+    """基于 run_id 的 SHA-256 哈希值实现确定性、无偏伪随机抽样。
+
+    :param run_id: 运行记录标识符字符串。
+    :param rate: 采样率（0.0 - 1.0）。
+    :return: 若该 run 命中抽样区间则返回 True，否则返回 False。
+    """
+    is_sampled = int.from_bytes(hashlib.sha256(run_id.encode()).digest()[:8], "big") / 2**64 < rate
+    logger.debug(
+        "run_sampling_checked",
+        extra={"event_fields": {"rate": rate, "sampled": is_sampled}},
+    )
+    return is_sampled
 
 
 async def project_runs(
@@ -39,6 +50,19 @@ async def project_runs(
     names: list[str] | None = None,
     feedback_changed: bool = False,
 ):
+    """异步流式查询项目中符合时间与名称筛选条件的已完成运行记录（自动分页）。
+
+    :param client: LangSmith 客户端。
+    :param project: LangSmith 项目名称。
+    :param since: 起始时间窗口。
+    :param names: 可选的智能体/工作流名称过滤列表。
+    :param feedback_changed: 是否根据反馈修改时间而非运行开始时间进行筛选。
+    :yields: 符合条件的已完成 Run 对象。
+    """
+    logger.debug(
+        "querying_project_runs",
+        extra={"event_fields": {"project": project, "feedback_changed": feedback_changed}},
+    )
     project_info = await asyncio.to_thread(client.read_project, project_name=project)
     resource = await asyncio.to_thread(lambda: client.runs)
     filters = [f"eq(name,{json.dumps(name)})" for name in names or []]
@@ -70,6 +94,16 @@ async def project_runs(
 async def evaluate_online_once(
     settings: HarnessSettings, evaluation: EvaluationSettings, client: Client, *, project: str
 ) -> dict:
+    """执行一次在线评测扫描：对窗口内的已完成运行进行抽样评测，并异步写入评估反馈。
+
+    :param settings: 宿主系统配置实例。
+    :param evaluation: 评测配置实例。
+    :param client: LangSmith 客户端。
+    :param project: LangSmith 追踪项目名称。
+    :return: 包含 evaluated、skipped、errors 计数的汇总字典。
+    :raises ValueError: 当未启用在线评测配置时抛出。
+    """
+    logger.info("evaluate_online_once_started", extra={"event_fields": {"project": project}})
     if not evaluation.enable_online_evaluation:
         raise ValueError("Enable VA_ENABLE_ONLINE_EVALUATION before starting the online worker")
     names = ["vertical-agent"]
@@ -144,15 +178,26 @@ async def evaluate_online_once(
             counts["skipped"] += 1
         except Exception:
             counts["errors"] += 1
-            logger.exception(
-                "online_evaluation_failed", extra={"event_fields": {"run_id": str(run.id)}}
-            )
+            logger.exception("online_evaluation_failed")
+    logger.info("evaluate_online_once_completed", extra={"event_fields": counts})
     return counts
 
 
 async def sync_feedback_dataset(
     client: Client, *, project: str, dataset: str, since: datetime
 ) -> dict:
+    """将时间窗口内发生更新的用户修正反馈同步提升至指定的回归测试集。
+
+    :param client: LangSmith 客户端。
+    :param project: LangSmith 项目名称。
+    :param dataset: 目标回归测试集名称。
+    :param since: 起始筛选时间。
+    :return: 包含 promoted、skipped、errors 的处理统计字典。
+    """
+    logger.info(
+        "sync_feedback_dataset_started",
+        extra={"event_fields": {"project": project, "dataset": dataset}},
+    )
     counts = {"promoted": 0, "skipped": 0, "errors": 0}
     async for run in project_runs(client, project, since=since, feedback_changed=True):
         try:
@@ -169,9 +214,8 @@ async def sync_feedback_dataset(
                 counts["promoted"] += 1
         except Exception:
             counts["errors"] += 1
-            logger.exception(
-                "feedback_regression_failed", extra={"event_fields": {"run_id": str(run.id)}}
-            )
+            logger.exception("feedback_regression_failed")
+    logger.info("sync_feedback_dataset_completed", extra={"event_fields": counts})
     return counts
 
 
@@ -183,12 +227,27 @@ async def run_online_worker(
     project: str,
     once: bool = False,
 ) -> dict:
+    """运行独立的在线抽样评测后台服务 Worker，定期轮询并评估生产链路中的真实运行轨迹。
+
+    :param settings: 宿主系统配置实例。
+    :param evaluation: 评测配置实例。
+    :param client: LangSmith 客户端。
+    :param project: 目标追踪项目名称。
+    :param once: 若为 True 则仅执行单次轮询后立即返回，适用于 CRON 调度器。
+    :return: 评测及同步结果字典。
+    :raises ValueError: 当未启用在线评测配置时抛出。
+    """
+    logger.info(
+        "online_eval_worker_started",
+        extra={"event_fields": {"project": project, "once": once}},
+    )
     if not evaluation.enable_online_evaluation:
         raise ValueError("Enable VA_ENABLE_ONLINE_EVALUATION before starting the online worker")
     while True:
         try:
             result = await evaluate_online_once(settings, evaluation, client, project=project)
             if evaluation.enable_feedback_regression:
+                assert evaluation.regression_dataset is not None
                 result["regression"] = await sync_feedback_dataset(
                     client,
                     project=project,

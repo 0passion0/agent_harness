@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from contextlib import suppress
-from typing import Annotated
+from typing import Annotated, Any
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from langsmith import Client
@@ -15,6 +16,8 @@ from vertical_harness.evaluation.config import EvaluationSettings
 from vertical_harness.evaluation.datasets import RegressionCase, get_or_create_dataset
 from vertical_harness.evaluation.scoring import input_payload
 
+logger = logging.getLogger(__name__)
+
 USER_FEEDBACK_KEY = "user_feedback"
 
 
@@ -22,27 +25,62 @@ class ReferenceAnswer(BaseModel):
     """只有调用方明确提交的修正答案可进入参考输出，不从评分或评论推断答案。"""
 
     model_config = ConfigDict(extra="forbid")
+    # 期望文本输出
     output: str | None = None
+    # 期望结构化输出字典
     structured_response: dict | None = None
+    # 期望必须调用的工具名称列表
     required_tools: list[str] | None = None
 
     @model_validator(mode="after")
     def require_answer(self) -> ReferenceAnswer:
+        """校验回归参考答案必须包含 output 或 structured_response 之一。
+
+        :return: 校验合法的当前 ReferenceAnswer 实例。
+        :raises ValueError: 当 output 与 structured_response 均为空时抛出。
+        """
+        logger.debug(
+            "validate_reference_answer_started",
+            extra={
+                "event_fields": {
+                    "has_output": bool(self.output and self.output.strip()),
+                    "has_structured": self.structured_response is not None,
+                }
+            },
+        )
         if not (self.output and self.output.strip()) and not self.structured_response:
             raise ValueError("A regression reference requires output or structured_response")
         return self
 
 
 class UserFeedback(BaseModel):
+    """用户提交的反馈实体模型，包含评分、可选评论及显式修正答案。"""
+
     model_config = ConfigDict(extra="forbid")
+    # 关联追踪运行记录 ID
     run_id: UUID
+    # 用户评分（0.0 - 1.0）
     score: Annotated[float, Field(ge=0, le=1)]
+    # 用户评论文本（最长 10,000 字符）
     comment: Annotated[str, Field(max_length=10_000)] | None = None
+    # 显式参考修正答案
     correction: ReferenceAnswer | None = None
+    # 反馈记录唯一标识符
     feedback_id: UUID | None = None
 
 
-def feedback_case(feedback, run) -> RegressionCase:
+def feedback_case(feedback: Any, run: Any) -> RegressionCase:
+    """将一条带有显式修正的用户反馈和对应运行记录转换为 RegressionCase 回归测试用例。
+
+    :param feedback: LangSmith 反馈记录对象。
+    :param run: LangSmith 运行记录对象。
+    :return: 提取构建的 RegressionCase 实例。
+    :raises ValueError: 当反馈无修正答案或运行未完成时抛出。
+    """
+    logger.debug(
+        "feedback_case_conversion_started",
+        extra={"event_fields": {"feedback_key": getattr(feedback, "key", "")}},
+    )
     if feedback.key != USER_FEEDBACK_KEY or not feedback.correction:
         raise ValueError(
             "Only user feedback with an explicit correction can become a reference case"
@@ -52,7 +90,7 @@ def feedback_case(feedback, run) -> RegressionCase:
     reference = ReferenceAnswer.model_validate(feedback.correction)
     # 只重放调用输入，不将生产内部状态、用户评分或原错误回答喂给新智能体。
     inputs = input_payload(run.inputs)
-    return RegressionCase(
+    case = RegressionCase(
         inputs=inputs,
         outputs=reference.model_dump(exclude_none=True),
         metadata={
@@ -63,11 +101,26 @@ def feedback_case(feedback, run) -> RegressionCase:
             "reference_source": "user_correction",
         },
     )
+    logger.info("feedback_case_converted")
+    return case
 
 
 async def promote_feedback(
     client: Client, feedback_id: UUID | str, dataset_name: str, *, project: str
 ) -> str:
+    """将单条修正后的用户反馈提升导入到指定的回归测试集中。
+
+    :param client: LangSmith Client 客户端。
+    :param feedback_id: 反馈标识符。
+    :param dataset_name: 目标回归测试集名称。
+    :param project: LangSmith 项目名称。
+    :return: 新建或已存在的 Example 唯一标识符字符串。
+    :raises ValueError: 当反馈不属于指定追踪项目或未关联 run 时抛出。
+    """
+    logger.info(
+        "promote_feedback_started",
+        extra={"event_fields": {"dataset_name": dataset_name, "project": project}},
+    )
     feedback = await asyncio.to_thread(client.read_feedback, feedback_id)
     if feedback.run_id is None:
         raise ValueError("Run feedback is required")
@@ -93,6 +146,7 @@ async def promote_feedback(
                 metadata=case.metadata,
                 source_run_id=feedback.run_id,
             )
+    logger.info("promote_feedback_completed")
     return str(example_id)
 
 
@@ -102,8 +156,25 @@ async def submit_feedback(
     evaluation: EvaluationSettings | None = None,
     *,
     project: str,
-) -> dict:
-    """API 调用方负责鉴权及 run 所有权；CLI 使用当前 LangSmith 凭据。"""
+) -> dict[str, Any]:
+    """向 LangSmith 写入用户反馈，并在开启反馈回归机制时自动将其提升至回归测试集。
+
+    :param client: LangSmith Client 客户端。
+    :param feedback: 待提交的 UserFeedback 对象。
+    :param evaluation: 可选的评测配置实例。
+    :param project: LangSmith 项目名称。
+    :return: 包含 feedback_id 及可选 example_id 的结果字典。
+    """
+    logger.info(
+        "submit_feedback_started",
+        extra={
+            "event_fields": {
+                "score": feedback.score,
+                "has_correction": feedback.correction is not None,
+                "project": project,
+            }
+        },
+    )
     project_info = await asyncio.to_thread(client.read_project, project_name=project)
     resource = await asyncio.to_thread(lambda: client.runs)
     run = await resource.retrieve(str(feedback.run_id), project_id=str(project_info.id))
@@ -121,9 +192,11 @@ async def submit_feedback(
         session_id=project_info.id,
         start_time=run.start_time,
     )
-    result = {"feedback_id": str(recorded.id)}
+    result: dict[str, Any] = {"feedback_id": str(recorded.id)}
     if evaluation and evaluation.enable_feedback_regression and feedback.correction:
+        assert evaluation.regression_dataset is not None
         result["example_id"] = await promote_feedback(
             client, recorded.id, evaluation.regression_dataset, project=project
         )
+    logger.info("submit_feedback_completed")
     return result

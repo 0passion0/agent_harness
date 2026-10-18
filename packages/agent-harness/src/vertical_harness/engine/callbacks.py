@@ -94,21 +94,54 @@ class WorkflowLoggingHandler(BaseCallbackHandler):
         logger.log(level, event, extra={"event_fields": extra})
 
     def on_chain_start(self, serialized: dict[str, Any] | None, inputs: Any, **kwargs: Any) -> None:
+        """执行链或图节点开始运行时的回调入口。
+
+        :param serialized: 链组件序列化信息字典。
+        :param inputs: 传入链的输入数据（不读取具体内容）。
+        :param kwargs: 包含 run_id 与 parent_run_id 的关键字参数。
+        """
         self._start("chain", serialized, **kwargs)
 
     def on_chain_end(self, outputs: Any, **kwargs: Any) -> None:
+        """执行链或图节点成功运行结束时的回调入口。
+
+        :param outputs: 链执行产出的输出数据。
+        :param kwargs: 包含 run_id 的关键字参数。
+        """
         self._finish("chain", **kwargs)
 
     def on_chain_error(self, error: BaseException, **kwargs: Any) -> None:
+        """执行链或图节点发生异常中断时的回调入口。
+
+        :param error: 抛出的底层异常对象。
+        :param kwargs: 包含 run_id 的关键字参数。
+        """
         self._finish("chain", error=error, **kwargs)
 
     def on_chat_model_start(self, serialized: dict[str, Any], messages: Any, **kwargs: Any) -> None:
+        """聊天模型（Chat Model）开始发起调用时的回调入口。
+
+        :param serialized: 模型序列化字典。
+        :param messages: 提示词消息列表。
+        :param kwargs: 包含 run_id 的关键字参数。
+        """
         self._start("model", serialized, **kwargs)
 
     def on_llm_start(self, serialized: dict[str, Any], prompts: Any, **kwargs: Any) -> None:
+        """大语言模型（LLM）开始发起调用时的回调入口。
+
+        :param serialized: 模型序列化字典。
+        :param prompts: 提示词列表。
+        :param kwargs: 包含 run_id 的关键字参数。
+        """
         self._start("model", serialized, **kwargs)
 
     def on_llm_end(self, response: Any, **kwargs: Any) -> None:
+        """大语言模型调用成功完成并返回时的回调入口，累计 Token 消耗。
+
+        :param response: 包含 generations 与 usage_metadata 的模型返回对象。
+        :param kwargs: 包含 run_id 的关键字参数。
+        """
         generations = getattr(response, "generations", [])
         message = getattr(generations[0][0], "message", None) if generations and generations[0] else None
         usage = getattr(message, "usage_metadata", None)
@@ -119,18 +152,44 @@ class WorkflowLoggingHandler(BaseCallbackHandler):
         self._finish("model", **kwargs)
 
     def on_llm_error(self, error: BaseException, **kwargs: Any) -> None:
+        """大语言模型调用发生异常或网络超时中断时的回调入口。
+
+        :param error: 抛出的模型调用异常对象。
+        :param kwargs: 包含 run_id 的关键字参数。
+        """
         self._finish("model", error=error, **kwargs)
 
     def on_tool_start(self, serialized: dict[str, Any], input_str: str, **kwargs: Any) -> None:
+        """工具开始执行时的回调入口。
+
+        :param serialized: 工具元数据字典。
+        :param input_str: 工具输入参数字符串。
+        :param kwargs: 包含 run_id 的关键字参数。
+        """
         self._start("tool", serialized, **kwargs)
 
     def on_tool_end(self, output: Any, **kwargs: Any) -> None:
+        """工具执行结束时的回调入口，识别业务错误状态。
+
+        :param output: 工具执行输出对象。
+        :param kwargs: 包含 run_id 的关键字参数。
+        """
         self._finish("tool", failed=getattr(output, "status", None) == "error", **kwargs)
 
     def on_tool_error(self, error: BaseException, **kwargs: Any) -> None:
+        """工具执行抛出未捕获异常时的回调入口。
+
+        :param error: 抛出的底层异常对象。
+        :param kwargs: 包含 run_id 的关键字参数。
+        """
         self._finish("tool", error=error, **kwargs)
 
     def on_retry(self, retry_state: Any, **kwargs: Any) -> None:
+        """操作触发重试机制时的回调入口。
+
+        :param retry_state: 重试状态对象，包含 attempt_number 字段。
+        :param kwargs: 包含 run_id 的关键字参数。
+        """
         logger.debug(
             "operation_retrying",
             extra={

@@ -76,13 +76,20 @@ def make_router(settings: HarnessSettings) -> AgentMiddleware[Any, Any, Any] | N
         return request.override(model=target_model)
 
     class ModelRouterMiddleware(AgentMiddleware[Any, Any, Any]):
-        """Share model selection across native sync and async invocation paths."""
+        """在原生同步与异步模型调用路径间统一共享动态模型选择逻辑。"""
 
         def wrap_model_call(
             self,
             request: ModelRequest,
             handler: Callable[[ModelRequest], ModelResponse],
         ) -> ModelResponse:
+            """拦截并包装同步模型调用请求，动态覆盖为目标路由模型。
+
+            :param request: 原始模型请求对象。
+            :param handler: 下游调用处理器函数。
+            :return: 模型调用响应对象。
+            """
+            logger.debug("wrapping_model_call_sync")
             return handler(select_model(request))
 
         async def awrap_model_call(
@@ -90,6 +97,13 @@ def make_router(settings: HarnessSettings) -> AgentMiddleware[Any, Any, Any] | N
             request: ModelRequest,
             handler: Callable[[ModelRequest], Awaitable[ModelResponse]],
         ) -> ModelResponse:
+            """拦截并包装异步模型调用请求，动态覆盖为目标路由模型。
+
+            :param request: 原始模型请求对象。
+            :param handler: 下游异步调用处理器函数。
+            :return: 模型调用响应对象。
+            """
+            logger.debug("wrapping_model_call_async")
             return await handler(select_model(request))
 
     return ModelRouterMiddleware()

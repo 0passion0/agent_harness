@@ -5,7 +5,9 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
 from pathlib import Path
+from typing import Any
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from langsmith import Client
@@ -15,18 +17,33 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from vertical_harness.evaluation.scoring import input_payload
 
+logger = logging.getLogger(__name__)
+
 
 class RegressionCase(BaseModel):
+    """单个回归评测用例模型，包含输入 payload、期望输出及元数据。"""
+
     model_config = ConfigDict(extra="forbid")
 
+    # 评测输入字典（必须包含可解析的消息列表或文本）
     inputs: dict
+    # 期望输出字典（可选包含 reference_answer, required_tools 等）
     outputs: dict = Field(default_factory=dict)
+    # 用例元数据字典
     metadata: dict = Field(default_factory=dict)
+    # 样本在外部数据库或数据集中的唯一标识符
     id: UUID | None = None
+    # 关联的数据集唯一标识符
     dataset_id: UUID | None = None
 
     @model_validator(mode="after")
     def validate_case(self) -> RegressionCase:
+        """校验用例输入载荷合法性及所需工具列表格式。
+
+        :return: 校验合法的当前 RegressionCase 实例。
+        :raises ValueError: 当输入不合法或工具要求非字符串列表时抛出。
+        """
+        logger.debug("validate_regression_case_started")
         input_payload(self.inputs)
         for key in ("required_tools", "required_successful_tools"):
             if key in self.outputs and (
@@ -38,12 +55,25 @@ class RegressionCase(BaseModel):
 
     @property
     def input_digest(self) -> str:
+        """根据标准规范化后的输入载荷计算 SHA-256 摘要哈希值。
+
+        :return: 64 位十六进制哈希字符串。
+        """
         data = json.dumps(input_payload(self.inputs), sort_keys=True, ensure_ascii=False)
         return hashlib.sha256(data.encode()).hexdigest()
 
     def to_example(self) -> Example:
+        """转换为 LangSmith 原生 `Example` 对象。
+
+        :return: 包装后的 Example 实例。
+        """
+        example_id = self.id or uuid5(NAMESPACE_URL, self.model_dump_json(exclude={"id", "dataset_id"}))
+        logger.debug(
+            "regression_case_to_example_converted",
+            extra={"event_fields": {"has_custom_id": self.id is not None}},
+        )
         return Example(
-            id=self.id or uuid5(NAMESPACE_URL, self.model_dump_json(exclude={"id", "dataset_id"})),
+            id=example_id,
             dataset_id=self.dataset_id or UUID(int=0),
             inputs=self.inputs,
             outputs=self.outputs,
@@ -54,6 +84,23 @@ class RegressionCase(BaseModel):
 def load_cases(
     *, path: Path | None = None, dataset: str | None = None, client: Client | None = None
 ) -> list[RegressionCase]:
+    """从本地 JSONL 文件或 LangSmith 远端数据集加载回归测试用例列表。
+
+    :param path: 本地 JSONL 文件路径。
+    :param dataset: 远端 LangSmith 数据集名称。
+    :param client: LangSmith Client 客户端。
+    :return: RegressionCase 用例列表。
+    :raises ValueError: 当参数冲突、未提供客户端或数据集为空时抛出。
+    """
+    logger.info(
+        "load_cases_started",
+        extra={
+            "event_fields": {
+                "from_file": path is not None,
+                "from_dataset": dataset is not None,
+            }
+        },
+    )
     if (path is None) == (dataset is None):
         raise ValueError("Provide exactly one JSONL file or LangSmith dataset")
     if path is not None:
@@ -77,17 +124,39 @@ def load_cases(
         ]
     if not cases:
         raise ValueError("Evaluation dataset is empty")
+    logger.info(
+        "load_cases_completed",
+        extra={"event_fields": {"case_count": len(cases)}},
+    )
     return cases
 
 
 def ensure_disjoint(training: list[RegressionCase], validation: list[RegressionCase]) -> None:
+    """确保训练集与验证集的数据完全互斥不重叠（基于 input_digest 哈希校验）。
+
+    :param training: 训练集用例列表。
+    :param validation: 留出验证集用例列表。
+    :raises ValueError: 当训练集与验证集存在输入交集时抛出。
+    """
+    logger.debug(
+        "ensure_disjoint_checked",
+        extra={"event_fields": {"train_count": len(training), "val_count": len(validation)}},
+    )
     if {case.input_digest for case in training} & {case.input_digest for case in validation}:
         raise ValueError(
             "Training and validation inputs overlap; provide a held-out validation set"
         )
 
 
-def get_or_create_dataset(client: Client, name: str):
+def get_or_create_dataset(client: Client, name: str) -> Any:
+    """按名称获取已有 LangSmith 数据集，若不存在则创建。
+
+    :param client: LangSmith Client 客户端。
+    :param name: 数据集名称。
+    :return: 获取或新建的 Dataset 对象。
+    :raises ValueError: 当数据集名称为空时抛出。
+    """
+    logger.debug("get_or_create_dataset_started", extra={"event_fields": {"dataset_name": name}})
     if not name.strip():
         raise ValueError("Dataset name cannot be empty")
     try:
@@ -102,6 +171,18 @@ def get_or_create_dataset(client: Client, name: str):
 async def experiment_examples(
     client: Client, cases: list[RegressionCase], upload: bool
 ) -> list[Example]:
+    """将评测用例转化为实验样本 Example 列表，并在开启 upload 时上传到快照数据集。
+
+    :param client: LangSmith Client 客户端。
+    :param cases: 回归用例列表。
+    :param upload: 是否向 LangSmith 上传快照。
+    :return: 准备好的 Example 列表。
+    :raises ValueError: 当远端快照数据已被篡改发生不一致时抛出。
+    """
+    logger.info(
+        "experiment_examples_preparing",
+        extra={"event_fields": {"case_count": len(cases), "upload": upload}},
+    )
     examples = [case.to_example() for case in cases]
     if not upload:
         return examples
@@ -133,4 +214,8 @@ async def experiment_examples(
                 "LangSmith snapshot contents changed; refusing an inconsistent comparison"
             )
         uploaded.append(example)
+    logger.info(
+        "experiment_examples_uploaded",
+        extra={"event_fields": {"uploaded_count": len(uploaded)}},
+    )
     return uploaded

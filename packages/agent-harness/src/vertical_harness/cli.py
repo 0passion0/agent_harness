@@ -33,7 +33,13 @@ logger = logging.getLogger(__name__)
 
 
 def _image_content(value: str) -> dict[str, str]:
-    """读取本地图片为标准内容块，限制读取量以免附件耗尽内存。"""
+    """读取本地图片为标准内容块，限制读取量以免附件耗尽内存。
+
+    :param value: 本地图片的文件路径字符串。
+    :return: 包含 Base64 数据与 MIME 类型的标准内容块字典。
+    :raises argparse.ArgumentTypeError: 当文件不存在、格式不受支持或大小超出 20 MiB 时抛出。
+    """
+    logger.debug("parsing_image_argument")
     path = Path(value).expanduser()
     mime_type = mimetypes.guess_type(path.name)[0]
     if mime_type not in {"image/png", "image/jpeg", "image/gif", "image/webp"}:
@@ -46,6 +52,10 @@ def _image_content(value: str) -> dict[str, str]:
         raise argparse.ArgumentTypeError("Cannot read image file") from exc
     if not data or len(data) > max_bytes:
         raise argparse.ArgumentTypeError("Image must be nonempty and at most 20 MiB")
+    logger.debug(
+        "image_content_parsed",
+        extra={"event_fields": {"mime_type": mime_type, "byte_size": len(data)}},
+    )
     return {
         "type": "image",
         "base64": base64.b64encode(data).decode("ascii"),
@@ -58,6 +68,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     :return: 配置完成的 ArgumentParser 实例。
     """
+    logger.debug("building_cli_parser")
     parser = argparse.ArgumentParser(description="Deep Agents plugin harness")
     parser.add_argument("prompt", nargs="?", help="Input prompt to send to the agent")
     parser.add_argument(
@@ -141,9 +152,13 @@ def _print_plugins(settings: HarnessSettings) -> None:
 
     :param settings: 已加载的宿主配置实例。
     """
+    logger.debug("printing_plugins_started")
     manifests = [
         plugin.manifest.model_dump() for plugin in discover_plugins(settings.enabled_plugins)
     ]
+    logger.debug(
+        "printing_plugins_completed", extra={"event_fields": {"plugin_count": len(manifests)}}
+    )
     print(json.dumps(manifests, ensure_ascii=False, indent=2))
 
 
@@ -152,6 +167,7 @@ def _print_workflows(settings: HarnessSettings) -> None:
 
     :param settings: 已加载的宿主配置实例。
     """
+    logger.debug("printing_workflows_started")
     services = BuildServices(
         workspace_root=settings.resolved_workspace_root, plugin_config=settings.plugin_config
     )
@@ -179,6 +195,9 @@ def _print_workflows(settings: HarnessSettings) -> None:
                     "output_schema": getattr(wf.output_schema, "__name__", str(wf.output_schema)),
                 }
             )
+    logger.debug(
+        "printing_workflows_completed", extra={"event_fields": {"workflow_count": len(entries)}}
+    )
     print(json.dumps(entries, ensure_ascii=False, indent=2))
 
 
@@ -188,6 +207,10 @@ def _print_history(args: argparse.Namespace, settings: HarnessSettings) -> None:
     :param args: 解析后的命令行参数对象。
     :param settings: 已加载的宿主配置实例。
     """
+    logger.debug(
+        "printing_checkpoint_history_started",
+        extra={"event_fields": {"thread_id": str(args.thread_id)}},
+    )
 
     async def query():
         # History needs the graph and plugin lifecycle, without connecting MCP servers.
@@ -195,6 +218,10 @@ def _print_history(args: argparse.Namespace, settings: HarnessSettings) -> None:
             return await aget_checkpoint_history(agent, args.thread_id)
 
     history = asyncio.run(query())
+    logger.debug(
+        "printing_checkpoint_history_completed",
+        extra={"event_fields": {"checkpoint_count": len(history)}},
+    )
     print(
         json.dumps(
             [item.model_dump() for item in history],

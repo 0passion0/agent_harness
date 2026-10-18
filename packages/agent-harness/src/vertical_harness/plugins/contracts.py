@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from copy import deepcopy
 from dataclasses import dataclass, field
@@ -30,6 +31,8 @@ from langgraph.graph.state import CompiledStateGraph
 from langgraph.store.base import BaseStore
 from langgraph.types import Durability
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+logger = logging.getLogger(__name__)
 
 # 技能路径各分段合法字符正则：必须包含至少一个字母或数字，且仅允许字母、数字、点、下划线、破折号
 _SAFE_SKILL_SEGMENT = re.compile(r"^(?=.*[A-Za-z0-9])[A-Za-z0-9._-]+$")
@@ -149,6 +152,10 @@ class SkillAsset(StrictModel):
         :return: 校验合法的相对路径字符串。
         :raises ValueError: 当路径为绝对路径、包含 '.' 或 '..' 遍历路径、层级少于两级或包含非法特殊字符时抛出。
         """
+        logger.debug(
+            "validate_relative_path_started",
+            extra={"event_fields": {"has_path": bool(value)}},
+        )
         posix_path = PurePosixPath(value)
         parts = posix_path.parts
         # 严禁绝对路径、反斜杠路径、包含 '.' 或 '..'，且路径至少包含两级（如 skill_name/file）
@@ -173,7 +180,12 @@ class SkillAsset(StrictModel):
         """
         posix_path = PurePosixPath(self.relative_path)
         namespaced_dir = f"{plugin_id.replace('.', '-')}-{posix_path.parts[0]}"
-        return str(PurePosixPath(skills_root, namespaced_dir, *posix_path.parts[1:]))
+        virtual_path = str(PurePosixPath(skills_root, namespaced_dir, *posix_path.parts[1:]))
+        logger.debug(
+            "skill_virtual_path_computed",
+            extra={"event_fields": {"plugin_id": plugin_id}},
+        )
+        return virtual_path
 
     def to_upload_payload(self, plugin_id: str, skills_root: str = "/skills") -> tuple[str, bytes]:
         """生成可直接传递给 Deep Agents Backend `upload_files` 的 (虚拟路径, UTF-8 字节流) 二元组。
@@ -182,10 +194,13 @@ class SkillAsset(StrictModel):
         :param skills_root: 虚拟技能根目录路径，默认为 '/skills'。
         :return: (虚拟路径字符串, UTF-8 编码字节内容) 元组。
         """
-        return (
-            self.to_virtual_path(plugin_id, skills_root=skills_root),
-            self.content.encode("utf-8"),
+        vpath = self.to_virtual_path(plugin_id, skills_root=skills_root)
+        encoded = self.content.encode("utf-8")
+        logger.debug(
+            "skill_upload_payload_generated",
+            extra={"event_fields": {"plugin_id": plugin_id, "byte_size": len(encoded)}},
         )
+        return (vpath, encoded)
 
 
 class ToolContribution(StrictModel):
@@ -229,6 +244,10 @@ class ToolContribution(StrictModel):
 
         :return: 允许 approve 与 reject 决策的 InterruptOnConfig 配置。
         """
+        logger.debug(
+            "tool_interrupt_config_created",
+            extra={"event_fields": {"tool_name": self.name, "effect": self.effect.value}},
+        )
         config = InterruptOnConfig(allowed_decisions=["approve", "reject"])
         if annotations := self.mcp_annotations:
             config["description"] = (
@@ -253,22 +272,36 @@ class ToolContribution(StrictModel):
         :param exposure: 批量应用的工具暴露模式，默认直接暴露 EAGER。
         :return: 包装后的 ToolContribution 实例列表。
         """
-        return [cls(tool=t, effect=effect, exposure=exposure) for t in toolkit.get_tools()]
+        tools = toolkit.get_tools()
+        logger.debug(
+            "tools_from_toolkit_extracted",
+            extra={"event_fields": {"tool_count": len(tools), "effect": effect.value}},
+        )
+        return [cls(tool=t, effect=effect, exposure=exposure) for t in tools]
 
 
 def _schema_has_messages_key(schema: type[Any]) -> bool:
-    """检查给定的 TypedDict / BaseModel / 类型注解是否包含 Deep Agents 要求的 `messages` 键。"""
+    """检查给定的 TypedDict / BaseModel / 类型注解是否包含 Deep Agents 要求的 `messages` 键。
+
+    :param schema: 待检测的模式类型或模型类。
+    :return: 若包含 messages 键或字段则返回 True，否则返回 False。
+    """
     annotations = getattr(schema, "__annotations__", None)
     if isinstance(annotations, dict) and "messages" in annotations:
         return True
     model_fields = getattr(schema, "model_fields", None)
     if isinstance(model_fields, dict) and "messages" in model_fields:
         return True
-    return any(
+    has_key = any(
         isinstance(getattr(base, "__annotations__", None), dict)
         and "messages" in base.__annotations__
         for base in getattr(schema, "__mro__", ())
     )
+    logger.debug(
+        "schema_has_messages_checked",
+        extra={"event_fields": {"schema_name": getattr(schema, "__name__", str(schema)), "has_messages": has_key}},
+    )
+    return has_key
 
 
 class WorkflowContribution(StrictModel):
@@ -380,6 +413,10 @@ class WorkflowContribution(StrictModel):
             raise ValueError(
                 f"Workflow '{self.name}' output_schema must include a 'messages' key for Deep Agents delegation"
             )
+        logger.debug(
+            "workflow_spec_validated",
+            extra={"event_fields": {"workflow_name": self.name, "mode": str(self.mode)}},
+        )
         return self
 
     @property
@@ -407,12 +444,18 @@ class WorkflowContribution(StrictModel):
         :return: 最终解析出的 WorkflowMode。
         """
         if self.mode is not None:
-            return self.mode
-        if preferred_mode == WorkflowMode.ASYNC and self.graph_id is not None:
-            return WorkflowMode.ASYNC
-        if preferred_mode == WorkflowMode.COMPILED and self.runnable is not None:
-            return WorkflowMode.COMPILED
-        return self.effective_mode
+            resolved = self.mode
+        elif preferred_mode == WorkflowMode.ASYNC and self.graph_id is not None:
+            resolved = WorkflowMode.ASYNC
+        elif preferred_mode == WorkflowMode.COMPILED and self.runnable is not None:
+            resolved = WorkflowMode.COMPILED
+        else:
+            resolved = self.effective_mode
+        logger.debug(
+            "workflow_mode_resolved",
+            extra={"event_fields": {"workflow_name": self.name, "resolved_mode": resolved.value}},
+        )
+        return resolved
 
     def to_subagent_spec(
         self,
@@ -429,6 +472,10 @@ class WorkflowContribution(StrictModel):
         :return: 符合 Deep Agents `create_deep_agent(subagents=...)` 契约的子智能体规范。
         """
         target_mode = self.resolve_mode(preferred_mode)
+        logger.debug(
+            "workflow_to_subagent_spec_generating",
+            extra={"event_fields": {"workflow_name": self.name, "mode": target_mode.value}},
+        )
         if target_mode == WorkflowMode.ASYNC:
             assert self.graph_id is not None
             async_spec: AsyncSubAgent = {
@@ -482,7 +529,29 @@ class WorkflowContribution(StrictModel):
         allowed_tenants: frozenset[str] | None = None,
         result_schema: type[BaseModel] | None = None,
     ) -> WorkflowContribution:
-        """从预编译 LangGraph 状态图构造 `CompiledSubAgent` 工作流插件贡献。"""
+        """从预编译 LangGraph 状态图构造 `CompiledSubAgent` 工作流插件贡献。
+
+        :param name: 工作流唯一名称。
+        :param description: 工作流描述说明。
+        :param runnable: 预编译的 LangGraph 状态图或可运行对象。
+        :param internal_state: 内部流转状态模式。
+        :param input_schema: 输入参数数据模式。
+        :param output_schema: 输出结果数据模式。
+        :param graph_id: 可选的远程图标识符。
+        :param context_mode: 上下文传递模式。
+        :param durability: 检查点持久化级别。
+        :param effect: 工作流副作用等级。
+        :param depends_on: 前置依赖的工作流列表。
+        :param max_dispatches: 最大允许委派次数。
+        :param idempotent: 是否启用结果幂等复用。
+        :param allowed_tenants: 允许调用的租户白名单。
+        :param result_schema: 结构化输出结果验证模型。
+        :return: 构造完成的 WorkflowContribution 实例。
+        """
+        logger.debug(
+            "workflow_from_compiled_graph_created",
+            extra={"event_fields": {"workflow_name": name, "has_graph_id": graph_id is not None}},
+        )
         return cls(
             name=name,
             description=description,
@@ -523,7 +592,30 @@ class WorkflowContribution(StrictModel):
         allowed_tenants: frozenset[str] | None = None,
         result_schema: type[BaseModel] | None = None,
     ) -> WorkflowContribution:
-        """从 Agent Protocol `graph_id` 构造 `AsyncSubAgent` 异步工作流插件贡献。"""
+        """从 Agent Protocol `graph_id` 构造 `AsyncSubAgent` 异步工作流插件贡献。
+
+        :param name: 工作流唯一名称。
+        :param description: 工作流描述说明。
+        :param graph_id: 远程图标识符。
+        :param internal_state: 内部流转状态模式。
+        :param input_schema: 输入参数数据模式。
+        :param output_schema: 输出结果数据模式。
+        :param url: 远程服务端地址。
+        :param headers: 远程服务请求头字典。
+        :param runnable: 可选的本地备用可运行对象。
+        :param context_mode: 上下文传递模式。
+        :param effect: 工作流副作用等级。
+        :param depends_on: 前置依赖的工作流列表。
+        :param max_dispatches: 最大允许委派次数。
+        :param idempotent: 是否启用结果幂等复用。
+        :param allowed_tenants: 允许调用的租户白名单。
+        :param result_schema: 结构化输出结果验证模型。
+        :return: 构造完成的 WorkflowContribution 实例。
+        """
+        logger.debug(
+            "workflow_from_async_graph_created",
+            extra={"event_fields": {"workflow_name": name, "graph_id": graph_id}},
+        )
         return cls(
             name=name,
             description=description,
@@ -568,6 +660,10 @@ class PluginContribution(StrictModel):
         :return: 若配置了 instructions 则返回带前缀的指令字符串，否则返回 None。
         """
         cleaned = self.instructions.strip()
+        logger.debug(
+            "plugin_system_instruction_formatted",
+            extra={"event_fields": {"plugin_id": plugin_id, "has_instruction": bool(cleaned)}},
+        )
         return f"[{plugin_id}] {cleaned}" if cleaned else None
 
 
@@ -582,11 +678,15 @@ class BuildServices:
     plugin_config: dict[str, dict[str, Any]] = field(default_factory=dict, repr=False)
 
     def config_for(self, plugin_id: str) -> dict[str, Any]:
-        """Return an isolated configuration copy for plugin-local schema validation.
+        """为插件本地模式验证返回隔离的配置副本。
 
-        :param plugin_id: Enabled plugin ID.
-        :return: Its configuration, or an empty mapping.
+        :param plugin_id: 启用的插件标识符。
+        :return: 插件专用配置字典，不存在时返回空字典。
         """
+        logger.debug(
+            "build_services_config_retrieved",
+            extra={"event_fields": {"plugin_id": plugin_id}},
+        )
         return deepcopy(self.plugin_config.get(plugin_id, {}))
 
 
@@ -602,7 +702,20 @@ class RunContext:
     task_tier: Literal["economy", "quality"] = "quality"
 
     def __post_init__(self) -> None:
-        """Reject missing identities at the trusted host boundary."""
+        """校验可信边界处的关键租户与用户身份标识非空。
+
+        :raises ValueError: 当租户或用户标识为空，或任务层级非法时抛出。
+        """
+        logger.debug(
+            "run_context_initialized",
+            extra={
+                "event_fields": {
+                    "task_tier": self.task_tier,
+                    "has_tenant": bool(self.tenant_id),
+                    "has_user": bool(self.user_id),
+                }
+            },
+        )
         if any(
             not isinstance(value, str) or not value.strip()
             for value in (self.tenant_id, self.user_id)

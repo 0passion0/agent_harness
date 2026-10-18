@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 from enum import StrEnum
 from typing import Annotated, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+logger = logging.getLogger(__name__)
 
 
 class FindingStatus(StrEnum):
@@ -60,6 +63,15 @@ class AuditFinding(BaseModel):
         :return: 验证通过后的当前 AuditFinding 实例。
         :raises ValueError: 当结论状态为 'verified'（已核实）却未提供任何证据时抛出。
         """
+        logger.debug(
+            "require_evidence_for_verification_checked",
+            extra={
+                "event_fields": {
+                    "status": self.status.value,
+                    "evidence_count": len(self.evidence),
+                }
+            },
+        )
         if self.status == FindingStatus.VERIFIED and not self.evidence:
             raise ValueError("Verified findings require at least one evidence reference")
         return self

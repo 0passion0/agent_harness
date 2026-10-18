@@ -36,6 +36,7 @@ def _prepare_conn_string(settings: HarnessSettings) -> str:
     :param settings: 经校验的宿主配置对象。
     :return: SQLite 连接字符串或数据库物理文件路径字符串。
     """
+    logger.debug("preparing_store_connection_string")
     target = settings.resolved_store_target
     if isinstance(target, Path):
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -49,6 +50,7 @@ def _prepare_checkpoint_conn_string(settings: HarnessSettings) -> str:
     :param settings: 经校验的宿主配置对象。
     :return: Checkpointer SQLite 连接字符串或数据库物理文件路径字符串。
     """
+    logger.debug("preparing_checkpoint_connection_string")
     target = settings.resolved_checkpoint_target
     if isinstance(target, Path):
         target.parent.mkdir(parents=True, exist_ok=True)

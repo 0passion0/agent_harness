@@ -10,6 +10,7 @@ from collections.abc import Sequence
 from contextlib import closing
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 from uuid import UUID
 
 from vertical_harness.config import HarnessSettings
@@ -31,6 +32,11 @@ logger = logging.getLogger(__name__)
 
 
 def _build_parser() -> argparse.ArgumentParser:
+    """构建评测命令行工具的参数解析器。
+
+    :return: 配置好子命令（run, optimize, online, feedback, regression, sync-feedback）的 ArgumentParser 实例。
+    """
+    logger.debug("build_evaluation_parser_started")
     parser = argparse.ArgumentParser(
         description="LangSmith offline/online evaluation, feedback and regression datasets"
     )
@@ -84,7 +90,28 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-async def _execute(args, settings, evaluation, smith, client) -> dict:
+async def _execute(
+    args: argparse.Namespace,
+    settings: HarnessSettings | None,
+    evaluation: EvaluationSettings,
+    smith: LangSmithSettings,
+    client: Any,
+) -> dict[str, Any]:
+    """根据解析后的命令行参数分发并执行具体的评测或反馈工作流。
+
+    :param args: 命令行解析得到的命名空间对象。
+    :param settings: 宿主系统配置实例（若执行命令需要）。
+    :param evaluation: 评测专门配置实例。
+    :param smith: LangSmith 追踪配置实例。
+    :param client: LangSmith Client 客户端。
+    :return: 执行结果字典。
+    :raises FileExistsError: 当输出报告已存在时抛出。
+    :raises ValueError: 当参数值不合法时抛出。
+    """
+    logger.info(
+        "evaluation_command_dispatching",
+        extra={"event_fields": {"command": args.command}},
+    )
     if args.command in {"run", "optimize"}:
         cases = await asyncio.to_thread(
             load_cases, path=args.data, dataset=args.dataset, client=client
@@ -98,7 +125,7 @@ async def _execute(args, settings, evaluation, smith, client) -> dict:
                 client=client,
             )
             return await optimize_prompt(
-                settings,
+                settings,  # type: ignore[arg-type]
                 evaluation,
                 client,
                 cases,
@@ -110,7 +137,7 @@ async def _execute(args, settings, evaluation, smith, client) -> dict:
         if args.report.exists():
             raise FileExistsError("Report already exists")
         result = await evaluate_offline(
-            settings,
+            settings,  # type: ignore[arg-type]
             evaluation,
             client,
             cases,
@@ -124,7 +151,7 @@ async def _execute(args, settings, evaluation, smith, client) -> dict:
         return result
     if args.command == "online":
         return await run_online_worker(
-            settings, evaluation, client, project=smith.project, once=args.once
+            settings, evaluation, client, project=smith.project, once=args.once  # type: ignore[arg-type]
         )
     if args.command == "feedback":
         correction = (
@@ -156,6 +183,11 @@ async def _execute(args, settings, evaluation, smith, client) -> dict:
 
 
 def main(argv: Sequence[str] | None = None) -> None:
+    """评测工具主入口函数，处理参数解析、环境初始化与异常退出码。
+
+    :param argv: 命令行参数列表，默认从 sys.argv 获取。
+    """
+    logger.debug("evaluation_main_invoked")
     parser = _build_parser()
     args = parser.parse_args(argv)
     try:

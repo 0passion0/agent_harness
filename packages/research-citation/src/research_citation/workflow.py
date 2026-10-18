@@ -72,20 +72,34 @@ output_schema = CitationOutputState
 
 
 def _message_content_to_text(message: AnyMessage | dict[str, Any]) -> str:
-    """将 LangChain 消息对象或消息字典安全提取为纯文本。"""
+    """将 LangChain 消息对象或消息字典安全提取为纯文本。
+
+    :param message: LangChain 消息对象或字典。
+    :return: 提取出的纯文本字符串。
+    """
     content = message.get("content", "") if isinstance(message, dict) else getattr(message, "content", "")
     if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        return "\n".join(
+        text = content
+    elif isinstance(content, list):
+        text = "\n".join(
             block.get("text", "") if isinstance(block, dict) else str(block)
             for block in content
         )
-    return str(content)
+    else:
+        text = str(content)
+    logger.debug(
+        "message_content_extracted",
+        extra={"event_fields": {"text_length": len(text)}},
+    )
+    return text
 
 
 def _extract_json_dict(text: str) -> dict[str, Any] | None:
-    """从任务描述文本中提取 JSON 对象字典（支持纯 JSON、代码块 JSON 或内嵌大括号 JSON）。"""
+    """从任务描述文本中提取 JSON 对象字典（支持纯 JSON、代码块 JSON 或内嵌大括号 JSON）。
+
+    :param text: 待提取的原始文本。
+    :return: 成功解析出的字典，若解析失败则返回 None。
+    """
     stripped = text.strip()
     if not stripped:
         return None
@@ -108,6 +122,10 @@ def _extract_json_dict(text: str) -> dict[str, Any] | None:
         except json.JSONDecodeError:
             continue
         if isinstance(loaded, dict):
+            logger.debug(
+                "json_dict_extracted",
+                extra={"event_fields": {"key_count": len(loaded)}},
+            )
             return loaded
     return None
 
@@ -121,6 +139,7 @@ def parse_and_validate_input(state: CitationInternalState) -> dict[str, Any]:
     :param state: 当前工作流状态快照。
     :return: 更新 `validated_input` 与 `validation_error` 的内部状态增量。
     """
+    logger.info("parse_and_validate_input_started")
     raw_payload: dict[str, Any] = {}
     if "manuscript_text" in state and state["manuscript_text"] is not None:
         raw_payload["manuscript_text"] = state["manuscript_text"]
@@ -160,6 +179,15 @@ def parse_and_validate_input(state: CitationInternalState) -> dict[str, Any]:
             "evaluation_result": None,
         }
 
+    logger.info(
+        "parse_and_validate_input_completed",
+        extra={
+            "event_fields": {
+                "manuscript_len": len(validated.manuscript_text),
+                "bibliography_count": len(validated.bibliography),
+            }
+        },
+    )
     return {
         "validated_input": {
             "manuscript_text": validated.manuscript_text,
@@ -173,10 +201,20 @@ def parse_and_validate_input(state: CitationInternalState) -> dict[str, Any]:
 def _route_after_validation(
     state: CitationInternalState,
 ) -> Literal["evaluate_citations", "finalize_output"]:
-    """根据入口节点校验结果决定后续确定性路由分支。"""
+    """根据入口节点校验结果决定后续确定性路由分支。
+
+    :param state: 当前内部状态。
+    :return: 下一节点名称（'evaluate_citations' 或 'finalize_output'）。
+    """
     if state.get("validation_error") is None and state.get("validated_input") is not None:
-        return "evaluate_citations"
-    return "finalize_output"
+        route = "evaluate_citations"
+    else:
+        route = "finalize_output"
+    logger.debug(
+        "citation_workflow_routed",
+        extra={"event_fields": {"next_node": route}},
+    )
+    return route
 
 
 def evaluate_citations(state: CitationInternalState) -> dict[str, Any]:
@@ -185,8 +223,10 @@ def evaluate_citations(state: CitationInternalState) -> dict[str, Any]:
     :param state: 包含 `validated_input` 的内部工作流状态。
     :return: 更新 `evaluation_result` 的内部状态增量。
     """
+    logger.info("evaluate_citations_started")
     validated_input = state.get("validated_input")
     if validated_input is None:
+        logger.error("evaluate_citations_missing_validated_input")
         return {
             "validation_error": "Internal state missing 'validated_input'",
             "evaluation_result": None,
@@ -194,6 +234,15 @@ def evaluate_citations(state: CitationInternalState) -> dict[str, Any]:
     result = evaluate_references(
         manuscript_text=validated_input["manuscript_text"],
         bibliography=validated_input["bibliography"],
+    )
+    logger.info(
+        "evaluate_citations_completed",
+        extra={
+            "event_fields": {
+                "status": result.status.value,
+                "issue_count": len(result.issues),
+            }
+        },
     )
     return {
         "evaluation_result": result.model_dump(mode="json"),
@@ -206,6 +255,7 @@ def finalize_output(state: CitationInternalState) -> dict[str, Any]:
     :param state: 当前内部工作流状态。
     :return: 仅包含 `messages` 与 `structured_response` 的输出状态字典。
     """
+    logger.info("finalize_output_started")
     evaluation_result = state.get("evaluation_result")
     validation_error = state.get("validation_error")
     if validation_error is not None or evaluation_result is None:
@@ -213,12 +263,14 @@ def finalize_output(state: CitationInternalState) -> dict[str, Any]:
             "status": "invalid_input",
             "error": validation_error or "Citation evaluation did not produce a result",
         }
+        logger.warning("finalize_output_with_error")
         return {
             "messages": [AIMessage(content=json.dumps(error_payload, ensure_ascii=False))],
             "structured_response": error_payload,
         }
 
     verified = ReferenceCheckResult.model_validate(evaluation_result)
+    logger.info("finalize_output_success", extra={"event_fields": {"status": verified.status.value}})
     return {
         "messages": [AIMessage(content=verified.model_dump_json())],
         "structured_response": verified.model_dump(mode="json"),
@@ -239,6 +291,10 @@ def build_citation_workflow(
     :param checkpointer: 可选的检查点保存器或父图继承布尔标记。
     :return: 预编译的 `CompiledStateGraph` 实例。
     """
+    logger.info(
+        "build_citation_workflow_started",
+        extra={"event_fields": {"has_checkpointer": checkpointer is not None}},
+    )
     builder: StateGraph[Any, Any, Any, Any] = StateGraph(
         CitationInternalState,
         input_schema=CitationInputState,
@@ -260,7 +316,9 @@ def build_citation_workflow(
     builder.add_edge("evaluate_citations", "finalize_output")
     builder.add_edge("finalize_output", END)
 
-    return builder.compile(checkpointer=checkpointer, name=CITATION_WORKFLOW_NAME)
+    compiled = builder.compile(checkpointer=checkpointer, name=CITATION_WORKFLOW_NAME)
+    logger.info("build_citation_workflow_compiled")
+    return compiled
 
 
 # 导出模块级预编译 LangGraph 实例，可直接配置于 langgraph.json
@@ -276,6 +334,10 @@ def build_citation_workflow_contribution(
     :param mode: 可选强制指定的接入模式（默认随宿主 `workflow_mode` 自动解析）。
     :return: 经过三层状态模式校验的 `WorkflowContribution` 实例。
     """
+    logger.info(
+        "build_citation_workflow_contribution_started",
+        extra={"event_fields": {"mode": str(mode)}},
+    )
     return WorkflowContribution(
         name=CITATION_WORKFLOW_NAME,
         description=(

@@ -196,11 +196,21 @@ class AgentComposer:
         self.validate_workflows()
 
     def validate_workflows(self) -> None:
-        """Validate the complete contribution set, independently of loading order."""
+        """全局校验所有已注册工作流贡献的拓扑依赖关系，独立于插件加载顺序。
+
+        执行依赖拓扑排序与成环检测，确保没有缺失的前置工作流，且禁止异步模式声明复杂的依赖与幂等契约。
+        :raises ValueError: 当存在缺失依赖、循环依赖或异步模式配置违规时抛出。
+        """
+        logger.debug(
+            "workflow_validation_started",
+            extra={"event_fields": {"workflow_count": len(self.workflows)}},
+        )
         visiting: set[str] = set()
         visited: set[str] = set()
 
         def visit(name: str) -> None:
+            """深度优先遍历单个工作流节点，核验拓扑合法性。"""
+            logger.debug("validating_workflow_node", extra={"event_fields": {"workflow_name": name}})
             if name not in self.workflows:
                 raise ValueError(f"Missing workflow dependency: {name}")
             if name in visiting:
@@ -225,6 +235,7 @@ class AgentComposer:
 
         for name in self.workflows:
             visit(name)
+        logger.debug("workflow_validation_completed")
 
     def register_plugin(
         self,
@@ -646,14 +657,18 @@ def open_agent(
     store: BaseStore | None = None,
     prompt_overrides: dict[str, str] | None = None,
 ) -> Iterator[CompiledStateGraph[Any, RunContext, Any, Any]]:
-    """Own sync storage and optional plugin contexts; borrowed resources stay open.
+    """以同步上下文管理器形式构建并持有智能体实例与依赖的存储/追踪上下文。
 
-    :param settings: Host settings.
-    :param checkpointer: Optional caller-owned saver.
-    :param store: Optional caller-owned store.
-    :param prompt_overrides: Explicit main/plugin prompt overrides.
-    :return: Agent usable inside this context only.
+    若未显式传入 store 或 checkpointer，则由本上下文管理器自动创建并在退出时安全释放。
+
+    :param settings: 宿主运行配置对象。
+    :param checkpointer: 可选的外部检查点持久化器。
+    :param store: 可选的外部键值存储实例。
+    :param prompt_overrides: 可选的提示词覆盖字典。
+    :return: 仅在当前上下文内有效的智能体状态图实例迭代器。
+    :raises ValueError: 当配置了 MCP 服务却以同步方式调用时抛出（MCP 要求异步上下文）。
     """
+    logger.debug("open_agent_started")
     if settings.mcp_servers and not settings.supervisor_only:
         raise ValueError("MCP requires async with aopen_agent(settings)")
     with ExitStack() as stack:
@@ -670,15 +685,18 @@ def open_agent(
                 contributions[plugin.manifest.plugin_id] = stack.enter_context(hook(services))
             elif callable(getattr(plugin, "aopen", None)):
                 raise ValueError(f"Plugin '{plugin.manifest.plugin_id}' requires aopen_agent")
-        yield build_agent(
-            settings,
-            store=store,
-            checkpointer=checkpointer,
-            mcp_tools=(),
-            prompt_overrides=prompt_overrides,
-            plugins=plugins,
-            _contributions=contributions,
-        )
+        try:
+            yield build_agent(
+                settings,
+                store=store,
+                checkpointer=checkpointer,
+                mcp_tools=(),
+                prompt_overrides=prompt_overrides,
+                plugins=plugins,
+                _contributions=contributions,
+            )
+        finally:
+            logger.debug("open_agent_exiting")
 
 
 @asynccontextmanager
@@ -689,11 +707,19 @@ async def aopen_agent(
     store: BaseStore | None = None,
     prompt_overrides: dict[str, str] | None = None,
 ) -> AsyncIterator[CompiledStateGraph[Any, RunContext, Any, Any]]:
-    """管理 MCP 会话与缺省异步存储；在上下文内通过 ainvoke/astream 使用智能体。
+    """以异步上下文管理器形式构建并持有智能体实例、MCP 工具连接及异步存储生命周期。
 
+    管理 MCP 会话与缺省异步存储；在上下文内通过 ainvoke/astream 使用智能体。
     调用方提供的 store/checkpointer 仍由调用方关闭。MCP 连接在构建异常、运行异常、
     取消或正常退出时均释放；不得在另一个任务中退出此上下文。
+
+    :param settings: 宿主运行配置对象。
+    :param checkpointer: 可选的外部检查点持久化器。
+    :param store: 可选的外部键值存储实例。
+    :param prompt_overrides: 可选的提示词覆盖字典。
+    :return: 仅在当前上下文内有效的智能体状态图实例异步迭代器。
     """
+    logger.debug("aopen_agent_started")
     async with AsyncExitStack() as stack:
         stack.enter_context(tracing_session())
         if store is None:
@@ -715,15 +741,18 @@ async def aopen_agent(
                 )
             elif callable(hook := getattr(plugin, "open", None)):
                 contributions[plugin.manifest.plugin_id] = stack.enter_context(hook(services))
-        yield build_agent(
-            settings,
-            store=store,
-            checkpointer=checkpointer,
-            mcp_tools=tools,
-            prompt_overrides=prompt_overrides,
-            plugins=plugins,
-            _contributions=contributions,
-        )
+        try:
+            yield build_agent(
+                settings,
+                store=store,
+                checkpointer=checkpointer,
+                mcp_tools=tools,
+                prompt_overrides=prompt_overrides,
+                plugins=plugins,
+                _contributions=contributions,
+            )
+        finally:
+            logger.debug("aopen_agent_exiting")
 
 
 __all__ = [

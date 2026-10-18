@@ -62,6 +62,7 @@ class ResearchCitationToolkit(BaseToolkit):
 
         :return: 包含 scan_numeric 在内的 BaseTool 列表。
         """
+        logger.debug("research_citation_get_tools_called")
         return [scan_numeric]
 
 

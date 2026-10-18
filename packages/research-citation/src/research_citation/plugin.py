@@ -74,6 +74,10 @@ class ResearchCitationPlugin:
         :param workflow_mode: 可选的工作流接入模式覆盖（compiled 或 async）。
         :param include_tools: 是否同时导出技能门控工具（纯 Supervisor 模式下可设为 False）。
         """
+        logger.debug(
+            "citation_plugin_initialized",
+            extra={"event_fields": {"include_tools": include_tools}},
+        )
         self._workflow_mode = workflow_mode
         self._include_tools = include_tools
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from enum import StrEnum
 from pathlib import Path, PurePosixPath
 from typing import Annotated, Any, Literal
@@ -10,6 +11,8 @@ from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from vertical_harness.config.mcp import MCPServerConfig, MCPServerName
+
+logger = logging.getLogger(__name__)
 
 
 class StoreBackendType(StrEnum):
@@ -154,6 +157,16 @@ class HarnessSettings(BaseSettings):
         return root.with_name(f"{root.name}.runtime")
 
     def _check_legacy_database(self, filename: str, env_name: str) -> None:
+        """检查工作区是否存在旧版未隔离的 SQLite 数据库文件，提示显式迁移。
+
+        :param filename: 旧版数据库文件名（如 'store.sqlite'）。
+        :param env_name: 对应的显式环境变量名（如 'VA_STORE_DB_PATH'）。
+        :raises ValueError: 当工作区根目录下直接存在遗留数据库且未指定运行时数据目录时抛出。
+        """
+        logger.debug(
+            "checking_legacy_database",
+            extra={"event_fields": {"filename": filename, "env_name": env_name}},
+        )
         if self.runtime_data_dir is None and (self.resolved_workspace_root / filename).exists():
             raise ValueError(
                 f"Legacy {filename} exists in workspace; back it up and migrate, or explicitly set {env_name}. No data was moved."
@@ -161,10 +174,17 @@ class HarnessSettings(BaseSettings):
 
     @model_validator(mode="after")
     def _validate_configuration(self) -> HarnessSettings:
+        """配置后置整体校验：确保动态模型成对配置、已配置插件均在启用白名单中。
+
+        :return: 校验通过的当前配置实例。
+        :raises ValueError: 当动态模型未成对配置或存在未启用插件的孤立配置时抛出。
+        """
+        logger.debug("validating_harness_configuration")
         if bool(self.economy_model) != bool(self.quality_model):
             raise ValueError("Both VA_ECONOMY_MODEL and VA_QUALITY_MODEL must be set")
         if unknown := self.plugin_config.keys() - set(self.enabled_plugins):
             raise ValueError(f"Configuration for disabled plugins: {sorted(unknown)}")
+        logger.debug("harness_configuration_validated")
         return self
 
     @property

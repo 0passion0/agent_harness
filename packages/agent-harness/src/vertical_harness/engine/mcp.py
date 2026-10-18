@@ -79,7 +79,15 @@ async def aopen_mcp_tools(settings: HarnessSettings) -> AsyncIterator[list[ToolC
 def mcp_skill_assets(
     settings: HarnessSettings, contributions: Iterable[ToolContribution]
 ) -> list[SkillAsset]:
-    """Describe each deferred integration once; native SkillsMiddleware loads its schemas."""
+    """为延迟暴露（SKILL 级别）的 MCP 工具组生成标准 Deep Agents 技能资产定义。
+
+    由原生的 SkillsMiddleware 读取生成的 SKILL.md 声明并在需要时动态加载工具 Schema。
+
+    :param settings: 包含 MCP 声明的宿主配置实例。
+    :param contributions: 包含 MCP 工具元数据的工具贡献迭代器。
+    :return: 生成的 SkillAsset 实例列表。
+    """
+    logger.debug("generating_mcp_skill_assets_started")
     groups: dict[str, list[ToolContribution]] = {}
     for item in contributions:
         server = (item.tool.metadata or {}).get("harness_mcp_server")
@@ -113,6 +121,10 @@ def mcp_skill_assets(
                 )
             ),
         ))
+    logger.debug(
+        "generating_mcp_skill_assets_completed",
+        extra={"event_fields": {"generated_skills_count": len(skills)}},
+    )
     return skills
 
 

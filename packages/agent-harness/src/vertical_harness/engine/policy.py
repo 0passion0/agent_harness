@@ -49,6 +49,10 @@ class SupervisorStage(StrEnum):
 
 def _idempotency_key(subagent_type: str, description: str) -> str:
     """计算 (工作流名称, 任务描述) 的确定性 SHA-256 幂等摘要键。"""
+    logger.debug(
+        "calculating_idempotency_key",
+        extra={"event_fields": {"subagent_type": subagent_type}},
+    )
     payload = f"{subagent_type}::{description.strip()}".encode()
     return hashlib.sha256(payload).hexdigest()
 
@@ -58,6 +62,7 @@ def _extract_tool_message(
     tool_call_id: str | None,
 ) -> ToolMessage | None:
     """从工具执行返回值（ToolMessage 或 LangGraph Command）中提取对应的 ToolMessage。"""
+    logger.debug("extracting_tool_message")
     if isinstance(result, ToolMessage):
         return result
     if isinstance(result, Command) and isinstance(result.update, dict):
@@ -79,6 +84,7 @@ def _inspect_history(
     通过直接从 `state["messages"]` 派生历史状态，保证在执行 Time Travel 或 Checkpoint Fork
     回溯到任意历史节点时，监督策略状态与检查点严格一致。
     """
+    logger.debug("inspecting_supervisor_history_started")
     call_meta: dict[str, tuple[str, str, str]] = {}
     for msg in messages:
         if not isinstance(msg, AIMessage) or not msg.tool_calls:
@@ -123,6 +129,15 @@ def _inspect_history(
             completed_workflows.add(subagent_type)
             idempotent_cache[_idempotency_key(subagent_type, description)] = content
 
+    logger.debug(
+        "inspecting_supervisor_history_completed",
+        extra={
+            "event_fields": {
+                "completed_workflows_count": len(completed_workflows),
+                "idempotent_cached_count": len(idempotent_cache),
+            }
+        },
+    )
     return dispatch_counts, completed_workflows, idempotent_cache
 
 
@@ -130,6 +145,7 @@ def _normalize_workflow_map(
     workflows: Mapping[str, WorkflowContribution] | Sequence[WorkflowContribution],
 ) -> dict[str, WorkflowContribution]:
     """将工作流字典或序列统一规范化为 {name: WorkflowContribution} 字典。"""
+    logger.debug("normalizing_workflow_map")
     if isinstance(workflows, Mapping):
         return dict(workflows)
     return {wf.name: wf for wf in workflows}
@@ -137,8 +153,10 @@ def _normalize_workflow_map(
 
 def _make_workflow_interrupt_predicate(allowed: frozenset[str]) -> Any:
     """构造同时兼容 ToolInterruptPredicate(tool_call, state, runtime) 与 ToolCallRequest 的审批谓词。"""
+    logger.debug("creating_workflow_interrupt_predicate")
 
     def _predicate(first: Any, *_rest: Any) -> bool:
+        logger.debug("evaluating_workflow_interrupt_predicate")
         tool_call = getattr(first, "tool_call", first)
         if not isinstance(tool_call, Mapping):
             return False
@@ -237,7 +255,13 @@ class SupervisorPolicyMiddleware(AgentMiddleware[Any, RunContext, Any]):
     def wrap_model_call(
         self, request: ModelRequest, handler: Callable[..., ModelResponse]
     ) -> ModelResponse:
-        """Hide direct capabilities forbidden by this agent's composition."""
+        """同步拦截模型请求，过滤受限工具能力。
+
+        :param request: 模型调用请求对象。
+        :param handler: 下游调用处理器函数。
+        :return: 模型响应对象。
+        """
+        logger.debug("supervisor_wrapping_model_call_sync")
         return handler(
             request.override(
                 tools=[
@@ -253,7 +277,13 @@ class SupervisorPolicyMiddleware(AgentMiddleware[Any, RunContext, Any]):
         request: ModelRequest,
         handler: Callable[..., Awaitable[ModelResponse]],
     ) -> ModelResponse:
-        """Apply the same capability filter to async model calls."""
+        """异步拦截模型请求，过滤受限工具能力。
+
+        :param request: 模型调用请求对象。
+        :param handler: 下游异步调用处理器函数。
+        :return: 模型响应对象。
+        """
+        logger.debug("supervisor_wrapping_model_call_async")
         return await handler(
             request.override(
                 tools=[
@@ -590,6 +620,7 @@ class SupervisorPolicyMiddleware(AgentMiddleware[Any, RunContext, Any]):
         handler: Callable[[ToolCallRequest], ToolMessage | Command[Any]],
     ) -> ToolMessage | Command[Any]:
         """同步拦截并监督工作流委派与结果验收。"""
+        logger.debug("supervisor_wrapping_tool_call_sync")
         short_circuit = self._pre_dispatch_check(request)
         if short_circuit is not None:
             return short_circuit.model_copy(
@@ -604,6 +635,7 @@ class SupervisorPolicyMiddleware(AgentMiddleware[Any, RunContext, Any]):
         handler: Callable[[ToolCallRequest], Awaitable[ToolMessage | Command[Any]]],
     ) -> ToolMessage | Command[Any]:
         """异步拦截并监督工作流委派与结果验收。"""
+        logger.debug("supervisor_wrapping_tool_call_async")
         short_circuit = self._pre_dispatch_check(request)
         if short_circuit is not None:
             return short_circuit.model_copy(
@@ -615,6 +647,13 @@ class SupervisorPolicyMiddleware(AgentMiddleware[Any, RunContext, Any]):
     def _mark_dispatch(
         self, request: ToolCallRequest, result: ToolMessage | Command[Any]
     ) -> ToolMessage | Command[Any]:
+        """为通过委派的工作流调用结果标记 dispatched=True 元数据。
+
+        :param request: 原始工具调用请求对象。
+        :param result: 工具执行输出对象。
+        :return: 注入元数据标记后的更新结果对象。
+        """
+        logger.debug("supervisor_marking_dispatch")
         if request.tool_call.get("name") not in _DISPATCH_TOOLS:
             return result
         msg = _extract_tool_message(result, request.tool_call.get("id"))

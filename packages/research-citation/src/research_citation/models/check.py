@@ -47,7 +47,12 @@ class ReferenceCheckInput(BaseModel):
     @field_validator("manuscript_text")
     @classmethod
     def validate_numeric_citations(cls, value: str) -> str:
-        """Reject unsupported numeric identifiers before tool/workflow execution."""
+        """在工具或工作流执行前预解析并校验手稿正文中的数字引用格式。
+
+        :param value: 待校验的手稿纯文本。
+        :return: 校验通过的手稿纯文本。
+        :raises ValueError: 当引用包含非法或超长数字标号时抛出。
+        """
         from research_citation.checker.parser import extract_cited_indices
 
         extract_cited_indices(value)

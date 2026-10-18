@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import math
 from collections.abc import AsyncIterator
 from contextlib import aclosing
@@ -17,6 +18,7 @@ from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter
 
 from vertical_harness.plugins.contracts import RunContext
 
+logger = logging.getLogger(__name__)
 _JSON = TypeAdapter(JsonValue)
 
 
@@ -116,6 +118,14 @@ def _project(
 
 
 def _run_timeout(agent: CompiledStateGraph, timeout_seconds: float | None) -> float:
+    """计算智能体调用的超时秒数阈值。
+
+    :param agent: 已编译的状态图实例。
+    :param timeout_seconds: 显式传入的可选超时时间。
+    :return: 经过有效性校验的有限正浮点数超时时间。
+    :raises ValueError: 当超时数值非正或非有限数时抛出。
+    """
+    logger.debug("calculating_run_timeout")
     timeout = (
         timeout_seconds
         if timeout_seconds is not None
@@ -135,23 +145,26 @@ async def ainvoke_agent(
     durability: Literal["sync", "async", "exit"] = "sync",
     timeout_seconds: float | None = None,
 ) -> Any:
-    """Invoke a native graph with a host-owned deadline, fresh on approval resume.
+    """在宿主控制的超时截止时限内异步调用原生编译状态图，支持人机审批恢复。
 
-    :param agent: Native graph; raw ainvoke callers must own their own deadline.
-    :param inputs: Messages, resume command, or None.
-    :param config: Caller's checkpoint/callback configuration.
-    :param context: Trusted identity.
-    :param durability: Native checkpoint durability.
-    :param timeout_seconds: Override the configured invocation timeout.
-    :return: Native graph output.
+    :param agent: 原生编译状态图对象。
+    :param inputs: 提示词消息字典、恢复执行 Command 或 None。
+    :param config: 调用方传入的检查点与回调配置。
+    :param context: 可信身份与租户上下文。
+    :param durability: 检查点持久化同步级别。
+    :param timeout_seconds: 覆盖默认调用超时的秒数。
+    :return: 智能体图执行的最终状态输出。
     """
+    logger.debug("ainvoke_agent_started")
     async with asyncio.timeout(_run_timeout(agent, timeout_seconds)):
-        return await agent.ainvoke(
+        result = await agent.ainvoke(
             inputs,
             config=config,
             context=context,
             durability=durability if agent.checkpointer else None,
         )
+    logger.debug("ainvoke_agent_completed")
+    return result
 
 
 async def astream_agent(
@@ -168,7 +181,17 @@ async def astream_agent(
     config 必须提供 thread_id；保留调用方 callbacks、checkpoint 等配置。
     失败先发送 run.failed 再重新抛出异常。取消原样传播；消费者提前停止时须
     使用 aclosing，确保底层执行被取消。Agent/MCP/store 由外层 aopen_agent 管理。
+
+    :param agent: 原生编译状态图对象。
+    :param inputs: 消息载荷或中断恢复指令。
+    :param config: 必须包含 thread_id 的 RunnableConfig 字典。
+    :param context: 可信运行时身份。
+    :param durability: 检查点持久化同步级别。
+    :param timeout_seconds: 执行超时秒数。
+    :return: 投影后的 StreamEvent 异步事件流迭代器。
+    :raises ValueError: 当缺少 thread_id 时抛出。
     """
+    logger.debug("astream_agent_started")
     thread_id = config.get("configurable", {}).get("thread_id")
     if not isinstance(thread_id, str) or not thread_id.strip():
         raise ValueError("Streaming requires a nonempty string thread_id")
@@ -212,6 +235,7 @@ async def astream_agent(
                     node=metadata.get("langgraph_node"),
                     data=data,
                 )
+        logger.debug("astream_agent_completed", extra={"event_fields": {"events_count": seq}})
     except Exception as exc:
         yield StreamEvent(
             type="run.failed",

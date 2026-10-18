@@ -36,11 +36,23 @@ _MEMORY_NOTICE = (
 
 
 def _memory_json(value: Any) -> str:
+    """将记忆数据结构紧凑序列化为 JSON 字符串。
+
+    :param value: 待序列化的数据对象。
+    :return: 紧凑的 JSON 字符串。
+    """
+    logger.debug("serializing_memory_json")
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
 
 
 async def _run_sync_owned(function: Callable, *args: Any) -> Any:
-    """Drain an in-flight worker before releasing its store, preserving cancellation."""
+    """在释放存储前排空执行中的异步工作任务，同时保留取消语义。
+
+    :param function: 同步可调用目标函数。
+    :param args: 传递给函数的参数。
+    :return: 函数执行的返回结果。
+    """
+    logger.debug("running_sync_owned_task")
     task = asyncio.create_task(asyncio.to_thread(function, *args))
     try:
         return await asyncio.shield(task)
@@ -84,6 +96,13 @@ _INSTRUCTIONS = (
 
 
 def _namespace(runtime: Any) -> tuple[str, ...]:
+    """从运行时上下文派生确定性且防冲突的记忆命名空间元组。
+
+    :param runtime: 包含 context 的 LangGraph 运行时对象。
+    :return: 哈希后的命名空间元组。
+    :raises ValueError: 当缺少有效的租户 ID 或用户 ID 时抛出。
+    """
+    logger.debug("deriving_memory_namespace")
     context = runtime.context
     # 摘要避免 SQLite 分隔符冲突及清洗导致的不同租户/用户 ID 碰撞。
     ids = (getattr(context, "tenant_id", None), getattr(context, "user_id", None))
@@ -93,6 +112,16 @@ def _namespace(runtime: Any) -> tuple[str, ...]:
 
 
 def _manager(settings: HarnessSettings, schema: type[BaseModel]) -> Any:
+    """初始化 LangMem 记忆提取管理器实例。
+
+    :param settings: 宿主配置对象。
+    :param schema: 记忆提取目标 Pydantic 模型类。
+    :return: LangMem 记忆管理器对象。
+    """
+    logger.debug(
+        "creating_memory_manager",
+        extra={"event_fields": {"schema_name": schema.__name__}},
+    )
     return create_memory_manager(
         init_configured_model(settings, settings.memory_model),
         schemas=[schema],
@@ -104,6 +133,19 @@ def _manager(settings: HarnessSettings, schema: type[BaseModel]) -> Any:
 
 
 def _extract(manager: Any, schema: type[BaseModel], previous: Any, texts: list[str]) -> dict:
+    """调用记忆管理器从文本集合中提取更新后的用户档案字典。
+
+    :param manager: LangMem 管理器实例。
+    :param schema: 目标模式类。
+    :param previous: 现存的历史档案记录。
+    :param texts: 新增的待整合文本列表。
+    :return: 序列化后的更新档案字典。
+    :raises ValueError: 当提取结果为空或非唯一个案时抛出。
+    """
+    logger.debug(
+        "extracting_memory_profile",
+        extra={"event_fields": {"text_count": len(texts), "schema_name": schema.__name__}},
+    )
     profile = schema.model_validate(previous.value if previous else {})
     results = manager.invoke(
         {
@@ -135,15 +177,32 @@ class UserMemoryMiddleware(AgentMiddleware):
         )]
 
     def _read_knowledge(self, runtime: ToolRuntime[RunContext]) -> str:
+        """从 Store 读取当前用户的长期事实知识。
+
+        :param runtime: 工具运行时上下文。
+        :return: 包含未受信任记忆声明前缀的用户长期知识 JSON 字符串。
+        """
+        logger.debug("reading_user_knowledge")
         item = self.store.get((*_namespace(runtime), "knowledge"), "profile")
         text = _memory_json(item.value if item else {"facts": []})
         return _MEMORY_NOTICE + text
 
     async def _aread_knowledge(self, runtime: ToolRuntime[RunContext]) -> str:
+        """异步从 Store 读取当前用户的长期事实知识。
+
+        :param runtime: 工具运行时上下文。
+        :return: 用户长期事实知识文本。
+        """
+        logger.debug("reading_user_knowledge_async")
         return await _run_sync_owned(self._read_knowledge, runtime)
 
     def before_agent(self, state: Any, runtime: Any) -> None:
-        """Keep optional learning failures from blocking the main task."""
+        """在智能体开始处理当前轮次前异步采集用户消息，避免记忆故障阻断主链路。
+
+        :param state: 当前会话状态对象。
+        :param runtime: 运行时上下文。
+        """
+        logger.debug("memory_before_agent_started")
         if not (self.settings.enable_user_preferences or self.settings.enable_memory_consolidation):
             return
         _namespace(runtime)
@@ -156,6 +215,12 @@ class UserMemoryMiddleware(AgentMiddleware):
             )
 
     def _capture(self, state: Any, runtime: Any) -> None:
+        """从状态消息中捕获新增的用户连续输入，排重并切块存入收件箱待整合。
+
+        :param state: 包含 messages 的状态字典。
+        :param runtime: 运行时上下文。
+        """
+        logger.debug("memory_capture_started")
         if not (self.settings.enable_user_preferences or self.settings.enable_memory_consolidation):
             return
         ns = _namespace(runtime)
@@ -218,10 +283,21 @@ class UserMemoryMiddleware(AgentMiddleware):
             self.store.put((*ns, "schedule"), "receipts", {"next_due": time.time() + 86_400})
 
     async def abefore_agent(self, state: Any, runtime: Any) -> None:
-        # AsyncSqliteStore 的同步桥接只能在其事件循环以外调用。
+        """异步入口：在当前轮次处理前执行记忆捕获，内部通过线程池桥接同步 Store。
+
+        :param state: 会话状态字典。
+        :param runtime: 运行时上下文。
+        """
+        logger.debug("memory_abefore_agent_started")
         await _run_sync_owned(self.before_agent, state, runtime)
 
     def _recall(self, request: ModelRequest) -> ModelRequest:
+        """根据当前调用租户与用户身份，检索长期事实或偏好并注入模型系统提示词。
+
+        :param request: 原始模型调用请求对象。
+        :return: 包含长期记忆提示注入的更新后模型请求对象。
+        """
+        logger.debug("memory_recall_started")
         context = {}
         deferred = False
         if request.runtime.context is not None:
@@ -263,17 +339,45 @@ class UserMemoryMiddleware(AgentMiddleware):
         return request.override(system_message=SystemMessage(content=blocks))
 
     def wrap_model_call(self, request: ModelRequest, handler: Callable) -> ModelResponse:
+        """同步包装模型调用，注入记忆上下文。
+
+        :param request: 模型请求对象。
+        :param handler: 下游调用处理器。
+        :return: 模型调用响应。
+        """
+        logger.debug("memory_wrap_model_call")
         return handler(self._recall(request))
 
     async def awrap_model_call(self, request: ModelRequest, handler: Callable) -> ModelResponse:
+        """异步包装模型调用，注入记忆上下文。
+
+        :param request: 模型请求对象。
+        :param handler: 下游异步调用处理器。
+        :return: 模型调用响应。
+        """
+        logger.debug("memory_awrap_model_call")
         return await handler(await _run_sync_owned(self._recall, request))
 
 
 def _next_due(settings: HarnessSettings) -> float:
+    """根据配置的整合间隔天数计算下一次记忆归纳执行时间戳。
+
+    :param settings: 宿主配置实例。
+    :return: 下次执行的 UNIX 秒级时间戳。
+    """
+    logger.debug("calculating_next_due")
     return time.time() + settings.memory_consolidation_interval_days * 86_400
 
 
 def _pending_events(store: BaseStore, ns: tuple[str, ...]) -> list[Any]:
+    """查询指定命名空间中待处理的记忆事件列表，按时间戳从旧到新排序。
+
+    :param store: BaseStore 存储实例。
+    :param ns: 命名空间元组。
+    :return: 最多 50 个按时间排序的待处理事件项列表。
+    """
+    logger.debug("querying_pending_events")
+
     def events():
         offset = 0
         while page := store.search(ns, limit=100, offset=offset):
@@ -290,6 +394,13 @@ def _pending_events(store: BaseStore, ns: tuple[str, ...]) -> list[Any]:
 
 
 def _prune_receipts(settings: HarnessSettings, store: BaseStore, ns: tuple[str, ...]) -> None:
+    """清理已过期且已完全整合的旧记忆回执。
+
+    :param settings: 宿主配置对象。
+    :param store: BaseStore 存储实例。
+    :param ns: 用户的命名空间前缀。
+    """
+    logger.debug("pruning_memory_receipts")
     cutoff = time.time_ns() - settings.memory_event_retention_days * 86_400 * 1_000_000_000
     events = (*ns, "events")
     offset = 0
@@ -309,6 +420,12 @@ def _prune_receipts(settings: HarnessSettings, store: BaseStore, ns: tuple[str, 
 
 
 def _batch(events: list[Any]) -> list[Any]:
+    """将事件列表分批，限制单批次最大字符量与事件数量上限。
+
+    :param events: 原始事件列表。
+    :return: 当前可处理的批次事件子集。
+    """
+    logger.debug("batching_memory_events")
     batch = []
     size = 0
     for event in events:
@@ -320,7 +437,14 @@ def _batch(events: list[Any]) -> list[Any]:
 
 
 def consolidate_memories(settings: HarnessSettings, store: BaseStore) -> int:
-    """处理所有已到期用户，成功批次原子保存摘要和进度；返回处理事件数。"""
+    """处理所有已到期用户，成功批次原子保存摘要和进度；返回处理事件数。
+
+    :param settings: 宿主配置对象。
+    :param store: BaseStore 存储实例。
+    :return: 本次成功归纳整合的事件总数。
+    :raises RuntimeError: 当部分用户记忆归纳处理失败时抛出。
+    """
+    logger.info("memory_consolidation_started")
     if not settings.enable_memory or not settings.enable_memory_consolidation:
         return 0
     # 先完成分页发现，防止处理过程中修改 namespace 导致跳页。
@@ -373,7 +497,13 @@ def consolidate_memories(settings: HarnessSettings, store: BaseStore) -> int:
 
 
 def run_memory_worker(settings: HarnessSettings, *, once: bool = False) -> None:
-    """独立进程；每分钟检查持久化周计划，不依赖对话进程存活。"""
+    """独立进程；每分钟检查持久化周计划，不依赖对话进程存活。
+
+    :param settings: 宿主配置对象。
+    :param once: 若为 True 则仅轮询执行一次即退出，适合外部调度系统（如 cron）。
+    :raises ValueError: 当记忆未启用或使用了纯内存后端时抛出。
+    """
+    logger.info("memory_worker_started", extra={"event_fields": {"once": once}})
     if not settings.enable_memory or not settings.enable_memory_consolidation:
         raise ValueError("Memory worker requires enabled memory and memory consolidation")
     if settings.store_backend == "memory" or settings.resolved_store_target == ":memory:":
