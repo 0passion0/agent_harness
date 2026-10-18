@@ -1,17 +1,17 @@
 ---
 type: concept
 title: 测试架构与质量保证
-description: 分析基于 pytest 的契约单元测试、安全防御校验（防目录穿越与严格模式）及 SQLite 存储生命周期回归测试。
+description: 分析基于 pytest 的契约单元测试、解析器与 Toolkit 集成测试、安全防御校验（防目录穿越与严格模式）及 SQLite 存储生命周期回归测试。
 tags: [testing, pytest, quality-assurance, regression, contracts]
-verified:
-  - by: openwiki/0.7.2
-    at: 2026-10-18T03:23:43.651Z
 sources:
   - id: openwiki-source-83ccb301171788f9ae087a4a
     resource: repo://tests/test_schema.py
   - id: openwiki-source-09d2a8f36f3ecb7ab9487ab2
     resource: repo://tests/test_store.py
-generated: { by: "antigravity", at: "2026-10-18T03:23:43.651Z" }
+generated: { by: "antigravity", at: "2026-10-18T04:37:34.297Z" }
+verified:
+  - by: openwiki/0.7.2
+    at: 2026-10-18T06:56:09.371Z
 ---
 
 # 测试架构与质量保证
@@ -24,7 +24,7 @@ generated: { by: "antigravity", at: "2026-10-18T03:23:43.651Z" }
 
 ```text
 tests/
-├── test_schema.py    # 数据契约、输入校验、安全防御与配置测试
+├── test_schema.py    # 数据契约、解析器与 Toolkit 集成、安全防御与配置测试
 └── test_store.py     # 原生 SQLite 存储生命周期、异步操作与复合后端隔离测试
 ```
 
@@ -33,21 +33,26 @@ tests/
 pytest -q
 ```
 
-## 2. 数据契约与安全防御测试 (`test_schema.py`)
+## 2. 数据契约、组件集成与安全防御测试 (`test_schema.py`)
 
-在 [tests/test_schema.py](../../tests/test_schema.py) 中，针对系统边界定义了多组关键回归测试：
+在 [tests/test_schema.py](../../tests/test_schema.py) 中，针对系统边界与子包协同定义了多组关键回归测试：
 
-### 2.1 严格输入防御 (Fail-Closed)
+### 2.1 严格输入防御与引用核查 (`test_schema_rejects_extras` / `test_reference_mismatch`)
 - **拒绝未知字段 (`test_schema_rejects_extras`)**：验证当外部向 `ReferenceCheckInput` 传入未声明字段（如 `unexpected=True`）时，Pydantic 必须抛出 `ValidationError`，防范非预期参数注入。
-- **引用异常精准捕获 (`test_reference_mismatch`)**：传入正文引用 `[1]` 与 `[3]`、但参考文献列表仅有 2 篇的输入样本，断言状态判定为 `issues`，且精确包含 `("out_of_range", 3)` 与 `("uncited", 2)`。
+- **引用异常精准捕获 (`test_reference_mismatch`)**：传入正文引用 `[1]` 与 `[3]`、但参考文献列表仅有 2 篇的输入样本调用 `scan_numeric`，断言状态判定为 `CheckStatus.ISSUES`，且精确捕获 `(IssueKind.OUT_OF_RANGE, 3)` 与 `(IssueKind.UNCITED, 2)`。
 
-### 2.2 防目录遍历与标识符校验 (`test_plugin_contract`)
+### 2.2 解析器、Toolkit 与 `AgentComposer` 集成 (`test_citation_parser_and_toolkit_integration`)
+- **纯函数解析与评估验证**：断言 `extract_cited_indices("Refs [1, 3-5] and [2].")` 输出 `[1, 2, 3, 4, 5]`，且 `evaluate_references` 在引用完全匹配时返回 `CheckStatus.PASSED`。
+- **`BaseToolkit` 批量包装与 HITL 中断验证**：验证 `ToolContribution.from_toolkit(ResearchCitationToolkit(), effect=SideEffect.WRITE, exposure=Exposure.EAGER)` 自动将 `requires_approval` 置为 `True`，并生成 `{"allowed_decisions": ["approve", "reject"]}` 中断配置。
+- **`AgentComposer` 插件注册验证**：验证 `ResearchCitationPlugin` 满足 `@runtime_checkable` 的 `DomainPlugin` 协议，且注册到 `AgentComposer` 后成功将门控工具归入 `gated_tools`，并将技能文件挂载至 `/skills/research-citations-numeric-citation-audit/SKILL.md`。
+
+### 2.3 防目录遍历与标识符校验 (`test_plugin_contract`)
 - **恶意插件 ID 拦截**：断言包含路径遍历字符的插件标识符（如 `../../evil`）无法通过 `PluginManifest` 校验。
 - **恶意技能路径拦截**：断言包含 `..` 相对跳转符的技能路径（如 `../hack/SKILL.md`）必须被 `SkillAsset` 字段校验器拦截，防止攻击者读取或覆盖宿主私有文件。
 
-### 2.3 业务规则与模型配置测试
+### 2.4 业务规则、模型显式配置与 CLI 验证
 - **已核实结论必须有证据 (`test_verified_finding_requires_evidence`)**：验证 `AuditFinding` 当 `status="verified"` 时若证据为空，必须抛出校验异常。
-- **模型显式配置检查 (`test_settings_require_explicit_model`)**：在清除环境变量 `VA_MODEL` 的情况下，实例化 `HarnessSettings` 必须因缺少必填项而报错，禁止静默回退到默认模型。
+- **模型显式配置与 CLI 插件列表 (`test_settings_require_explicit_model`)**：在清除环境变量 `VA_MODEL` 的情况下，实例化 `HarnessSettings` 必须因缺少必填项而报错，禁止静默回退到默认模型；显式配置后验证 `model_init_kwargs` 解包行为，并通过 `cli_main(["--list-plugins"])` 验证 CLI 正常输出 `research.citations` 插件清单。
 
 ## 3. 存储生命周期与隔离测试 (`test_store.py`)
 

@@ -1,10 +1,33 @@
 """学术引用数据契约、输入校验与工具输出的单元测试模块。"""
 
+from pathlib import Path
+
 import pytest
 from pydantic import ValidationError
-from research_citation.schemas import ReferenceCheckInput, ReferenceCheckResult
-from research_citation.tools import scan_numeric
-from vertical_harness.contracts import PluginManifest, SkillAsset
+
+from research_citation import (
+    CheckStatus,
+    IssueKind,
+    ReferenceCheckInput,
+    ReferenceCheckResult,
+    ResearchCitationPlugin,
+    ResearchCitationToolkit,
+    evaluate_references,
+    extract_cited_indices,
+    scan_numeric,
+)
+from vertical_harness import (
+    AgentComposer,
+    BuildServices,
+    DomainPlugin,
+    Exposure,
+    HarnessSettings,
+    PluginManifest,
+    SideEffect,
+    SkillAsset,
+    ToolContribution,
+)
+from vertical_harness.cli import main as cli_main
 
 
 def test_schema_rejects_extras():
@@ -30,9 +53,38 @@ def test_reference_mismatch():
     result = ReferenceCheckResult.model_validate_json(text)
 
     # 验证状态应判定为存在问题（issues）
-    assert result.status == "issues"
+    assert result.status == CheckStatus.ISSUES
     # 索引 3 超出范围（out_of_range），索引 2 未被正文引用（uncited）
-    assert {(i.kind, i.index) for i in result.issues} == {("out_of_range", 3), ("uncited", 2)}
+    assert {(i.kind, i.index) for i in result.issues} == {
+        (IssueKind.OUT_OF_RANGE, 3),
+        (IssueKind.UNCITED, 2),
+    }
+
+
+def test_citation_parser_and_toolkit_integration(tmp_path: Path):
+    """测试函数式引用解析器、LangChain BaseToolkit 导出与 AgentComposer 插件聚合。"""
+    assert extract_cited_indices("Refs [1, 3-5] and [2].") == [1, 2, 3, 4, 5]
+    passed = evaluate_references("Refs [1-2].", ["Ref 1", "Ref 2"])
+    assert passed.status == CheckStatus.PASSED
+
+    toolkit = ResearchCitationToolkit()
+    contributions = ToolContribution.from_toolkit(
+        toolkit,
+        effect=SideEffect.WRITE,
+        exposure=Exposure.EAGER,
+    )
+    assert len(contributions) == 1
+    assert contributions[0].requires_approval is True
+    assert contributions[0].to_interrupt_config() == {"allowed_decisions": ["approve", "reject"]}
+
+    plugin = ResearchCitationPlugin()
+    assert isinstance(plugin, DomainPlugin)
+
+    settings = HarnessSettings(_env_file=None, model="deepseek:deepseek-chat", workspace_root=tmp_path)
+    composer = AgentComposer(settings=settings)
+    composer.register_plugin(plugin, BuildServices(workspace_root=tmp_path))
+    assert len(composer.gated_tools) == 1
+    assert composer.uploads[0][0] == "/skills/research-citations-numeric-citation-audit/SKILL.md"
 
 
 def test_plugin_contract():
@@ -56,22 +108,20 @@ def test_verified_finding_requires_evidence():
     :return: None
     :raises AssertionError: 当缺少证据的已核实结论未触发 ValidationError 时触发断言失败。
     """
-    from research_citation.report import AuditFinding
+    from research_citation import AuditFinding
 
     # 状态为 'verified' 但证据列表为空，必须校验失败并抛出异常
     with pytest.raises(ValidationError):
         AuditFinding(claim="Citation claim", status="verified", evidence=[])
 
 
-def test_settings_require_explicit_model(monkeypatch):
+def test_settings_require_explicit_model(monkeypatch, capsys):
     """测试 LLM 模型必须显式通过环境或参数配置，绝不能悄悄回退到硬编码默认值。
 
     :param monkeypatch: pytest 提供的环境变量与对象修改测试夹具。
     :return: None
     :raises AssertionError: 当环境变量配置或模型属性断言失败时触发。
     """
-    from vertical_harness.settings import HarnessSettings
-
     # 清除 VA_MODEL 环境变量，模拟完全未配置模型的情况
     monkeypatch.delenv("VA_MODEL", raising=False)
     # 此时实例化 HarnessSettings 必须因缺少必填项 model 而报错
@@ -89,6 +139,14 @@ def test_settings_require_explicit_model(monkeypatch):
     assert settings.model == "deepseek:deepseek-flash"
     assert settings.api_key is not None and settings.api_key.get_secret_value() == "sk-test"
     assert settings.base_url == "https://api.deepseek.com"
+    assert settings.model_init_kwargs == {
+        "api_key": "sk-test",
+        "base_url": "https://api.deepseek.com",
+    }
+
+    monkeypatch.setenv("VA_MODEL", "deepseek:deepseek-flash")
+    cli_main(["--list-plugins"])
+    assert "research.citations" in capsys.readouterr().out
 
 
 

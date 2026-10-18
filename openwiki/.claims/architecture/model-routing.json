@@ -1,40 +1,48 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:2678a35185c6eb956d9c9920e83e29952f68742c854ca32ec58b1252a90a6c9b",
+  "pageVersion": "sha256:b604a17383e14dea010a1ea432eb01b4846f29a496598447a7629a4f00db534c",
   "claims": [
     {
       "id": "claim_6467ab64523a43faaf57ff219e85441d",
-      "statement": "make_router 检查 VA_ECONOMY_MODEL 与 VA_QUALITY_MODEL，若两者均未配置则返回 None，若仅配置其一则抛出 ValueError，保证配置成对生效。",
+      "statement": "make_router 通过 settings.has_dynamic_routing 检查 VA_ECONOMY_MODEL 与 VA_QUALITY_MODEL，若两者均未配置则返回 None，若仅配置其一则抛出 ValueError，保证配置成对生效。",
       "evidence": [
         {
-          "resource": "repo://packages/agent-harness/src/vertical_harness/routing.py#L31-L44",
-          "version": "repo-lines-v1:sha256:8e827b48754acd761f15cc499c8a52e7aeed0bfa716e86bfab8d9956c6cc8763:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjljYjRmZTFlNGI5ODYwY2I0ZWUyNDZkMTM0NWVkYzlmNWI3YzA1OWFkYWQ0MGNjZDBlNTkyNTA3NTJjY2YyODIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQyZWQ5YmM4OGVlZTM4ZTM1YmQ4OTllODk2YmQyYmJkODU3MThlMzMxNzdjYzkyMDdlZmNlY2ExYTA5MWE1ODIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM2ZmM1MGNhNzlhN2I1MmQ4N2RmNzJiZjliMzRlNGIyNTIzNmEyYjliNTU3OGQ4N2UwMzgxNjJjZGRlNDI4NGIifQ"
+          "resource": "repo://packages/agent-harness/src/vertical_harness/config/settings.py#L111-L122",
+          "version": "repo-lines-v1:sha256:2a4314de2610df74e358f631ce509019265f3fa8b99b72e0b92b313eb9e96355:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYzZDAwY2YyNzA5NjRkNDRhMTNkZmFjODc1MmIwOWZjYzQzNWIwZjE5YjMxNmFiY2Y4MWE3YWE2NGJiMTIyZDYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFmNjRjZjMyOTdhODRlOGYzNDBjNGU2MTc4ZDdlMGFmODY2YTY2YzE1NDBlODE2NmNjOTg2OTI5ZWE3MDViMjUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImI0YWI0Zjc1MzQ4NzZkYzMzYzNkMjk0MWE1YjRmY2FkMDM1OGRiNWI0N2ViNzk2MDAxZDYwZTI3OTYyN2Q1ZGYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNiMjM2N2JkMGRmMGE2MmRmYzNkMTIxOTkxYjI5OGZlNGU5YzNkMzI2NzUyZTY5ODU1OTQzYjZjZjRiMjQ4M2QifQ"
+        },
+        {
+          "resource": "repo://packages/agent-harness/src/vertical_harness/engine/routing.py#L33-L44",
+          "version": "repo-lines-v1:sha256:2906e5f96d5b1e8d944a171722d2a93b519f90af647bd0e2e0b57cdd38c7b2e8:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJjNzYzOTU1ODdhYWY3OTJkYjYwYzdjN2M1MWUzOTRjYTM0NTA2OGY0N2RhNTFlYTE5NjkzOGI4NjIyZjMyZmYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY3ZTFlNTBhZDdkMGZkNzcwMzUxZDAyYWMyNzdkZWI2N2M4MjYxMTIzMzE4MzNiMDRlNjU5N2RmYWJhNzg5MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk0Y2U0NjI2YjM1NDAyZGIxYWZjMTI5YTNiYWY1N2Q2N2RkYjliMzY3ODFhN2U2YzllN2QyYTg0MTFkYTA0ZWMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImY4N2YwZDg2N2NlMzI1ZThhODI3ODMyYjRjYjk5Njk4NTg3ODUxOGNiMGE0NTE1ZmQ2NjVjZGU5YmZlM2ZjYmUifQ"
         }
       ]
     },
     {
       "id": "claim_a71ccd0000af4b2c810a643393f5b48d",
-      "statement": "动态路由中间件通过 LangChain 的 wrap_model_call 拦截调用，从 request.runtime.context 读取 task_tier，并在 task_tier 为 economy 时重定向到经济型模型，其余情况走高品质模型。",
+      "statement": "动态路由中间件通过 LangChain 的 wrap_model_call 拦截调用，从 request.runtime.context 读取 task_tier（默认为 TaskTier.QUALITY），并在 task_tier 为 TaskTier.ECONOMY 时重定向到经济型模型，其余情况走高品质模型。",
       "evidence": [
         {
-          "resource": "repo://packages/agent-harness/src/vertical_harness/routing.py#L49-L67",
-          "version": "repo-lines-v1:sha256:e801a4dcd6a11ef5ab238b36ec23574c3b33dacdc77aa1bcc4b3ec1a97f65e67:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ1ZTQ1ZTBmY2ZmN2Y3Nzc3M2NlNzI3YjU3ODA4MzhhYzE0OGRjYzZhYTc0ZTIwM2MwMzg4NjI2YzBiODRlODIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzNmQ2Y2U2MGQ0NzJkZTQ4NTNlMzYyZjRjNmZmMzk1MjliYmIyNGNhMjQ5ZmFlMDFmMGI0YTNmMDYxMzU3ZTciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY2OTllNWVjZGM4ODc2MTQ5MDliODY2MjY2MmMzNDQzODRiZTJhNTY0Nzk1OWYyNmY5M2M4NDQ0YTkyZGYxNzMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIifQ"
+          "resource": "repo://packages/agent-harness/src/vertical_harness/engine/routing.py#L46-L61",
+          "version": "repo-lines-v1:sha256:f91ff462d4ae59bebc0eb34cc610e39507fecdb8c5b8182c1fa84c730f128363:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ1ZTQ1ZTBmY2ZmN2Y3Nzc3M2NlNzI3YjU3ODA4MzhhYzE0OGRjYzZhYTc0ZTIwM2MwMzg4NjI2YzBiODRlODIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzNmQ2Y2U2MGQ0NzJkZTQ4NTNlMzYyZjRjNmZmMzk1MjliYmIyNGNhMjQ5ZmFlMDFmMGI0YTNmMDYxMzU3ZTciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjMzNGIzMjU5NWRiZmE1NTJjZDRlOTdlMTJjNjA1YWY4NTgwZTk1OGQzMWUyNDFmODZlMWU1ZmE4ZTQ1MTY1MDgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNiMjM2N2JkMGRmMGE2MmRmYzNkMTIxOTkxYjI5OGZlNGU5YzNkMzI2NzUyZTY5ODU1OTQzYjZjZjRiMjQ4M2QifQ"
         }
       ]
     },
     {
       "id": "claim_9228ca67bd1a413c9eccebaf0cc6538d",
-      "statement": "init_configured_model 封装了 LangChain init_chat_model，安全解包 HarnessSettings.api_key 的 SecretStr 并透传 base_url。",
+      "statement": "init_configured_model 封装了 LangChain init_chat_model，通过 HarnessSettings.model_init_kwargs 安全解包 api_key 的 SecretStr 并透传非空 base_url。",
       "evidence": [
         {
-          "resource": "repo://packages/agent-harness/src/vertical_harness/routing.py#L12-L29",
-          "version": "repo-lines-v1:sha256:06f881bf13a51f438f7b9700e45b33aa03c48a75bd4afd079f579410cf6e5216:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZlZjA4MGYzZTg3MjE0N2RkN2I0MTQ3NGQ5NTk0MmE2ODZlOGEzZGI2NjFiMzFiNDBlNjRhZTBiZmY4MjA3NmEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImRmZDUyNjgyYTEzMDRhMzc0NTcwMzUyYTY5Y2RmMDZjYTBmMjkwM2QyN2UxMDdiYjk1MjRmNmZkZjA4ZmJlZDEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQzMmRiN2E4M2ZhYTM4YjQ3ODMxMmYyY2FmNDQ1NGU1NmM1ZWY0NTIwM2EwNjg1YjA2YzAxOTA0NzBhYTM5YWEifQ"
+          "resource": "repo://packages/agent-harness/src/vertical_harness/config/settings.py#L99-L109",
+          "version": "repo-lines-v1:sha256:b26b6cd7417b7557eef309d74f6fcebd353243b85533d80ba8e26f3cdb706d17:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYzZDAwY2YyNzA5NjRkNDRhMTNkZmFjODc1MmIwOWZjYzQzNWIwZjE5YjMxNmFiY2Y4MWE3YWE2NGJiMTIyZDYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEyNjE4YTlhZDJmYTIwMWMyMzgzY2FlZGI2OWQ3ZWFlZjU4Y2QxZjNjNDUyNGE1MmUxMTk5OTU1NmVhYmRlMzkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjM4OGQ5Zjg3NDQ0OWJiM2U3YjNjMjk0ZWRjYzExNGVhZDM1YzhhNzgzNjVmNTA3YTUyOTgwYmYwYjk5Y2JlYzIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjVlNWY5NGE2YjQxZjlhN2UxNzk0MjA3ZDMxMTcwZjk5NjI3YzUxYWQxMzRmYTgxNTg2ZWE4MTk1ZTAzMDI4MTgifQ"
+        },
+        {
+          "resource": "repo://packages/agent-harness/src/vertical_harness/engine/routing.py#L20-L30",
+          "version": "repo-lines-v1:sha256:92c0fad2ca4dd7e8084a3d8a35de62ca0efe6b96882c65902f9b88172365ffe0:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVjYmFjYTQ5NjdhNzZmNmZjZDA0MmFkYWE1MjMyZmFhNzEzNGVjZGZlMmNlYzJmOTAwYWZlODFhNDk3MGUxNWMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJmYzVmMGUzY2I4Yjk3ZmFiNTNiMGZmZmQzNTBlY2U3OWVlZGJlMTBjNjc3MGI0OWU3N2Y2NWQwZTljODVkNDgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImIzYjYzYmM1NjU5NjZiZmEyMmE1Y2EyYTk1ZTA3ODBkMGI0ZGE1MWQzZDA0OTQ1YzkyMmViMDk3ZGY4MDQ3NGIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjEzODkwNWEyODk4NjM2ZmMxYmM2Y2I5ZmIxOWMzZjUwZTg3OTE2NDdlNDg4ZWRkZTc2YjJmMTYyMGI1ZDk0YWUifQ"
         }
       ]
     }
   ],
   "verification": {
     "by": "openwiki/0.7.2",
-    "at": "2026-10-18T03:23:43.651Z"
+    "at": "2026-10-18T06:56:09.371Z"
   }
 }

@@ -1,1 +1,45 @@
-"""Research Citation 学术引用审计插件包公共导出模块。"""
+"""Research Citation 学术引用审计插件包公共导出模块。
+
+架构子包划分：
+- `research_citation.models`: 引用核查输入/输出契约与证据驱动的学术审计报告 Pydantic 模型
+- `research_citation.checker`: 纯函数式引用解析器、确定性比对评估器与 LangChain `BaseToolkit` 工具集
+- `research_citation.plugin`: 遵循 `vertical_harness` 领域插件协议的入口点实现
+"""
+
+from research_citation.checker import (
+    MAX_CITATION_SPAN,
+    ResearchCitationToolkit,
+    evaluate_references,
+    extract_cited_indices,
+    scan_numeric,
+)
+from research_citation.models import (
+    AuditFinding,
+    AuditReport,
+    CheckStatus,
+    EvidenceRef,
+    FindingStatus,
+    IssueKind,
+    ReferenceCheckInput,
+    ReferenceCheckResult,
+    ReferenceIssue,
+)
+from research_citation.plugin import ResearchCitationPlugin
+
+__all__ = [
+    "MAX_CITATION_SPAN",
+    "AuditFinding",
+    "AuditReport",
+    "CheckStatus",
+    "EvidenceRef",
+    "FindingStatus",
+    "IssueKind",
+    "ReferenceCheckInput",
+    "ReferenceCheckResult",
+    "ReferenceIssue",
+    "ResearchCitationPlugin",
+    "ResearchCitationToolkit",
+    "evaluate_references",
+    "extract_cited_indices",
+    "scan_numeric",
+]

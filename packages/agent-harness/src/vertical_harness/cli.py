@@ -1,80 +1,104 @@
-"""轻量级交互式运行入口；非生产环境 API 服务。"""
+"""轻量级交互式命令行运行入口；非生产环境 API 服务。"""
+
+from __future__ import annotations
 
 import argparse
 import json
 import uuid
+from collections.abc import Sequence
 
-from vertical_harness.compose import build_agent
-from vertical_harness.contracts import RunContext
-from vertical_harness.settings import HarnessSettings
-from vertical_harness.store import open_store
+from langchain_core.messages import HumanMessage
+from langchain_core.runnables import RunnableConfig
+
+from vertical_harness.config import HarnessSettings, TaskTier
+from vertical_harness.engine import build_agent
+from vertical_harness.plugins import RunContext, discover_plugins
+from vertical_harness.storage import open_store
 
 
-def main() -> None:
-    """列出已启用的插件或使用稳定的线程标识符调用智能体。
+def _build_parser() -> argparse.ArgumentParser:
+    """构建命令行参数解析器。
 
-    :return: None
-    :raises SystemExit: 当未指定输入 prompt 且未传入 --list-plugins 时退出程序。
+    :return: 配置完成的 ArgumentParser 实例。
     """
-    # 初始化命令行参数解析器
     parser = argparse.ArgumentParser(description="Deep Agents plugin harness")
-    # 支持传入可选的提示词（用户请求内容）
-    parser.add_argument("prompt", nargs="?")
-    # 支持查看当前已启用插件清单的标志位
-    parser.add_argument("--list-plugins", action="store_true")
-    # 可选传入持久化会话线程 ID，未指定时默认生成随机 UUID
-    parser.add_argument("--thread-id", default=None)
-    # 租户隔离标识符，默认 demo
-    parser.add_argument("--tenant-id", default="demo")
-    # 用户隔离标识符，默认 demo
-    parser.add_argument("--user-id", default="demo")
-    # 任务层级选择，支持 economy（经济型）和 quality（高品质型）
-    parser.add_argument("--task-tier", choices=["economy", "quality"], default="quality")
-    args = parser.parse_args()
+    parser.add_argument("prompt", nargs="?", help="Input prompt to send to the agent")
+    parser.add_argument(
+        "--list-plugins",
+        action="store_true",
+        help="List all enabled domain plugins and their manifests as JSON",
+    )
+    parser.add_argument("--thread-id", default=None, help="Persistent thread identifier")
+    parser.add_argument("--tenant-id", default="demo", help="Tenant isolation identifier")
+    parser.add_argument("--user-id", default="demo", help="User isolation identifier")
+    parser.add_argument(
+        "--task-tier",
+        choices=[tier.value for tier in TaskTier],
+        default=TaskTier.QUALITY.value,
+        help="Task routing tier (economy or quality)",
+    )
+    return parser
 
-    # 从环境变量及 .env 文件加载宿主配置
-    settings = HarnessSettings()
 
-    # 若指定了 --list-plugins 参数，列出所有已启用的插件清单并退出
-    if args.list_plugins:
-        from vertical_harness.discovery import discover_plugins
+def _print_plugins(settings: HarnessSettings) -> None:
+    """发现并打印所有已启用插件的元数据清单（JSON 格式）。
 
-        # 发现并加载所有白名单中的插件清单，以格式化 JSON 输出
-        print(
-            json.dumps(
-                [p.manifest.model_dump() for p in discover_plugins(settings.enabled_plugins)],
-                ensure_ascii=False,
-                indent=2,
-            )
-        )
-        return
+    :param settings: 已加载的宿主配置实例。
+    """
+    manifests = [
+        plugin.manifest.model_dump()
+        for plugin in discover_plugins(settings.enabled_plugins)
+    ]
+    print(json.dumps(manifests, ensure_ascii=False, indent=2))
 
-    # 若非列出插件且未指定提示词，则提示错误并退出
-    if not args.prompt:
-        parser.error("Please specify a prompt")
 
-    # 使用上下文管理器打开持久化存储（如 SQLite Store）
+def _invoke_prompt(args: argparse.Namespace, settings: HarnessSettings) -> None:
+    """打开持久化存储，组装 Deep Agent 并使用 LangChain 原生消息与配置执行单轮调用。
+
+    :param args: 解析后的命令行参数对象。
+    :param settings: 已加载的宿主配置实例。
+    """
+    thread_id = args.thread_id or str(uuid.uuid4())
+    run_config = RunnableConfig(configurable={"thread_id": thread_id})
+    run_context = RunContext(
+        tenant_id=args.tenant_id,
+        user_id=args.user_id,
+        task_tier=args.task_tier,
+    )
+
     with open_store(settings) as store:
-        # 基于当前配置与存储实例构建 Deep Agent 智能体
         agent = build_agent(settings, store=store)
-        # 配置 LangGraph 的 thread_id 用于维持会话状态与检查点恢复
-        config = {"configurable": {"thread_id": args.thread_id or str(uuid.uuid4())}}
-        # 调用智能体执行交互，注入运行时安全上下文 RunContext
         result = agent.invoke(
-            {"messages": [{"role": "user", "content": args.prompt}]},
-            config=config,
-            context=RunContext(tenant_id=args.tenant_id, user_id=args.user_id, task_tier=args.task_tier),
+            {"messages": [HumanMessage(content=args.prompt)]},
+            config=run_config,
+            context=run_context,
         )
 
-    # 打印智能体最后生成的回复消息内容
     print(result["messages"][-1].content)
-
-    # 检查智能体执行过程是否触发了审批中断
     if "__interrupt__" in result:
         print("Execution interrupted; resume via LangGraph Command(resume=...) from an approval UI")
 
 
+def main(argv: Sequence[str] | None = None) -> None:
+    """列出已启用的插件或使用稳定的线程标识符调用智能体。
+
+    :param argv: 可选的命令行参数序列，默认读取 sys.argv。
+    :return: None
+    :raises SystemExit: 当未指定输入 prompt 且未传入 --list-plugins 时退出程序。
+    """
+    parser = _build_parser()
+    args = parser.parse_args(argv)
+    settings = HarnessSettings()
+
+    if args.list_plugins:
+        _print_plugins(settings)
+        return
+
+    if not args.prompt:
+        parser.error("Please specify a prompt")
+
+    _invoke_prompt(args, settings)
+
+
 if __name__ == "__main__":
     main()
-
-

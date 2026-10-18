@@ -6,9 +6,9 @@ import asyncio
 from pathlib import Path
 from types import SimpleNamespace
 
-from vertical_harness.contracts import RunContext
-from vertical_harness.settings import HarnessSettings
-from vertical_harness.store import (
+from vertical_harness import (
+    HarnessSettings,
+    RunContext,
     SqliteStore,
     aopen_store,
     compose_backend,

@@ -26,3 +26,4 @@ vertical-agent = "vertical_harness.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/vertical_harness"]
+

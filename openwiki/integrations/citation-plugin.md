@@ -1,35 +1,44 @@
 ---
 type: concept
 title: 学术引用审计插件实现
-description: 深入分析 vertical-plugin-research-citation 演示插件的内部架构，涵盖 scan_numeric 核验工具、数据契约、技能资产与证据优先审计模型。
+description: 深入分析 vertical-plugin-research-citation 演示插件的内部架构，涵盖纯函数解析器、确定性评估器、ResearchCitationToolkit、数据契约、技能资产与证据优先审计模型。
 tags: [plugin, research-citation, validation, pydantic, evidence-first]
-verified:
-  - by: openwiki/0.7.2
-    at: 2026-10-18T03:23:43.651Z
 sources:
+  - id: openwiki-source-50c13e861f5096759403fa57
+    resource: repo://packages/research-citation/src/research_citation/checker/evaluator.py
+  - id: openwiki-source-2b379b13d8964e154e5bfa5d
+    resource: repo://packages/research-citation/src/research_citation/checker/parser.py
+  - id: openwiki-source-1e0140ac00118fc045901433
+    resource: repo://packages/research-citation/src/research_citation/checker/tools.py
+  - id: openwiki-source-9983d19816e0ce12cc36840a
+    resource: repo://packages/research-citation/src/research_citation/models/audit.py
   - id: openwiki-source-721e3ae67db867a56eacdc71
     resource: repo://packages/research-citation/src/research_citation/plugin.py
-  - id: openwiki-source-9345281d0c7186af5365bead
-    resource: repo://packages/research-citation/src/research_citation/report.py
-  - id: openwiki-source-fcd5aa98ed59cee5fdced2ed
-    resource: repo://packages/research-citation/src/research_citation/tools.py
-generated: { by: "antigravity", at: "2026-10-18T03:23:43.651Z" }
+generated: { by: "antigravity", at: "2026-10-18T06:56:09.371Z" }
+verified:
+  - by: openwiki/0.7.2
+    at: 2026-10-18T06:56:09.371Z
 ---
 
 # 学术引用审计插件实现
 
-`vertical-plugin-research-citation` 是基于垂直领域插件标准规范实现的学术手稿引用核查插件。该插件作为独立的 Python distribution（安装包），通过标准入口点接入宿主 Harness，演示了如何在不修改主工程代码的前提下注入确定性算法、Pydantic 契约校验模型与 `SKILL.md` 知识资产。
+`vertical-plugin-research-citation` 是基于垂直领域插件标准规范实现的学术手稿引用核查插件。该插件作为独立的 Python distribution（安装包），通过标准入口点接入宿主 Harness，演示了如何在不修改主工程代码的前提下注入纯函数确定性算法、LangChain `BaseToolkit`、Pydantic 契约校验模型与 `SKILL.md` 知识资产。
+
+根据 [packages/research-citation/src/research_citation/__init__.py](../../packages/research-citation/src/research_citation/__init__.py)，插件内部划分为清晰的三层结构，并通过 `research_citation` 顶层包统一对外导出：
+- `research_citation.plugin`：领域插件入口点实现与技能资产加载。
+- `research_citation.checker`：纯函数引用解析器（`parser.py`）、确定性集合比对评估器（`evaluator.py`）与 LangChain 工具包（`tools.py`）。
+- `research_citation.models`：数字引用核查输入/输出模式（`check.py`）与证据驱动的学术审计报告模型（`audit.py`）。
 
 ## 1. 插件结构与构建贡献 (`plugin.py`)
 
 在 [packages/research-citation/src/research_citation/plugin.py](../../packages/research-citation/src/research_citation/plugin.py) 中，`ResearchCitationPlugin` 实现了 `DomainPlugin` 协议：
 
 - **清单声明 (`PluginManifest`)**：插件标识符为 `research.citations`，接口版本为 1，语义化版本为 `0.1.0`。
-- **静态技能读取**：通过 `importlib.resources.files` 安全读取打包在 wheel 包内的 `numeric-citation-audit/SKILL.md` 内容。
+- **静态技能读取与缓存 (`_load_skill_asset`)**：结合 `@lru_cache(maxsize=1)` 与 `importlib.resources.files` 安全读取并缓存打包在 wheel 包内的 `numeric-citation-audit/SKILL.md` 内容，构造经路径校验的 `SkillAsset`。
 - **贡献载荷组装 (`build`)**：
-  - 工具注册：将 `scan_numeric` 工具配置为门控暴露模式（`Exposure.SKILL`），仅在模型激活对应技能后才暴露该工具。
-  - 技能挂载：声明 `SkillAsset(relative_path="numeric-citation-audit/SKILL.md", content=...)`，供宿主挂载至虚拟 `/skills` 目录。
-  - 指令注入：向 Agent 提示词追加专属指令，要求其使用 `numeric-citation-audit` 技能并仅汇报核实不一致的问题。
+  - **工具包导出**：实例化 `ResearchCitationToolkit()`，通过 `ToolContribution.from_toolkit(toolkit, exposure=Exposure.SKILL)` 将 `scan_numeric` 工具批量声明为门控暴露模式（`Exposure.SKILL`），仅在模型激活对应技能后才暴露该工具。
+  - **技能挂载**：提供 `[_load_skill_asset()]`，供宿主挂载至虚拟 `/skills/research-citations-numeric-citation-audit/SKILL.md` 路径。
+  - **指令注入**：向 Agent 提示词追加专属指令，要求其针对方括号数字引用使用 `numeric-citation-audit` 技能并仅汇报已核实的不一致问题。
 
 ```python
 class ResearchCitationPlugin:
@@ -41,31 +50,43 @@ class ResearchCitationPlugin:
     )
 ```
 
-## 2. 确定性引用核查工具 (`tools.py`)
+## 2. 纯函数解析器、评估器与核查工具 (`checker/`)
 
-工具 `scan_numeric`（注册名为 `research_citations_scan_numeric`）定义在 [packages/research-citation/src/research_citation/tools.py](../../packages/research-citation/src/research_citation/tools.py) 中，专门针对括号数字引用格式进行纯确定性算法比对：
+插件将引用核查拆分为无状态的解析层、评估层与工具包装层：
 
-- **语法正则解析**：通过正则表达式 `\[([0-9,\s\-]+)\]` 提取行内引用标号。
-- **混合格式支持**：支持单序号（如 `[1]`）、逗号列表（如 `[1, 2]`）以及范围引用（如 `[1-3]`）。为防止大范围解析 DoS 攻击，针对区间引用限制跨度 `end - start <= 1000`。
-- **边界与覆盖率核查**：
-  - `out_of_range`：正文中引用的序号超出参考文献列表总长度（`i < 1 or i > len(bibliography)`）。
-  - `uncited`：参考文献列表中的条目在正文中从未出现。
-- **状态判定与范围界定**：若无任何引用返回 `not_applicable`；若存在异常返回 `issues`；完全匹配返回 `passed`。返回体明确标注 `verified_scope = "Numeric reference indexes only; not evidence or semantic validity"`，防止大模型将格式匹配误解为科学事实真伪。
+### 2.1 方括号数字引用解析器 (`checker/parser.py`)
+在 [packages/research-citation/src/research_citation/checker/parser.py](../../packages/research-citation/src/research_citation/checker/parser.py) 中：
+- **语法正则提取**：通过 `_BRACKET_PATTERN`（`\[([0-9,\s\-]+)\]`）提取行内引用片段，并按逗号拆分为独立 token。
+- **单序号与闭区间展开 (`_parse_citation_token`)**：支持单序号（如 `[1]`）、逗号列表（如 `[1, 2]`）以及范围引用（如 `[1-3]`）。为防范恶意超大区间（如 `[1-99999999]`）引发内存耗尽 DoS 攻击，通过常量 `MAX_CITATION_SPAN = 1000` 强制限制区间跨度 `end - start <= 1000`。
+- **去重升序输出 (`extract_cited_indices`)**：返回正文中所有有效唯一正整数引用序号的升序列表。
 
-## 3. Pydantic 输入输出契约 (`schemas.py`)
+### 2.2 确定性集合比对评估器 (`checker/evaluator.py`)
+在 [packages/research-citation/src/research_citation/checker/evaluator.py](../../packages/research-citation/src/research_citation/checker/evaluator.py) 中，`evaluate_references(manuscript_text, bibliography)` 执行集合比对：
+- 若未提取到任何有效数字引用，直接返回 `status=CheckStatus.NOT_APPLICABLE`。
+- **`IssueKind.OUT_OF_RANGE`**：正文中引用的序号不在有效范围 `range(1, len(bibliography) + 1)` 内。
+- **`IssueKind.UNCITED`**：参考文献列表中的条目序号从未在正文引用集合中出现。
+- 若存在异常返回 `CheckStatus.ISSUES`，完全匹配则返回 `CheckStatus.PASSED`。
 
-数据契约在 [packages/research-citation/src/research_citation/schemas.py](../../packages/research-citation/src/research_citation/schemas.py) 中定义，遵循严格的 Fail-Closed 原则：
+### 2.3 LangChain 工具与 `ResearchCitationToolkit` (`checker/tools.py`)
+在 [packages/research-citation/src/research_citation/checker/tools.py](../../packages/research-citation/src/research_citation/checker/tools.py) 中：
+- `scan_numeric`（注册名为 `research_citations_scan_numeric`）绑定 `args_schema=ReferenceCheckInput`，调用 `evaluate_references` 并返回 `.model_dump_json()`。
+- `ResearchCitationToolkit` 继承自 LangChain 标准 `BaseToolkit`，通过 `get_tools()` 导出 `[scan_numeric]`。
 
-- **严格模式与长度保护**：`ReferenceCheckInput` 开启 `extra="forbid"` 与 `strict=True`，对手稿字符数（最大 20 万字）和文献条目数（最大 1 万条）设定硬限制。
-- **结构化异常描述**：`ReferenceIssue` 规范了异常类别枚举（`out_of_range`、`uncited`）、问题索引数字与文字解释。
+## 3. Pydantic 输入输出契约 (`models/check.py`)
 
-## 4. 证据优先的审计报告模型 (`report.py`)
+数据契约在 [packages/research-citation/src/research_citation/models/check.py](../../packages/research-citation/src/research_citation/models/check.py) 中定义，遵循严格的 Fail-Closed 原则：
 
-在学术评审中，严禁凭空判定学术不端。在 [packages/research-citation/src/research_citation/report.py](../../packages/research-citation/src/research_citation/report.py) 中，系统设计了强约束的审计结论结构：
+- **状态与问题类型枚举**：定义 `IssueKind(StrEnum)`（`OUT_OF_RANGE`、`UNCITED`）与 `CheckStatus(StrEnum)`（`PASSED`、`ISSUES`、`NOT_APPLICABLE`）。
+- **严格模式与长度保护 (`ReferenceCheckInput`)**：开启 `extra="forbid"` 与 `strict=True`，通过 `ManuscriptStr`（1 至 200,000 字符）和 `BibliographyList`（1 至 10,000 条）设定硬性边界。
+- **结构化结果与核验范围界定 (`ReferenceCheckResult`)**：包含 `status`、`cited_indices`、`issues: list[ReferenceIssue]`，并明确默认字段 `verified_scope = "Numeric reference indexes only; not evidence or semantic validity"`，防止大模型将编号匹配误判为科学事实真伪。
 
-- **不可变证据引用 (`EvidenceRef`)**：要求记录文档 ID、页码、文献 SHA-256 哈希值与精确原文摘录。
-- **结论强制证据约束 (`AuditFinding`)**：状态区分为 `verified`（已核实）、`suspected`（存疑）和 `insufficient_evidence`（证据不足）。模型校验器 `require_evidence_for_verification` 做出强制约束：**当结论为 `verified` 时，证据列表必须非空，否则抛出 `ValueError`**。
-- **客观局限性呈现 (`AuditReport`)**：除报告结论列表外，强制要求列出客观存在的局限性（`limitations`，例如未获取付费数据库全文），杜绝主观臆断。
+## 4. 证据优先的审计报告模型 (`models/audit.py`)
+
+在学术评审中，严禁凭空判定学术不端。在 [packages/research-citation/src/research_citation/models/audit.py](../../packages/research-citation/src/research_citation/models/audit.py) 中，系统设计了强约束的审计结论结构：
+
+- **不可变证据引用 (`EvidenceRef`)**：要求记录文档 ID（`document_id`）、页码（`page >= 1`）、文献 64 位十六进制 SHA-256 哈希值（`source_sha256`）与精确原文摘录（`excerpt`）。
+- **结论强制证据约束 (`AuditFinding`)**：状态由 `FindingStatus(StrEnum)` 区分为 `VERIFIED`（已核实）、`SUSPECTED`（存疑）和 `INSUFFICIENT_EVIDENCE`（证据不足）。模型后置校验器 `require_evidence_for_verification` 做出强制约束：**当 `self.status == FindingStatus.VERIFIED` 时，`self.evidence` 列表必须非空，否则抛出 `ValueError`**。
+- **客观局限性呈现 (`AuditReport`)**：除手稿 ID 与 `findings` 列表外，提供 `limitations: list[str]` 记录客观局限性（例如封闭文献无法获取全文），杜绝主观臆断。
 
 ## 相关页面
 

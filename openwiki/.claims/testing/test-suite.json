@@ -1,14 +1,14 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:8b854e35d379ba9ac2b5d7bf70ba4089b89a788267ac1f5eef73b6bce0087096",
+  "pageVersion": "sha256:5e70315003295f058c0bdb0894bb509d1d8ca8f6eadc4ceed695c800448f3f65",
   "claims": [
     {
       "id": "claim_e34da381faf64b72b9e21774098450dc",
       "statement": "test_schema.py 针对恶意插件 ID 与包含相对跳转符 .. 的技能路径执行校验拦截测试，确保目录遍历攻击被 Pydantic 模型阻断。",
       "evidence": [
         {
-          "resource": "repo://tests/test_schema.py#L38-L52",
-          "version": "repo-lines-v1:sha256:781da6b41300bed615b644e7892f85dae8f0950a4fda53f77f977aa929853348:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZmYmM3OGUzMDQ3OWIwZmQyMjY4NDM4MTEwZjAzNThkNGRjZDE1ZDAwMWFjMTQ1MTdiYzc2OTllMGI3MWFjNjgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjdiNWUwYTE1YmVkOTYyNDczODU3NjgzYzRlOTA0NjM5ZDBkZjIxZDM4OWM3MDQ4NTY4MDVjODNmNWZmMTEwOGIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJmYTEzMmVkOWU3YWU3NjJiYzE0ODllYWFhYWNlYjZiOGYxYzZmOTFmY2NmZGYyMTkwMzY4MmI3ZTBlZDhmOWMifQ"
+          "resource": "repo://tests/test_schema.py#L90-L103",
+          "version": "repo-lines-v1:sha256:0a5fb597c5565b59efb7f4fbdc8115269f70a114ef9126488e59d10d95946efb:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZmYmM3OGUzMDQ3OWIwZmQyMjY4NDM4MTEwZjAzNThkNGRjZDE1ZDAwMWFjMTQ1MTdiYzc2OTllMGI3MWFjNjgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA0Y2M1YzI3MDA1YTNjZWE3YWMxNTc3MTY2YTE0NzA2MDkwNTVkN2ZkOTc1ZDQ1NTI0Mzk3NTAxZjMyYjJmZmIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNlZDY1NzZhM2MzZTZhMzJkNzdmNTNlOTJmMDMyMTMyZmVlYWE4NDM4ZTRiNzUyMzIwOGNhZThkODNiNTg2YjgifQ"
         }
       ]
     },
@@ -27,14 +27,24 @@
       "statement": "test_schema.py 验证 scan_numeric 工具在正文引用 [1] 和 [3] 但参考文献仅有两篇时，精准捕获 out_of_range 和 uncited 两项异常问题。",
       "evidence": [
         {
-          "resource": "repo://tests/test_schema.py#L22-L36",
-          "version": "repo-lines-v1:sha256:e4e7d23379c821c81850c0e1f16b34331d430f7f75c239ea383036e2153f6ae5:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdmOTllZTUwNzU3MjFjNGJlZDUyNjgxMDE1NWEzMWU3YzEyMjcyNWRjYjhjZmIxMDBmZTNiNjk0ZDViOGI0MDUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQyYWJhMmJlZjI5NGQ5MDQyMWIzMGMxN2FmMDAxNDMwZjI4ZTVkNjNkYTAxOTk4ZTNiZTkyOWFiZDVlMjZkYTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjlkZWVlZDQ4M2M1N2U0ODc2ODQxNzI4MTVjNmJjNGY5ZDdhODE4NTNiM2YwOThmNzU4NTVhNjZjNjUyMzMzYjAifQ"
+          "resource": "repo://tests/test_schema.py#L45-L61",
+          "version": "repo-lines-v1:sha256:e015126c5eb99b151b9c9e8565bb7ed0360a7be5be4189ac9d79cb1182f4bb17:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdmOTllZTUwNzU3MjFjNGJlZDUyNjgxMDE1NWEzMWU3YzEyMjcyNWRjYjhjZmIxMDBmZTNiNjk0ZDViOGI0MDUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQyYWJhMmJlZjI5NGQ5MDQyMWIzMGMxN2FmMDAxNDMwZjI4ZTVkNjNkYTAxOTk4ZTNiZTkyOWFiZDVlMjZkYTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjI1NDAwZTI0ZGFkNjdlZDc2ODljM2U1MDE2YjdlY2FhYjEzMmFiODcyYWRmMDc0ZDVmM2UxMDA2MzdjNThhNjkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_74825da13cd54ae0bbc14edab8fb3f4a",
+      "statement": "test_citation_parser_and_toolkit_integration 验证 extract_cited_indices、evaluate_references、ResearchCitationToolkit 批量包装与 AgentComposer 插件注册行为。",
+      "evidence": [
+        {
+          "resource": "repo://tests/test_schema.py#L64-L87",
+          "version": "repo-lines-v1:sha256:89f2b0eb164cf006691eb79d832dbc73935ade04910cc9a49e1e523a9643709d:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJiYTU0ZWZhYmE4Nzg3NTMxNmU4NTY5MmQyNzM1MDc4ODE5MGE0Y2ZjN2RhNzY3NzljMzU2MmNhODBmMmQ0MzMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYwNGRhYTg3MmY4MDA4NTkxNTM2NGQxZWZmMjdkNjZmMjJlZWEyMzIwYjc0M2FjOGM1ZjM0YzVhZTQ3YmM4OTAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRmYmQwMDkzMTRiYzI3MDg0MTY3MzRhMDJhZTVmZjM5YTFlNDhhMDUwYmU5MWY0M2IyZmFhOTIwMDJjNjJiZmMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjZhM2JmOWMyMjBjZWY3ZWY1NDBhODE2NjIzOGMyOTU2NDI4N2FkZmFlYTMyMWQxODVmZDZhZTQ3OTI4M2FjNmIifQ"
         }
       ]
     }
   ],
   "verification": {
     "by": "openwiki/0.7.2",
-    "at": "2026-10-18T03:23:43.651Z"
+    "at": "2026-10-18T06:56:09.371Z"
   }
 }

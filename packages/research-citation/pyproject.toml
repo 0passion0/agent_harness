@@ -16,4 +16,9 @@ dependencies = ["vertical-agent-harness>=0.1,<0.2"]
 packages = ["src/research_citation"]
 
 [tool.hatch.build]
-include = ["src/research_citation/**/*.py", "src/research_citation/**/*.md"]
+include = [
+  "src/research_citation/**/*.py",
+  "src/research_citation/**/*.md",
+  "src/research_citation/py.typed",
+]
+

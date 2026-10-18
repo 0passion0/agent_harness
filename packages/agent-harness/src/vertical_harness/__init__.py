@@ -1,22 +1,68 @@
-"""Vertical Harness 核心包公共接口导出。"""
+"""Vertical Harness 核心包公共接口导出。
 
-from vertical_harness.compose import build_agent
-from vertical_harness.settings import HarnessSettings
-from vertical_harness.store import (
+架构子包划分：
+- `vertical_harness.config`: 基于 Pydantic Settings 的宿主环境配置与路由规则校验
+- `vertical_harness.plugins`: 领域插件契约协议（Protocol / Pydantic）与 Entry Points 发现机制
+- `vertical_harness.storage`: LangGraph 原生 SqliteStore 生命周期与 Deep Agents CompositeBackend 挂载
+- `vertical_harness.engine`: LangChain 聊天模型路由中间件与 Deep Agents 唯一组装器
+"""
+
+from vertical_harness.config import HarnessSettings, StoreBackendType, TaskTier
+from vertical_harness.engine import (
+    BASE_PROMPT,
+    AgentComposer,
+    build_agent,
+    init_configured_model,
+    make_router,
+)
+from vertical_harness.plugins import (
+    PLUGIN_GROUP,
+    BuildServices,
+    DomainPlugin,
+    Exposure,
+    PluginContribution,
+    PluginManifest,
+    RunContext,
+    SideEffect,
+    SkillAsset,
+    ToolContribution,
+    discover_plugins,
+)
+from vertical_harness.storage import (
+    AsyncSqliteStore,
     SqliteStore,
+    aopen_store,
     compose_backend,
     create_store,
     open_store,
+    tenant_memory_namespace,
 )
 
-# 显式导出外部依赖和测试关注的核心符号
 __all__ = [
+    "BASE_PROMPT",
+    "PLUGIN_GROUP",
+    "AgentComposer",
+    "AsyncSqliteStore",
+    "BuildServices",
+    "DomainPlugin",
+    "Exposure",
     "HarnessSettings",
+    "PluginContribution",
+    "PluginManifest",
+    "RunContext",
+    "SideEffect",
+    "SkillAsset",
     "SqliteStore",
+    "StoreBackendType",
+    "TaskTier",
+    "ToolContribution",
+    "aopen_store",
     "build_agent",
     "compose_backend",
     "create_store",
+    "discover_plugins",
+    "init_configured_model",
+    "make_router",
     "open_store",
+    "tenant_memory_namespace",
 ]
-
-

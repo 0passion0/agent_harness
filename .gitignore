@@ -47,6 +47,16 @@ coverage.xml
 .pytest_cache/
 cover/
 
+# Linters, formatters, and type checkers
+.ruff_cache/
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Package managers & locks
+.uv/
+uv.lock
+
 # Environments & Virtual Environments
 .env
 .env.*
@@ -57,6 +67,19 @@ ENV/
 env.bak/
 venv.bak/
 .venv/
+
+# Agent harness workspace & SQLite storage
+.agent-workspace/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.sqlite-journal
+*.sqlite3
+*.db
+
+# OpenWiki ephemeral runtime state
+openwiki/.run.json
+openwiki/.run.*
 
 # IDE & Editors
 .idea/

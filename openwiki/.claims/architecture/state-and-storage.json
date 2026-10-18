@@ -1,40 +1,40 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:21b27e100c9b0b5f13f6416af21157e1939a3b6677f000de39496e42b09cfc64",
+  "pageVersion": "sha256:5a6f1fc14c0089999db8e26b927b08a865484e53ca8064e16b9469a714bca4c0",
   "claims": [
     {
       "id": "claim_590959805efa4c048335b0617c31b385",
-      "statement": "tenant_memory_namespace 通过正则将租户 ID 和用户 ID 中除字母、数字、减号、下划线、@、+、:、~ 之外的非安全字符（包含点号）替换为下划线，防止破坏 LangGraph SqliteStore 点号分隔的命名空间。",
+      "statement": "tenant_memory_namespace 通过 _sanitize_segment 与 _UNSAFE_NS_CHARS 正则将租户 ID 和用户 ID 中除字母、数字、减号、下划线、@、+、:、~ 之外的非安全字符（包含点号）替换为下划线，防止破坏 LangGraph SqliteStore 点号分隔的命名空间。",
       "evidence": [
         {
-          "resource": "repo://packages/agent-harness/src/vertical_harness/store.py#L24-L64",
-          "version": "repo-lines-v1:sha256:1e6491d12569db96073044ac7da34e0bf526939d62beb9822394d9f1c8f8da29:eyJzZWxlY3RlZExpbmVDb3VudCI6NDEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxY2IwMzFmZTZmMDgwZDFmODAwYTg5YTZjMjIyYmEwYWQwOWViMDhmMThmZmNhODQ4ZjRmNmY0YTk5NzljNTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImYzZGJmMTcxYWJjOWYyYzNlNjQyNmMyMmUzNWJmNTM4MWQ3ZGJlYTM0YzVmNjUyZDRjNmI5NWVjYmNjNzMzNWEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA0YjFiYWE4NTFmYjkyZjQzMTI2ZDVjMTMwMTUyY2Q4ZGRkNGE4YTNjZGJhODBjZGFhMmZhYmM5Y2NjZjU5MjQifQ"
+          "resource": "repo://packages/agent-harness/src/vertical_harness/storage/namespace.py#L13-L47",
+          "version": "repo-lines-v1:sha256:7cc5e30a998ce5bfd8e9dc084b78eeef23985adf2a0fa5dcde829b0e6edd9363:eyJzZWxlY3RlZExpbmVDb3VudCI6MzUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxY2IwMzFmZTZmMDgwZDFmODAwYTg5YTZjMjIyYmEwYWQwOWViMDhmMThmZmNhODQ4ZjRmNmY0YTk5NzljNTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ4Y2ZkMjExZTI5MWQxZWUwMjg0Y2E4MjYxNThiYzUzNjFmOGM1Y2E5NDViMjI4MTdmZGNhZTU2N2JkZmQ3ZmEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNiMjM2N2JkMGRmMGE2MmRmYzNkMTIxOTkxYjI5OGZlNGU5YzNkMzI2NzUyZTY5ODU1OTQzYjZjZjRiMjQ4M2QifQ"
         }
       ]
     },
     {
       "id": "claim_07b9d405dba9416c8c9b7d55129dfa45",
-      "statement": "compose_backend 组合 FilesystemBackend 与 StoreBackend，将默认路径映射至物理磁盘工作区，将 memory_route 路由（默认 /memories/）重定向至 BaseStore 持久化存储。",
+      "statement": "compose_backend 组合 FilesystemBackend 与 StoreBackend，将默认路径映射至物理磁盘工作区，将 PurePosixPath 规范化后的 memory_route 路由（默认 /memories/）重定向至 BaseStore 持久化存储。",
       "evidence": [
         {
-          "resource": "repo://packages/agent-harness/src/vertical_harness/store.py#L140-L168",
-          "version": "repo-lines-v1:sha256:7d25ca22eff3916bf96c9505f8bca0f1a2bf90d0e929507804c09f83e0552aa5:eyJzZWxlY3RlZExpbmVDb3VudCI6MjksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNlNWQzZjdhYTgyYjBhMDYzMmY3MGI1MTk2MGY0MmYzY2ZhMzQzYWY4NDk5NWU5NmE3NWE5YjkwZjI3ODJkMTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjkzNDdjNzRjZGZmYjY1MmFkMWFjYzBlZmJjZmFkODZlMTllNWI0OWNiM2ZiM2Q1ODJiMjU0OTZjYTA0MGE2NzQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFlNmM5NGI5OGVhNzU4MjQ2ZTYxNGFlZDNlNTljMGNkZDMyOWIwZDhjZmI5NjkyMWMxZDY1OTVkODliMzJmMGUifQ"
+          "resource": "repo://packages/agent-harness/src/vertical_harness/storage/backends.py#L87-L111",
+          "version": "repo-lines-v1:sha256:4f0a94899879a0929afe7c87c313a1c9359a4bd4f1ed3d207a970929f023e0eb:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNlNWQzZjdhYTgyYjBhMDYzMmY3MGI1MTk2MGY0MmYzY2ZhMzQzYWY4NDk5NWU5NmE3NWE5YjkwZjI3ODJkMTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjkzNDdjNzRjZGZmYjY1MmFkMWFjYzBlZmJjZmFkODZlMTllNWI0OWNiM2ZiM2Q1ODJiMjU0OTZjYTA0MGE2NzQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNiMjM2N2JkMGRmMGE2MmRmYzNkMTIxOTkxYjI5OGZlNGU5YzNkMzI2NzUyZTY5ODU1OTQzYjZjZjRiMjQ4M2QifQ"
         }
       ]
     },
     {
       "id": "claim_610486418b9a41e698a8d58e18cbf03c",
-      "statement": "open_store 与 aopen_store 上下文管理器分别封装了 SqliteStore 与 AsyncSqliteStore 的生命周期，并在创建或打开时自动调用 setup() 完成表结构初始化。",
+      "statement": "create_store、open_store 与 aopen_store 分别管理 InMemoryStore、SqliteStore 与 AsyncSqliteStore 的生命周期，并在创建或打开 SQLite 存储时自动调用 setup() 完成表结构初始化。",
       "evidence": [
         {
-          "resource": "repo://packages/agent-harness/src/vertical_harness/store.py#L104-L138",
-          "version": "repo-lines-v1:sha256:59d5ee91c6791228a6cd6a73d78e5c76604965f5e8331a7888897806a3663b34:eyJzZWxlY3RlZExpbmVDb3VudCI6MzUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU2MWYzM2MxMzI1NjlhNzQ5NDZiMmZjZjU0NmNhM2M0NDI1ZGEwY2E1Y2Y2YjY4NmMyNjA5MGZhYTlkMTEyYjQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjlkYjRjMGQ5ODkxMzYxMTIyZTExZjY5NjQyZjVjZThkMDBjZDBlNmQ1MTJkZGYyYjEwYzU2MGI5MGYyNzUxYWIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImY1ZTY4NDc0YTM5MWMxN2U3YTk5NTEyOTM4ZDQ2ZTE4ZTZkYTA2YjliNDYyN2RmMDU3YzhjMjA4Njk5ZGVlNjgifQ"
+          "resource": "repo://packages/agent-harness/src/vertical_harness/storage/backends.py#L39-L85",
+          "version": "repo-lines-v1:sha256:bfa4caa2c3a90cd58bca8ba543475e0e1263679ba876e043c81d28f51d080949:eyJzZWxlY3RlZExpbmVDb3VudCI6NDcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI5YTgzY2QxMmEwMmE4NzdiZjUxMzZiM2QzMzBjYzlkNzlmODc2OWYwZmNmNDllZjU4MzllODhiZjZhMDZkNGIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE0MDBiZGMxZTUzNGJkMmE4YTdkNGJmZWRjODE0MzAyZTVhNjdhYjNhODg2MTFkNDZmMWEyOGZlNTMzNzVmM2UiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImY1ZTY4NDc0YTM5MWMxN2U3YTk5NTEyOTM4ZDQ2ZTE4ZTZkYTA2YjliNDYyN2RmMDU3YzhjMjA4Njk5ZGVlNjgifQ"
         }
       ]
     }
   ],
   "verification": {
     "by": "openwiki/0.7.2",
-    "at": "2026-10-18T03:23:43.651Z"
+    "at": "2026-10-18T06:56:09.371Z"
   }
 }
