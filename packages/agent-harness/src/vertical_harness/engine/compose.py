@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterable
 from dataclasses import dataclass, field
+from time import perf_counter
 from typing import Any
 
 from deepagents import FilesystemPermission, create_deep_agent
@@ -34,6 +36,8 @@ from vertical_harness.plugins.contracts import (
 )
 from vertical_harness.plugins.discovery import discover_plugins
 from vertical_harness.storage.backends import compose_backend, create_store
+
+logger = logging.getLogger(__name__)
 
 # 智能体基础系统提示词：强调证据优先原则，严禁凭空下结论或将不可信文档视作指令
 BASE_PROMPT = (
@@ -93,6 +97,9 @@ class AgentComposer:
         :param services: 宿主构建服务实例。
         """
         manifest = plugin.manifest
+        logger.debug(
+            "plugin_registration_started", extra={"event_fields": {"plugin_id": manifest.plugin_id}}
+        )
         contributed = plugin.build(services)
 
         if instruction := contributed.format_system_instruction(manifest.plugin_id):
@@ -109,6 +116,18 @@ class AgentComposer:
         for skill in contributed.skills:
             self._register_skill(manifest.plugin_id, skill)
 
+        logger.info(
+            "plugin_registered",
+            extra={
+                "event_fields": {
+                    "plugin_id": manifest.plugin_id,
+                    "tool_count": len(contributed.tools),
+                    "skill_count": len(contributed.skills),
+                    "subagent_count": len(contributed.subagents),
+                }
+            },
+        )
+
     def _register_tool(self, item: ToolContribution) -> None:
         """注册单个 LangChain 工具，校验重名并配置 HITL 审批与技能门控。
 
@@ -116,6 +135,7 @@ class AgentComposer:
         :raises ValueError: 当工具重名或具有副作用的工具被配置为技能隐藏模式时抛出。
         """
         name = item.name
+        logger.debug("tool_registration_started", extra={"event_fields": {"tool_name": name}})
         if name in self._tool_names:
             raise ValueError(f"Duplicate tool name: {name}")
         self._tool_names.add(name)
@@ -129,6 +149,16 @@ class AgentComposer:
             self.gated_tools.append(item.tool)
         else:
             self.eager_tools.append(item.tool)
+        logger.debug(
+            "tool_registered",
+            extra={
+                "event_fields": {
+                    "tool_name": name,
+                    "exposure": item.exposure,
+                    "requires_approval": item.requires_approval,
+                }
+            },
+        )
 
     def _register_subagent(self, subagent: SubAgentSpec) -> None:
         """注册插件贡献的子智能体，防止与保留名称或其他插件子智能体冲突。
@@ -141,6 +171,7 @@ class AgentComposer:
             raise ValueError(f"Duplicate/reserved subagent name: {name}")
         self._subagent_names.add(name)
         self.subagents.append(subagent)
+        logger.debug("subagent_registered", extra={"event_fields": {"subagent_name": name}})
 
     def _register_skill(self, plugin_id: str, skill: SkillAsset) -> None:
         """注册插件技能资产文件并隔离其虚拟文件系统挂载路径。
@@ -154,6 +185,10 @@ class AgentComposer:
             raise ValueError(f"Duplicate skill path: {virtual_path}")
         self._skill_paths.add(virtual_path)
         self.uploads.append((virtual_path, payload))
+        logger.debug(
+            "skill_registered",
+            extra={"event_fields": {"plugin_id": plugin_id, "skill_path": virtual_path}},
+        )
 
     def build_middleware_stack(
         self,
@@ -167,6 +202,16 @@ class AgentComposer:
         stack: list[AgentMiddleware[Any, Any, Any]] = [
             ModelCallLimitMiddleware(run_limit=self.settings.max_model_calls),
         ]
+        logger.debug(
+            "middleware_configuration_started",
+            extra={
+                "event_fields": {
+                    "max_model_calls": self.settings.max_model_calls,
+                    "enable_planning": self.settings.enable_planning,
+                    "enable_skill_gating": self.settings.enable_skill_gating,
+                }
+            },
+        )
         if self.settings.enable_planning:
             stack.append(TodoListMiddleware())
         if (router := make_router(self.settings)) is not None:
@@ -178,6 +223,9 @@ class AgentComposer:
             stack.append(
                 SkillsMiddleware(backend=backend, sources=["/skills/"], tools=self.gated_tools)
             )
+        logger.debug(
+            "middleware_configured", extra={"event_fields": {"middleware_count": len(stack)}}
+        )
         return stack
 
     @property
@@ -203,8 +251,11 @@ def build_agent(
     :return: 编译完成的 Deep Agent LangGraph 状态图可运行对象。
     :raises ValueError: 当工具名称、子智能体名称冲突，或技能路径重复、副作用工具暴露模式非法时抛出。
     """
+    started = perf_counter()
+    logger.info("agent_build_started")
     root = settings.resolved_workspace_root
     root.mkdir(parents=True, exist_ok=True)
+    logger.debug("workspace_prepared")
 
     active_store = store if store is not None else create_store(settings)
     backend = compose_backend(root, active_store, memory_route=settings.memory_route)
@@ -214,11 +265,26 @@ def build_agent(
     composer.register_plugins(discover_plugins(settings.enabled_plugins), services)
 
     if composer.uploads:
-        backend.upload_files(composer.uploads)
+        logger.debug(
+            "skill_assets_upload_started",
+            extra={"event_fields": {"skill_count": len(composer.uploads)}},
+        )
+        upload_results = backend.upload_files(composer.uploads)
+        failed_uploads = [result for result in upload_results if result.error is not None]
+        for result in failed_uploads:
+            logger.error(
+                "skill_asset_upload_failed", extra={"event_fields": {"skill_path": result.path}}
+            )
+        if failed_uploads:
+            raise RuntimeError("Plugin skill assets could not be uploaded")
+        logger.debug(
+            "skill_assets_uploaded", extra={"event_fields": {"skill_count": len(composer.uploads)}}
+        )
 
     middleware = composer.build_middleware_stack(backend)
 
-    return create_deep_agent(
+    logger.debug("agent_compilation_started")
+    agent = create_deep_agent(
         model=init_configured_model(settings),
         tools=composer.eager_tools,
         system_prompt=composer.system_prompt,
@@ -232,6 +298,17 @@ def build_agent(
         checkpointer=checkpointer if checkpointer is not None else InMemorySaver(),
         store=active_store,
     )
+    logger.info(
+        "agent_build_completed",
+        extra={
+            "event_fields": {
+                "tool_count": len(composer.eager_tools) + len(composer.gated_tools),
+                "subagent_count": len(composer.subagents),
+                "duration_ms": round((perf_counter() - started) * 1000, 2),
+            }
+        },
+    )
+    return agent
 
 
 __all__ = [

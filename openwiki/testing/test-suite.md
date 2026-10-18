@@ -8,10 +8,10 @@ sources:
     resource: repo://tests/test_schema.py
   - id: openwiki-source-09d2a8f36f3ecb7ab9487ab2
     resource: repo://tests/test_store.py
-generated: { by: "antigravity", at: "2026-10-18T04:37:34.297Z" }
+generated: { by: "antigravity", at: "2026-10-18T07:44:10.514Z" }
 verified:
   - by: openwiki/0.7.2
-    at: 2026-10-18T06:56:09.371Z
+    at: 2026-10-18T07:44:10.514Z
 ---
 
 # 测试架构与质量保证
@@ -24,8 +24,11 @@ verified:
 
 ```text
 tests/
-├── test_schema.py    # 数据契约、解析器与 Toolkit 集成、安全防御与配置测试
-└── test_store.py     # 原生 SQLite 存储生命周期、异步操作与复合后端隔离测试
+├── conftest.py                # 全局 pytest fixtures 与环境清理
+├── test_logging.py            # 应用结构化日志、格式化脱敏、并发上下文与轮转测试
+├── test_schema.py             # 数据契约、解析器与 Toolkit 集成、安全防御与配置测试
+├── test_store.py              # 原生 SQLite 存储生命周期、异步操作与复合后端隔离测试
+└── test_workflow_logging.py   # 基于本地假模型的完整 Deep Agents 工作流回调执行树测试
 ```
 
 运行全部测试：

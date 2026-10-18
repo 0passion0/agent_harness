@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from functools import lru_cache
 from importlib.resources import files
 
@@ -16,6 +17,7 @@ from vertical_harness.plugins.contracts import (
 )
 
 SKILL_RELATIVE_PATH = "numeric-citation-audit/SKILL.md"
+logger = logging.getLogger(__name__)
 
 
 @lru_cache(maxsize=1)
@@ -24,12 +26,17 @@ def _load_skill_asset() -> SkillAsset:
 
     :return: 经路径校验的 SkillAsset 实例。
     """
+    logger.debug("skill_resource_loading")
     skill_text = (
         files("research_citation")
         .joinpath("skills", "numeric-citation-audit", "SKILL.md")
         .read_text(encoding="utf-8")
     )
-    return SkillAsset(relative_path=SKILL_RELATIVE_PATH, content=skill_text)
+    asset = SkillAsset(relative_path=SKILL_RELATIVE_PATH, content=skill_text)
+    logger.debug(
+        "skill_resource_loaded", extra={"event_fields": {"skill_path": SKILL_RELATIVE_PATH}}
+    )
+    return asset
 
 
 class ResearchCitationPlugin:
@@ -50,6 +57,7 @@ class ResearchCitationPlugin:
         :return: 包含工具、技能资产与提示指令的声明式 Deep Agents 插件贡献对象。
         """
         toolkit = ResearchCitationToolkit()
+        logger.debug("citation_plugin_build_started")
         return PluginContribution(
             tools=ToolContribution.from_toolkit(toolkit, exposure=Exposure.SKILL),
             skills=[_load_skill_asset()],

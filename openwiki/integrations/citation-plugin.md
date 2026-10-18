@@ -17,7 +17,7 @@ sources:
 generated: { by: "antigravity", at: "2026-10-18T06:56:09.371Z" }
 verified:
   - by: openwiki/0.7.2
-    at: 2026-10-18T06:56:09.371Z
+    at: 2026-10-18T07:44:10.514Z
 ---
 
 # 学术引用审计插件实现

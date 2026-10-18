@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import sqlite3
 from collections.abc import AsyncIterator, Callable, Iterator
 from contextlib import asynccontextmanager, contextmanager
@@ -21,6 +22,8 @@ if TYPE_CHECKING:
     from langgraph.runtime import Runtime
 
     from vertical_harness.config.settings import HarnessSettings
+
+logger = logging.getLogger(__name__)
 
 
 def _prepare_conn_string(settings: HarnessSettings) -> str:
@@ -43,14 +46,21 @@ def create_store(settings: HarnessSettings) -> BaseStore:
     :return: 已执行初始化 setup() 的 BaseStore 存储实例（InMemoryStore 或 SqliteStore）。
     """
     if settings.store_backend == StoreBackendType.MEMORY:
+        logger.debug("store_created", extra={"event_fields": {"backend": "memory"}})
         return InMemoryStore()
+    logger.debug("store_opening", extra={"event_fields": {"backend": "sqlite"}})
     conn = sqlite3.connect(
         _prepare_conn_string(settings),
         check_same_thread=False,
         isolation_level=None,
     )
-    store = SqliteStore(conn)
-    store.setup()
+    try:
+        store = SqliteStore(conn)
+        store.setup()
+    except Exception:
+        conn.close()
+        raise
+    logger.info("store_ready", extra={"event_fields": {"backend": "sqlite"}})
     return store
 
 
@@ -61,12 +71,20 @@ def open_store(settings: HarnessSettings) -> Iterator[BaseStore]:
     :param settings: 经校验的宿主配置对象。
     :return: 产生已完成 setup() 的 BaseStore 存储实例迭代器。
     """
-    if settings.store_backend == StoreBackendType.MEMORY:
-        yield InMemoryStore()
-        return
-    with SqliteStore.from_conn_string(_prepare_conn_string(settings)) as store:
-        store.setup()
-        yield store
+    backend = settings.store_backend
+    logger.debug("store_opening", extra={"event_fields": {"backend": backend}})
+    try:
+        if backend == StoreBackendType.MEMORY:
+            logger.info("store_ready", extra={"event_fields": {"backend": backend}})
+            yield InMemoryStore()
+        else:
+            with SqliteStore.from_conn_string(_prepare_conn_string(settings)) as store:
+                store.setup()
+                logger.info("store_ready", extra={"event_fields": {"backend": backend}})
+                yield store
+    finally:
+        # 调用方异常也会经过这里；不将其误报为数据库故障。
+        logger.debug("store_context_exited", extra={"event_fields": {"backend": backend}})
 
 
 @asynccontextmanager
@@ -76,12 +94,19 @@ async def aopen_store(settings: HarnessSettings) -> AsyncIterator[BaseStore]:
     :param settings: 经校验的宿主配置对象。
     :return: 产生已完成异步 setup() 的 BaseStore 存储实例异步迭代器。
     """
-    if settings.store_backend == StoreBackendType.MEMORY:
-        yield InMemoryStore()
-        return
-    async with AsyncSqliteStore.from_conn_string(_prepare_conn_string(settings)) as store:
-        await store.setup()
-        yield store
+    backend = settings.store_backend
+    logger.debug("async_store_opening", extra={"event_fields": {"backend": backend}})
+    try:
+        if backend == StoreBackendType.MEMORY:
+            logger.info("async_store_ready", extra={"event_fields": {"backend": backend}})
+            yield InMemoryStore()
+        else:
+            async with AsyncSqliteStore.from_conn_string(_prepare_conn_string(settings)) as store:
+                await store.setup()
+                logger.info("async_store_ready", extra={"event_fields": {"backend": backend}})
+                yield store
+    finally:
+        logger.debug("async_store_context_exited", extra={"event_fields": {"backend": backend}})
 
 
 def compose_backend(
@@ -101,14 +126,19 @@ def compose_backend(
     """
     fs_backend = FilesystemBackend(root_dir=str(workspace_root), virtual_mode=True)
     if store is None:
+        logger.debug("filesystem_backend_ready")
         return fs_backend
 
     # 使用 PurePosixPath 规范化虚拟记忆路由前缀（确保前后均保留单斜杠，如 '/memories/'）
     normalized_route = f"{PurePosixPath('/', memory_route.strip('/'))}/"
-    return CompositeBackend(
+    backend = CompositeBackend(
         default=fs_backend,
         routes={normalized_route: StoreBackend(store=store, namespace=namespace_factory)},
     )
+    logger.debug(
+        "composite_backend_ready", extra={"event_fields": {"memory_route": normalized_route}}
+    )
+    return backend
 
 
 __all__ = [

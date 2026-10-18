@@ -76,6 +76,8 @@ venv.bak/
 *.sqlite-journal
 *.sqlite3
 *.db
+*.log
+*.log.*
 
 # OpenWiki ephemeral runtime state
 openwiki/.run.json

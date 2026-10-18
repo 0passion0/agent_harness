@@ -6,10 +6,10 @@ tags: [operations, configuration, pydantic-settings, environment-variables, depl
 sources:
   - id: openwiki-source-20e6f612e4230e00fcfd13ac
     resource: repo://packages/agent-harness/src/vertical_harness/config/settings.py
-generated: { by: "antigravity", at: "2026-10-18T06:56:09.371Z" }
+generated: { by: "antigravity", at: "2026-10-18T07:44:10.514Z" }
 verified:
   - by: openwiki/0.7.2
-    at: 2026-10-18T06:56:09.371Z
+    at: 2026-10-18T07:44:10.514Z
 ---
 
 # 环境变量配置与运维部署
@@ -53,6 +53,11 @@ class HarnessSettings(BaseSettings):
 | `VA_ENABLE_PLANNING` | `bool` (`true`) | 是否启用 `TodoListMiddleware` 规划任务清单 |
 | `VA_ENABLE_SKILL_GATING`| `bool` (`true`) | 是否启用技能门控（未激活技能时隐藏工具） |
 | `VA_MAX_MODEL_CALLS` | `ModelCallLimit` (`30`, 范围 1-500) | 单次执行最大模型调用次数，防止死循环失控 |
+| `VA_LOG_LEVEL` | `Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]` (`INFO`) | 应用日志等级（输出至 stderr） |
+| `VA_LOG_FORMAT` | `Literal["text", "json"]` (`text`) | 日志格式：单行 key=value (`text`) 或结构化 JSON (`json`) |
+| `VA_LOG_FILE` | `Path` (可选) | 可选的 UTF-8 编码滚动日志文件路径 |
+| `VA_LOG_MAX_BYTES` | `int` (`10485760`, 10MB) | 滚动日志单文件最大字节数 |
+| `VA_LOG_BACKUP_COUNT` | `int` (`5`) | 滚动日志备份文件保留数量 |
 
 ## 3. 路径解析与 SQLite 存储目标推断
 

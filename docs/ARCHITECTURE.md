@@ -92,7 +92,17 @@ LangGraph runtime context 是调用级静态配置；官方 `context_schema` 示
 - 生产持久化：Postgres Checkpointer (由宿主生命周期提供)、LangGraph Store/独立数据库、外部对象存储。
 - 运维：工具超时、速率限制、预算限制、模型 fallback、应急关闭插件、schema/manifest 版本发布策略。
 
-## 9. 官方资料
+## 9. 应用日志实现
+
+`vertical_harness.logging` 管理标准 logging 输出与 `ContextVar` 调用关联上下文，所有日志配置集中在 `HarnessSettings`。CLI 显式初始化 root logger；框架、插件均使用各自模块 logger，日志配置不依赖具体领域包或智能体名称。
+
+`engine.callbacks.WorkflowLoggingHandler` 使用 LangChain 原生 callbacks 观察执行树，支持同步/异步、子智能体与并发工具。每次运行独立实例，通过 `RunnableConfig.callbacks` 传递；用框架提供的调用 ID 建立父子关系，用单调时钟计算耗时。它不实现执行循环、不修改消息、工具结果、审批或重试行为。框架挂起与取消分别记录，避免混同业务失败。
+
+INFO 记录应用生命周期与业务结果统计，DEBUG 展开完整阶段和执行树。事件字段由调用方通过 `extra={"event_fields": {...}}` 显式提供，基础设施不绑定领域字段；异常仅保留类型与栈位置。输入、输出和凭据不进入项目事件，原始外部库日志仍遵循相应库策略。该模块补充 LangSmith tracing，不替代审计服务或 LLM trace 存储。
+
+具体配置及库集成示例见 README 的“日志”一节。
+
+## 10. 官方资料
 
 1. https://docs.langchain.com/oss/python/deepagents/overview
 2. https://docs.langchain.com/oss/python/deepagents/customization

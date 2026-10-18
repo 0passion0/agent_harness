@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections import Counter
 from collections.abc import Sequence
 from importlib.metadata import EntryPoint, entry_points
@@ -10,6 +11,7 @@ from vertical_harness.plugins.contracts import DomainPlugin, PluginManifest
 
 # 定义插件在 Python entry points 中注册的分组名称
 PLUGIN_GROUP = "vertical_agent.plugins"
+logger = logging.getLogger(__name__)
 
 
 def _index_matching_entry_points(allowlist_set: set[str]) -> dict[str, EntryPoint]:
@@ -24,8 +26,14 @@ def _index_matching_entry_points(allowlist_set: set[str]) -> dict[str, EntryPoin
         if ep.name not in allowlist_set:
             continue
         if ep.name in matches:
+            logger.error(
+                "plugin_entry_point_duplicate", extra={"event_fields": {"plugin_id": ep.name}}
+            )
             raise ValueError(f"Duplicate entry point: {ep.name}")
         matches[ep.name] = ep
+    logger.debug(
+        "plugin_entry_points_indexed", extra={"event_fields": {"plugin_count": len(matches)}}
+    )
     return matches
 
 
@@ -39,6 +47,7 @@ def _instantiate_and_verify(identifier: str, ep: EntryPoint) -> DomainPlugin:
     :raises TypeError: 当插件未实现可调用的 build() 方法时抛出。
     """
     factory = ep.load()
+    logger.debug("plugin_factory_loaded", extra={"event_fields": {"plugin_id": identifier}})
     plugin = factory()
 
     manifest = PluginManifest.model_validate(plugin.manifest)
@@ -48,6 +57,7 @@ def _instantiate_and_verify(identifier: str, ep: EntryPoint) -> DomainPlugin:
     if not callable(getattr(plugin, "build", None)):
         raise TypeError(f"Plugin {identifier} does not implement build()")
 
+    logger.debug("plugin_contract_verified", extra={"event_fields": {"plugin_id": identifier}})
     return plugin
 
 
@@ -59,9 +69,15 @@ def discover_plugins(allowlist: Sequence[str]) -> list[DomainPlugin]:
     :raises ValueError: 当白名单包含重复 ID、发现重复入口点、存在未安装插件或入口点与清单 ID 不匹配时抛出。
     :raises TypeError: 当加载的插件对象未实现可调用的 build() 方法时抛出。
     """
+    logger.debug(
+        "plugin_discovery_started", extra={"event_fields": {"plugin_count": len(allowlist)}}
+    )
     # 使用 Counter 检查白名单中是否存在重复的插件 ID，防止重复注册
     duplicates = [pid for pid, count in Counter(allowlist).items() if count > 1]
     if duplicates:
+        logger.error(
+            "plugin_allowlist_duplicates", extra={"event_fields": {"plugin_count": len(duplicates)}}
+        )
         raise ValueError(f"Duplicate plugin IDs in allowlist: {duplicates}")
 
     allowlist_set = set(allowlist)
@@ -70,10 +86,27 @@ def discover_plugins(allowlist: Sequence[str]) -> list[DomainPlugin]:
     # 校验白名单中是否存在未安装或未注册的插件
     missing = sorted(allowlist_set - matches.keys())
     if missing:
+        logger.error("plugins_missing", extra={"event_fields": {"plugin_count": len(missing)}})
         raise ValueError(f"Required plugins not installed: {missing}")
 
     # 严格按照白名单中指定的顺序加载并实例化插件
-    return [_instantiate_and_verify(identifier, matches[identifier]) for identifier in allowlist]
+    plugins = []
+    for identifier in allowlist:
+        logger.debug("plugin_loading", extra={"event_fields": {"plugin_id": identifier}})
+        try:
+            plugin = _instantiate_and_verify(identifier, matches[identifier])
+        except Exception as exc:
+            logger.error(
+                "plugin_load_failed",
+                extra={"event_fields": {"plugin_id": identifier, "error_type": type(exc).__name__}},
+            )
+            raise
+        plugins.append(plugin)
+        logger.info("plugin_loaded", extra={"event_fields": {"plugin_id": identifier}})
+    logger.info(
+        "plugin_discovery_completed", extra={"event_fields": {"plugin_count": len(plugins)}}
+    )
+    return plugins
 
 
 __all__ = [

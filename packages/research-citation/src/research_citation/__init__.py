@@ -6,6 +6,8 @@
 - `research_citation.plugin`: 遵循 `vertical_harness` 领域插件协议的入口点实现
 """
 
+from logging import NullHandler, getLogger
+
 from research_citation.checker import (
     MAX_CITATION_SPAN,
     ResearchCitationToolkit,
@@ -25,6 +27,8 @@ from research_citation.models import (
     ReferenceIssue,
 )
 from research_citation.plugin import ResearchCitationPlugin
+
+getLogger(__name__).addHandler(NullHandler())
 
 __all__ = [
     "MAX_CITATION_SPAN",

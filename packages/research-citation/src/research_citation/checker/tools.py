@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+import logging
+from time import perf_counter
+
 from langchain_core.tools import BaseTool, BaseToolkit, tool
 
 from research_citation.checker.evaluator import evaluate_references
 from research_citation.models.check import ReferenceCheckInput
+
+logger = logging.getLogger(__name__)
 
 
 @tool("research_citations_scan_numeric", args_schema=ReferenceCheckInput)
@@ -18,7 +23,30 @@ def scan_numeric(manuscript_text: str, bibliography: list[str]) -> str:
     :param bibliography: 按照手稿引用顺序排列的参考文献条目列表。
     :return: 经过 Pydantic 校验并序列化为 JSON 字符串的引用序号异常比对结果。
     """
-    return evaluate_references(manuscript_text, bibliography).model_dump_json()
+    started = perf_counter()
+    logger.debug(
+        "citation_scan_started", extra={"event_fields": {"bibliography_count": len(bibliography)}}
+    )
+    try:
+        result = evaluate_references(manuscript_text, bibliography)
+    except Exception as exc:
+        logger.error(
+            "citation_scan_failed", extra={"event_fields": {"error_type": type(exc).__name__}}
+        )
+        raise
+    logger.info(
+        "citation_scan_completed",
+        extra={
+            "event_fields": {
+                "status": result.status,
+                "citation_count": len(result.cited_indices),
+                "bibliography_count": len(bibliography),
+                "issue_count": len(result.issues),
+                "duration_ms": round((perf_counter() - started) * 1000, 2),
+            }
+        },
+    )
+    return result.model_dump_json()
 
 
 class ResearchCitationToolkit(BaseToolkit):

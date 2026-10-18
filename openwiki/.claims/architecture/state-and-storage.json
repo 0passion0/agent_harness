@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:5a6f1fc14c0089999db8e26b927b08a865484e53ca8064e16b9469a714bca4c0",
+  "pageVersion": "sha256:419aae270c4b94545e54894d27828e47c34b641d0ff46e340cb283032acab481",
   "claims": [
     {
       "id": "claim_590959805efa4c048335b0617c31b385",
@@ -17,8 +17,8 @@
       "statement": "compose_backend 组合 FilesystemBackend 与 StoreBackend，将默认路径映射至物理磁盘工作区，将 PurePosixPath 规范化后的 memory_route 路由（默认 /memories/）重定向至 BaseStore 持久化存储。",
       "evidence": [
         {
-          "resource": "repo://packages/agent-harness/src/vertical_harness/storage/backends.py#L87-L111",
-          "version": "repo-lines-v1:sha256:4f0a94899879a0929afe7c87c313a1c9359a4bd4f1ed3d207a970929f023e0eb:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNlNWQzZjdhYTgyYjBhMDYzMmY3MGI1MTk2MGY0MmYzY2ZhMzQzYWY4NDk5NWU5NmE3NWE5YjkwZjI3ODJkMTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjkzNDdjNzRjZGZmYjY1MmFkMWFjYzBlZmJjZmFkODZlMTllNWI0OWNiM2ZiM2Q1ODJiMjU0OTZjYTA0MGE2NzQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNiMjM2N2JkMGRmMGE2MmRmYzNkMTIxOTkxYjI5OGZlNGU5YzNkMzI2NzUyZTY5ODU1OTQzYjZjZjRiMjQ4M2QifQ"
+          "resource": "repo://packages/agent-harness/src/vertical_harness/storage/backends.py#L112-L142",
+          "version": "repo-lines-v1:sha256:1f8580cec6eec01190d0fcf3601b898af7c03bd60c1e4779d313ce62155b7fd8:eyJzZWxlY3RlZExpbmVDb3VudCI6MzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNlNWQzZjdhYTgyYjBhMDYzMmY3MGI1MTk2MGY0MmYzY2ZhMzQzYWY4NDk5NWU5NmE3NWE5YjkwZjI3ODJkMTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjkwZWRhM2ZlY2RmYzViMzE3NTlhOGM4ZDY4OTdhYWEyMzg3MmFkOGEyNDBlZWY4NTA2ZTZmMGM5M2VlZDA3ZmMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFlNmM5NGI5OGVhNzU4MjQ2ZTYxNGFlZDNlNTljMGNkZDMyOWIwZDhjZmI5NjkyMWMxZDY1OTVkODliMzJmMGUifQ"
         }
       ]
     },
@@ -27,14 +27,14 @@
       "statement": "create_store、open_store 与 aopen_store 分别管理 InMemoryStore、SqliteStore 与 AsyncSqliteStore 的生命周期，并在创建或打开 SQLite 存储时自动调用 setup() 完成表结构初始化。",
       "evidence": [
         {
-          "resource": "repo://packages/agent-harness/src/vertical_harness/storage/backends.py#L39-L85",
-          "version": "repo-lines-v1:sha256:bfa4caa2c3a90cd58bca8ba543475e0e1263679ba876e043c81d28f51d080949:eyJzZWxlY3RlZExpbmVDb3VudCI6NDcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI5YTgzY2QxMmEwMmE4NzdiZjUxMzZiM2QzMzBjYzlkNzlmODc2OWYwZmNmNDllZjU4MzllODhiZjZhMDZkNGIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE0MDBiZGMxZTUzNGJkMmE4YTdkNGJmZWRjODE0MzAyZTVhNjdhYjNhODg2MTFkNDZmMWEyOGZlNTMzNzVmM2UiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImY1ZTY4NDc0YTM5MWMxN2U3YTk5NTEyOTM4ZDQ2ZTE4ZTZkYTA2YjliNDYyN2RmMDU3YzhjMjA4Njk5ZGVlNjgifQ"
+          "resource": "repo://packages/agent-harness/src/vertical_harness/storage/backends.py#L42-L110",
+          "version": "repo-lines-v1:sha256:f74cd4bd3192d9c5cbb5e016117f5469ba92dc352117fbffd3cda1b7169a99b4:eyJzZWxlY3RlZExpbmVDb3VudCI6NjksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI5YTgzY2QxMmEwMmE4NzdiZjUxMzZiM2QzMzBjYzlkNzlmODc2OWYwZmNmNDllZjU4MzllODhiZjZhMDZkNGIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE0MDBiZGMxZTUzNGJkMmE4YTdkNGJmZWRjODE0MzAyZTVhNjdhYjNhODg2MTFkNDZmMWEyOGZlNTMzNzVmM2UiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImY1ZTY4NDc0YTM5MWMxN2U3YTk5NTEyOTM4ZDQ2ZTE4ZTZkYTA2YjliNDYyN2RmMDU3YzhjMjA4Njk5ZGVlNjgifQ"
         }
       ]
     }
   ],
   "verification": {
     "by": "openwiki/0.7.2",
-    "at": "2026-10-18T06:56:09.371Z"
+    "at": "2026-10-18T07:44:10.514Z"
   }
 }

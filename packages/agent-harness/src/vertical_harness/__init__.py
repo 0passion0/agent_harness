@@ -7,14 +7,18 @@
 - `vertical_harness.engine`: LangChain 聊天模型路由中间件与 Deep Agents 唯一组装器
 """
 
+from logging import NullHandler, getLogger
+
 from vertical_harness.config import HarnessSettings, StoreBackendType, TaskTier
 from vertical_harness.engine import (
     BASE_PROMPT,
     AgentComposer,
+    WorkflowLoggingHandler,
     build_agent,
     init_configured_model,
     make_router,
 )
+from vertical_harness.logging import configure_logging, log_context
 from vertical_harness.plugins import (
     PLUGIN_GROUP,
     BuildServices,
@@ -38,6 +42,8 @@ from vertical_harness.storage import (
     tenant_memory_namespace,
 )
 
+getLogger(__name__).addHandler(NullHandler())
+
 __all__ = [
     "BASE_PROMPT",
     "PLUGIN_GROUP",
@@ -56,12 +62,15 @@ __all__ = [
     "StoreBackendType",
     "TaskTier",
     "ToolContribution",
+    "WorkflowLoggingHandler",
     "aopen_store",
     "build_agent",
     "compose_backend",
+    "configure_logging",
     "create_store",
     "discover_plugins",
     "init_configured_model",
+    "log_context",
     "make_router",
     "open_store",
     "tenant_memory_namespace",

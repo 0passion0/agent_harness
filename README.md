@@ -16,6 +16,55 @@ pytest -q
 
 也可使用 uv workspace：`uv sync --all-packages` 后 `uv run --package vertical-agent-harness vertical-agent --list-plugins`。
 
+## 日志
+
+CLI 启动时统一配置 Python 标准库 `logging`，默认输出 INFO 级别文本到 stderr；stdout 保留插件 JSON 或运行结果。支持 UTF-8 滚动文件，所有配置均从 `HarnessSettings` / `VA_*` 环境变量及 `.env` 加载：
+
+| 配置 | 默认值 | 用途 |
+|---|---|---|
+| `VA_LOG_LEVEL` | `INFO` | `DEBUG`、`INFO`、`WARNING`、`ERROR`、`CRITICAL` |
+| `VA_LOG_FORMAT` | `text` | 文本键值日志或单行 `json` |
+| `VA_LOG_FILE` | 不设置 | 可选日志文件路径，自动创建父目录 |
+| `VA_LOG_MAX_BYTES` | `10485760` | 单文件轮转阈值，必须大于 0 |
+| `VA_LOG_BACKUP_COUNT` | `5` | 备份文件数量，必须大于 0 |
+
+需要全部流程日志时，在 `.env` 中设置：
+
+```dotenv
+VA_LOG_LEVEL=DEBUG
+VA_LOG_FORMAT=json
+VA_LOG_FILE=./.agent-workspace/logs/harness.log
+```
+
+DEBUG 覆盖插件发现和契约验证、工具/技能/子智能体注册、资源加载、存储生命周期、模型初始化与路由、中间件配置和 Agent 编译。运行时通过 LangChain 原生 callbacks 记录完整执行树中的链、模型、工具及嵌套子调用的开始、完成、失败、取消、挂起和框架重试；同步、异步共用同一机制。`run_id` 关联一次 CLI 调用，`operation_id` / `parent_operation_id` 关联执行树，结束事件包含 `duration_ms`。
+
+插件使用 `logging.getLogger(__name__)` 即可接入，无需在宿主日志模块登记插件或智能体名称。应用启动配置 root logger，保留宿主已有 handler；导入库不会配置 root logger。重复初始化只替换本模块创建的 handler。
+
+结构化字段通过 `extra={"event_fields": {"operation": "scan", "count": 3}}` 显式提供，值使用 JSON 可序列化的安全元数据。基础设施不枚举领域字段，插件可以定义自己的事件；保留字段如 `timestamp`、`level`、`run_id` 不能被事件字段覆盖。
+
+本项目事件只记录阶段、标识、数量、状态和耗时，不记录 prompt、正文、文献内容、模型响应或凭据。异常保留类型与调用位置，不输出异常消息和局部变量。DEBUG 同时遵循第三方库自身的日志策略，第三方消息和宿主自有 handler 不属于本项目事件的脱敏边界。逐 token 内容仍使用 LangSmith 等专用观测机制。
+
+作为库集成时，由宿主决定是否配置 logging，并在每次执行时注入独立 callback：
+
+```python
+from uuid import uuid4
+
+from vertical_harness import WorkflowLoggingHandler, configure_logging, log_context
+
+configure_logging(settings)  # 进程启动时调用一次；也可沿用宿主的 logging 配置
+with log_context(str(uuid4())):
+    result = agent.invoke(
+        inputs,
+        config={
+            "configurable": {"thread_id": thread_id},
+            "callbacks": [WorkflowLoggingHandler()],
+        },
+        context=context,
+    )
+```
+
+异步调用使用相同配置传给 `agent.ainvoke()`。滚动文件适用于单进程；多个进程应输出 stderr，由部署环境统一收集与轮转。
+
 ## 插件零改主流程
 
 插件必须在自己的 `pyproject.toml` 声明：

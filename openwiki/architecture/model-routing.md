@@ -5,13 +5,13 @@ description: 阐述基于 LangChain wrap_model_call 与 RunContext.task_tier 的
 tags: [model-routing, langchain, architecture, dynamic-dispatch]
 verified:
   - by: openwiki/0.7.2
-    at: 2026-10-18T06:56:09.371Z
+    at: 2026-10-18T07:44:10.514Z
 sources:
   - id: openwiki-source-20e6f612e4230e00fcfd13ac
     resource: repo://packages/agent-harness/src/vertical_harness/config/settings.py
   - id: openwiki-source-fe5e5c14a08406c9691f9cea
     resource: repo://packages/agent-harness/src/vertical_harness/engine/routing.py
-generated: { by: "antigravity", at: "2026-10-18T06:56:09.371Z" }
+generated: { by: "antigravity", at: "2026-10-18T07:44:10.514Z" }
 ---
 
 # 动态模型路由与模型适配
@@ -34,6 +34,19 @@ def route_model(
 ) -> ModelResponse:
     task_tier = getattr(request.runtime.context, "task_tier", TaskTier.QUALITY)
     target_model = economy_model if task_tier == TaskTier.ECONOMY else quality_model
+    logger.debug(
+        "model_routed",
+        extra={
+            "event_fields": {
+                "task_tier": TaskTier.ECONOMY.value
+                if task_tier == TaskTier.ECONOMY
+                else TaskTier.QUALITY.value,
+                "model": settings.economy_model
+                if task_tier == TaskTier.ECONOMY
+                else settings.quality_model,
+            }
+        },
+    )
     return handler(request.override(model=target_model))
 ```
 

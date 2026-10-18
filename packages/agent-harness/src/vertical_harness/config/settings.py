@@ -66,6 +66,12 @@ class HarnessSettings(BaseSettings):
     enable_skill_gating: bool = True
     # 单次运行允许的最大模型调用次数，防止死循环失控
     max_model_calls: ModelCallLimit = 30
+    # 应用日志等级、输出格式与可选滚动文件；stdout 专用于业务结果
+    log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
+    log_format: Literal["text", "json"] = "text"
+    log_file: Path | None = None
+    log_max_bytes: Annotated[int, Field(ge=1)] = 10_485_760
+    log_backup_count: Annotated[int, Field(ge=1)] = 5
 
     @property
     def resolved_workspace_root(self) -> Path:

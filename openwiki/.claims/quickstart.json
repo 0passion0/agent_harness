@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:3866310737f27640c7b121be32d3ec7b0b31cffc47a268aa6d0b1b56e4aae937",
+  "pageVersion": "sha256:46cb488e02a52e42eb9b953a92d8d3347d3dee715e00f90a7c49f413dda8389b",
   "claims": [
     {
       "id": "claim_23a03da13b1b4c58b070571a35c8ed53",
@@ -17,7 +17,7 @@
       "statement": "cli.py 的 _build_parser 函数定义命令行 --list-plugins、--thread-id、--tenant-id、--user-id 以及 --task-tier 选项，默认 task-tier 为 TaskTier.QUALITY.value (quality)。",
       "evidence": [
         {
-          "resource": "repo://packages/agent-harness/src/vertical_harness/cli.py#L19-L40",
+          "resource": "repo://packages/agent-harness/src/vertical_harness/cli.py#L25-L46",
           "version": "repo-lines-v1:sha256:82e2122ff109f1522015dba0f749e352adefc3b6a050962e5722416355dc31d9:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJmNWNkMWIwMmEyODM4NWM5MmM2YTg5ZTE4YTk1MjY4NjNhYjY3ZDE4ODE5MTI4YmFjZDI5ZmIxYTlhNTA2YWYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUwODUyMzNiZDA1OTNiNmE3OTNlMWNhMjY3ODM0YTA0YTRjYjUxNzJhZmM4N2E0MTZhMTdlYWQ3M2MwNTI0YjMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhiMGI5M2Q2OWVhZWM0ZDIwODEyMWFkMTEyODAwZWMxYzg1YWI2MDdlOWViZTM5MWU0YmI4NzIxYmM3ZTFmYTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjhmM2ZkZTc5MDdkMmE5M2JhOTlhZGRkY2U1ODI1NjI1MzQ1YTZkOTNkNjczY2M2MjRmZWM1MDM0NTZkMTIyODgifQ"
         }
       ]
@@ -35,6 +35,6 @@
   ],
   "verification": {
     "by": "openwiki/0.7.2",
-    "at": "2026-10-18T06:56:09.371Z"
+    "at": "2026-10-18T07:44:10.514Z"
   }
 }

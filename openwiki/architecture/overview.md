@@ -10,10 +10,10 @@ sources:
     resource: repo://packages/agent-harness/src/vertical_harness/engine/compose.py
   - id: openwiki-source-eda43ae96b105fae785c7609
     resource: repo://packages/agent-harness/src/vertical_harness/plugins/contracts.py
-generated: { by: "antigravity", at: "2026-10-18T06:56:09.371Z" }
+generated: { by: "antigravity", at: "2026-10-18T07:44:10.514Z" }
 verified:
   - by: openwiki/0.7.2
-    at: 2026-10-18T06:56:09.371Z
+    at: 2026-10-18T07:44:10.514Z
 ---
 
 # Harness 系统架构与核心组装
@@ -28,6 +28,7 @@ verified:
 - **`vertical_harness.plugins`**（[plugins/contracts.py](../../packages/agent-harness/src/vertical_harness/plugins/contracts.py)、[plugins/discovery.py](../../packages/agent-harness/src/vertical_harness/plugins/discovery.py)）：领域插件 `DomainPlugin` 协议、Pydantic `StrictModel` 贡献契约与 Python `entry points` 白名单发现机制。
 - **`vertical_harness.storage`**（[storage/backends.py](../../packages/agent-harness/src/vertical_harness/storage/backends.py)、[storage/namespace.py](../../packages/agent-harness/src/vertical_harness/storage/namespace.py)）：多租户命名空间分段清洗、原生 LangGraph `SqliteStore` / `AsyncSqliteStore` 生命周期与 `CompositeBackend` 虚拟路径挂载。
 - **`vertical_harness.engine`**（[engine/compose.py](../../packages/agent-harness/src/vertical_harness/engine/compose.py)、[engine/routing.py](../../packages/agent-harness/src/vertical_harness/engine/routing.py)）：`@wrap_model_call` 动态模型路由器、`AgentComposer` 插件贡献聚合器与 `build_agent` 唯一组装入口。
+- **日志与可观测基础设施**（[logging.py](../../packages/agent-harness/src/vertical_harness/logging.py)、[engine/callbacks.py](../../packages/agent-harness/src/vertical_harness/engine/callbacks.py)）：通过 `configure_logging`、`log_context` 上下文变量与 `WorkflowLoggingHandler` 回调提供结构化 JSON/KeyValue 运行追踪。
 
 在框架能力与自有职责边界上：
 - **Agent Loop**：依托 `deepagents.create_deep_agent()`，不自建 ReAct 状态循环。

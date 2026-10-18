@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Sequence
 
 from research_citation.checker.parser import extract_cited_indices
@@ -11,6 +12,8 @@ from research_citation.models.check import (
     ReferenceCheckResult,
     ReferenceIssue,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def evaluate_references(
@@ -23,8 +26,16 @@ def evaluate_references(
     :param bibliography: 按顺序排列的参考文献条目序列。
     :return: 结构化的 ReferenceCheckResult 校验结果模型。
     """
+    logger.debug(
+        "citation_evaluation_started",
+        extra={"event_fields": {"bibliography_count": len(bibliography)}},
+    )
     cited_indices = extract_cited_indices(manuscript_text)
     if not cited_indices:
+        logger.debug(
+            "citation_evaluation_completed",
+            extra={"event_fields": {"status": CheckStatus.NOT_APPLICABLE, "issue_count": 0}},
+        )
         return ReferenceCheckResult(
             status=CheckStatus.NOT_APPLICABLE,
             cited_indices=[],
@@ -57,6 +68,15 @@ def evaluate_references(
     ]
 
     issues = [*out_of_range_issues, *uncited_issues]
+    logger.debug(
+        "citation_evaluation_completed",
+        extra={
+            "event_fields": {
+                "issue_count": len(issues),
+                "status": CheckStatus.ISSUES if issues else CheckStatus.PASSED,
+            }
+        },
+    )
     return ReferenceCheckResult(
         status=CheckStatus.ISSUES if issues else CheckStatus.PASSED,
         cited_indices=cited_indices,
