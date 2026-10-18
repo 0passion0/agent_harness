@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:f30dd13f5e64c4aea310c214444183a314c0a53cdf5eed2a570fcb5c51108f44",
+  "claims": [
+    {
+      "id": "claim_e82e23efb81e4d41afe603dc31f2cc26",
+      "statement": "build_agent 函数在组装 Deep Agent 时，强制产生本地写操作 (WRITE) 或外部副作用 (EXTERNAL) 的工具必须直接暴露 (Exposure.EAGER)，并在 interrupts 中配置 approve/reject 审批拦截。",
+      "evidence": [
+        {
+          "resource": "repo://packages/agent-harness/src/vertical_harness/compose.py#L98-L104",
+          "version": "repo-lines-v1:sha256:ce40c74657b47549edd816a995573aca5aedd440e77ed9a35813dc7b0ef1fc7a:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMmU2YjIwYmYwYjg2NmY3ZGFkZGQwYmFjYmRkY2VlZGRjMjlmNTQ5NWRiOGFkYTUzNWUzZDYxYTEyZTM1YTZkOSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDFiYTQ3MTljODBiNmZlOTExYjA5MWE3YzA1MTI0YjY0ZWVlY2U5NjRlMDljMDU4ZWY4Zjk4MDVkYWNhNTQ2YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZDcxNDg5OTY4ODUwYmFiMWRlZmRmYTFjMGUzZThmOTBiMDg5ZDY1NTkzMzA5MWJmYWUzNWQ0OGI4MmY1YzU5YiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTdlMjQ1NDNkMmNmZTU4ZjQ2MjU4M2M2YTU3N2U3YjM4MGQxNjNmODlkNzlhMzQwOGFmNDFiOGI3ZTI2ZTViMyJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_e18b1e74e2124527bf07cc0593c1603e",
+      "statement": "build_agent 通过 FilesystemPermission 强制沙箱安全策略，禁止对 /skills/** 路径的写操作，以及对所有 .env 配置文件的读写操作。",
+      "evidence": [
+        {
+          "resource": "repo://packages/agent-harness/src/vertical_harness/compose.py#L156-L160",
+          "version": "repo-lines-v1:sha256:356d4490ad7fbcfacc250906b432c2392912f804f4c9fdcc243a00b4be15e89f:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYzUxZmJjNTViMjU4MDhjZmEzZWVkMTE0NGIxYzE1Nzk2ODMzYzVkZWQ4YTJjMmQ0MWY5ZmE4OGI1ZjcxZGZmNSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYjEwY2Q4Zjk4OTYwNmE5MGYzZjgzOWNjODlhOTBlOTE4OWE0M2Y0MTU5OTgwZGZmZDY5MzE1ZDBiZTNjNWQ1NCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZDEyYjhkYTlkZjVlYTFlZDUzOTA0NWM1N2Y1NmEyNWNiZjNkMDVkZWZhMzkxNmZiZWQ5NzAzN2U5M2QyNTQ1NCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZDQyMDlhMjQzMGRjNjAyNjg4OTlmZjU1NWJhOGViMDZhNzQzOTg3NDM0ODU3ZTkxMjIxNzNiOTc5MTZkYjM2MiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_18171554a01e4e318fc532459ec1f1f6",
+      "statement": "build_agent 在处理插件子智能体时，禁止使用系统保留名称 general-purpose 或重复的子智能体名称，否则抛出 ValueError。",
+      "evidence": [
+        {
+          "resource": "repo://packages/agent-harness/src/vertical_harness/compose.py#L114-L121",
+          "version": "repo-lines-v1:sha256:7c3b42d4731b39dd23978f9c63d76013ae589b0bf9bbe3244f56bd3fceaf18d9:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNGQ5OTAwMDU3NTU4ODZkMTgwNzc5YWY0MzJkOTZlMWYyOTI3MTBlY2Q3YzVlYzk2YmM1YjgxM2FhYTg5ZjBmNyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNjY4YmVjZjg5ZjNkNjUzMmFjOWQ2YWU3ZmYzMmZkMmY0MTUzN2Q0NGI1ZGExNDBhODA3NTlmYmIwMjU3ZGExZSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYmMyZGUwZThhNTJlZDE0M2E1ZWU2MTIwZTZhNmY2ZjVmYmE4MDM1NTljMTZlNWQ1YTI2OTc1MDdjZDJiZGRlMCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiODAzYTdjMWM2NTBkZTM1ZmRhNDgwZTM4YzllYWFlMzAzZjNkYTg1ZjhlNjM2ZWE1MjkyMDhjYjQwMTI4ZjRiYiJ9"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.7.2",
+    "at": "2026-10-18T03:23:43.651Z"
+  }
+}

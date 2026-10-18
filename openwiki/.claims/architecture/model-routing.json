@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:2678a35185c6eb956d9c9920e83e29952f68742c854ca32ec58b1252a90a6c9b",
+  "claims": [
+    {
+      "id": "claim_6467ab64523a43faaf57ff219e85441d",
+      "statement": "make_router 检查 VA_ECONOMY_MODEL 与 VA_QUALITY_MODEL，若两者均未配置则返回 None，若仅配置其一则抛出 ValueError，保证配置成对生效。",
+      "evidence": [
+        {
+          "resource": "repo://packages/agent-harness/src/vertical_harness/routing.py#L31-L44",
+          "version": "repo-lines-v1:sha256:8e827b48754acd761f15cc499c8a52e7aeed0bfa716e86bfab8d9956c6cc8763:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjljYjRmZTFlNGI5ODYwY2I0ZWUyNDZkMTM0NWVkYzlmNWI3YzA1OWFkYWQ0MGNjZDBlNTkyNTA3NTJjY2YyODIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQyZWQ5YmM4OGVlZTM4ZTM1YmQ4OTllODk2YmQyYmJkODU3MThlMzMxNzdjYzkyMDdlZmNlY2ExYTA5MWE1ODIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM2ZmM1MGNhNzlhN2I1MmQ4N2RmNzJiZjliMzRlNGIyNTIzNmEyYjliNTU3OGQ4N2UwMzgxNjJjZGRlNDI4NGIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_a71ccd0000af4b2c810a643393f5b48d",
+      "statement": "动态路由中间件通过 LangChain 的 wrap_model_call 拦截调用，从 request.runtime.context 读取 task_tier，并在 task_tier 为 economy 时重定向到经济型模型，其余情况走高品质模型。",
+      "evidence": [
+        {
+          "resource": "repo://packages/agent-harness/src/vertical_harness/routing.py#L49-L67",
+          "version": "repo-lines-v1:sha256:e801a4dcd6a11ef5ab238b36ec23574c3b33dacdc77aa1bcc4b3ec1a97f65e67:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ1ZTQ1ZTBmY2ZmN2Y3Nzc3M2NlNzI3YjU3ODA4MzhhYzE0OGRjYzZhYTc0ZTIwM2MwMzg4NjI2YzBiODRlODIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzNmQ2Y2U2MGQ0NzJkZTQ4NTNlMzYyZjRjNmZmMzk1MjliYmIyNGNhMjQ5ZmFlMDFmMGI0YTNmMDYxMzU3ZTciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY2OTllNWVjZGM4ODc2MTQ5MDliODY2MjY2MmMzNDQzODRiZTJhNTY0Nzk1OWYyNmY5M2M4NDQ0YTkyZGYxNzMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_9228ca67bd1a413c9eccebaf0cc6538d",
+      "statement": "init_configured_model 封装了 LangChain init_chat_model，安全解包 HarnessSettings.api_key 的 SecretStr 并透传 base_url。",
+      "evidence": [
+        {
+          "resource": "repo://packages/agent-harness/src/vertical_harness/routing.py#L12-L29",
+          "version": "repo-lines-v1:sha256:06f881bf13a51f438f7b9700e45b33aa03c48a75bd4afd079f579410cf6e5216:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZlZjA4MGYzZTg3MjE0N2RkN2I0MTQ3NGQ5NTk0MmE2ODZlOGEzZGI2NjFiMzFiNDBlNjRhZTBiZmY4MjA3NmEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImRmZDUyNjgyYTEzMDRhMzc0NTcwMzUyYTY5Y2RmMDZjYTBmMjkwM2QyN2UxMDdiYjk1MjRmNmZkZjA4ZmJlZDEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQzMmRiN2E4M2ZhYTM4YjQ3ODMxMmYyY2FmNDQ1NGU1NmM1ZWY0NTIwM2EwNjg1YjA2YzAxOTA0NzBhYTM5YWEifQ"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.7.2",
+    "at": "2026-10-18T03:23:43.651Z"
+  }
+}

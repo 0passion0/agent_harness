@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:8b854e35d379ba9ac2b5d7bf70ba4089b89a788267ac1f5eef73b6bce0087096",
+  "claims": [
+    {
+      "id": "claim_e34da381faf64b72b9e21774098450dc",
+      "statement": "test_schema.py 针对恶意插件 ID 与包含相对跳转符 .. 的技能路径执行校验拦截测试，确保目录遍历攻击被 Pydantic 模型阻断。",
+      "evidence": [
+        {
+          "resource": "repo://tests/test_schema.py#L38-L52",
+          "version": "repo-lines-v1:sha256:781da6b41300bed615b644e7892f85dae8f0950a4fda53f77f977aa929853348:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZmYmM3OGUzMDQ3OWIwZmQyMjY4NDM4MTEwZjAzNThkNGRjZDE1ZDAwMWFjMTQ1MTdiYzc2OTllMGI3MWFjNjgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjdiNWUwYTE1YmVkOTYyNDczODU3NjgzYzRlOTA0NjM5ZDBkZjIxZDM4OWM3MDQ4NTY4MDVjODNmNWZmMTEwOGIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJmYTEzMmVkOWU3YWU3NjJiYzE0ODllYWFhYWNlYjZiOGYxYzZmOTFmY2NmZGYyMTkwMzY4MmI3ZTBlZDhmOWMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_9552b7652efb4e88956d109c3ffc8532",
+      "statement": "test_store.py 验证 CompositeBackend 读写行为：写入 /draft.txt 在物理磁盘工作区生成文件，而写入 /memories/AGENTS.md 被重定向至 SqliteStore 且磁盘无物理文件。",
+      "evidence": [
+        {
+          "resource": "repo://tests/test_store.py#L90-L131",
+          "version": "repo-lines-v1:sha256:f189aa340c6a3e760cb4eb080a9b1fe18e7c0a4c54a0c77eabf6f78d8166ed31:eyJzZWxlY3RlZExpbmVDb3VudCI6NDIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ4NWFkZWMyZDRhNmI3MjVhMTYwNzNiOWYzMDJjZmUxOGNlNjgzZDM0NTdhMTNlODZlNjQzOTE0ZDk0ODg2OTgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI0MzNkMTBhZDQ5OTAxZmJmYWZmZjg5M2NjNWEwZjBiNzdmMGU1NDY5OGUyNTgzNTlhMDI3OWIzNzQ3NThiYzIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjYzYmE3ZDUyMGJkNTJhNmNiOGZlODE3Y2VhMjNmYzQyYjU0YTQzODkwZDhlNGI1MWNhNTJmMTc0ZDdlMTYyYzAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBmOWNmYjFlYTU0NTc2ZGExODExODZhMTMyYjY0ZWY3MWU0YzA5Njk3Y2Q3Nzg4ZTlkNGJkN2YyMDFkNGZiZTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_440149afb8bc49e3b897755211db7291",
+      "statement": "test_schema.py 验证 scan_numeric 工具在正文引用 [1] 和 [3] 但参考文献仅有两篇时，精准捕获 out_of_range 和 uncited 两项异常问题。",
+      "evidence": [
+        {
+          "resource": "repo://tests/test_schema.py#L22-L36",
+          "version": "repo-lines-v1:sha256:e4e7d23379c821c81850c0e1f16b34331d430f7f75c239ea383036e2153f6ae5:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdmOTllZTUwNzU3MjFjNGJlZDUyNjgxMDE1NWEzMWU3YzEyMjcyNWRjYjhjZmIxMDBmZTNiNjk0ZDViOGI0MDUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQyYWJhMmJlZjI5NGQ5MDQyMWIzMGMxN2FmMDAxNDMwZjI4ZTVkNjNkYTAxOTk4ZTNiZTkyOWFiZDVlMjZkYTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjlkZWVlZDQ4M2M1N2U0ODc2ODQxNzI4MTVjNmJjNGY5ZDdhODE4NTNiM2YwOThmNzU4NTVhNjZjNjUyMzMzYjAifQ"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.7.2",
+    "at": "2026-10-18T03:23:43.651Z"
+  }
+}

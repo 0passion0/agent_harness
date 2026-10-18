@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:636f0b3acb5bd6eb97fd4ccd61d916012105c6c1b4d0931c889c47dbbe78a885",
+  "claims": [
+    {
+      "id": "claim_6e3958e5511f4b6e81aa066e5db6a45e",
+      "statement": "scan_numeric 工具解析方括号内的单序号、逗号列表与区间数字引用（跨度限制 <=1000 以防 DoS），对超出文献总数的引用标记 out_of_range，对文献存在但正文未出现的条目标记 uncited。",
+      "evidence": [
+        {
+          "resource": "repo://packages/research-citation/src/research_citation/tools.py#L30-L66",
+          "version": "repo-lines-v1:sha256:4bb3489ffec732b8ca9476367a86a1acb3c12429bc6b7520d06051126b467168:eyJzZWxlY3RlZExpbmVDb3VudCI6MzcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhhOTA0ZWM4MzdhOGNiMmVhY2MwMzFiMDQxZjY1OTQ0M2Q1MjI3Y2U2MDE2ZjMzYjBhNjQ3NDlmMDdhNDI1ZDkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImI2NDQ1Y2JmNGVlOWY2Njk4NzZkMTllNjg1YTBjZTViZmE3MjI3MjYyMTZkZDQ4MzUwMTAwOWVlNzVkYmM2NjAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjgwMTA4YTE5ZDNjNGJlMGRjN2VkNmM4NDY1NzU1NzYzMTA2Y2E2MGQwNTc2YjhjYTEzZDBjN2UzNmUwM2U4NGQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_696070acaa2b452fb646a622fa5f9e38",
+      "statement": "AuditFinding 模型通过 Pydantic 校验器约束：当结论状态为 verified 时必须至少包含一条不可变的 EvidenceRef 证据，否则触发校验异常。",
+      "evidence": [
+        {
+          "resource": "repo://packages/research-citation/src/research_citation/report.py#L36-L47",
+          "version": "repo-lines-v1:sha256:e92bd81d2aa55912261d36269137fda76cb5b6e3ba74104ff5cd22157686fd19:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFlZjFjZGQwZjU3NDMzY2U1MDc3OTA3MjJlMmY1MWQ5NzM1NmNiZmZhN2IyNGRkN2NhMTM0NDgzMmQ0ZTUyNDgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImI0Mjg0MDZhZGE4OTdiZTQ1N2JmNTgyYmYzMDU5ZWEwNmZhZDliMDQ5MmE2YjE0OWE1YTBjYTg2NmY1ZWZjMTIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjMzZDNjZjJkYWQ0ZDY1ZTc3YmY0OGY1ODI0NjI0ZDE4NDZkZWRmZGJmOWEzNzNkM2I4OGIwNGExODcxMjEwODgifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_2620019eb4444a2fa77ff2f02d06166a",
+      "statement": "ResearchCitationPlugin 将 scan_numeric 工具声明为 Exposure.SKILL 门控工具，并通过 importlib.resources 将 numeric-citation-audit/SKILL.md 声明为插件技能资产。",
+      "evidence": [
+        {
+          "resource": "repo://packages/research-citation/src/research_citation/plugin.py#L34-L48",
+          "version": "repo-lines-v1:sha256:d54514ca4cd29585ae75cfe11ee9a1494d1fd917c2019ae3f70fe8c015f1d6a8:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcyNDNlZjI1ZGQ3YjMxZjM1ZDdhZGYxZWZhMGUxMzAyYjg3YWUxOGZhMDRhMzYxMzM5NGZjZjRhN2YzYjk1MjEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQyMjU4ODM5YmE1ZWU5Yjk5OWQ0OTIxYzQ0ZWE3YzNlNzA5ZjYxZTc1ZTUzYTA0YjA1OTYzMTdmMTRjNGUxMDQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.7.2",
+    "at": "2026-10-18T03:23:43.651Z"
+  }
+}

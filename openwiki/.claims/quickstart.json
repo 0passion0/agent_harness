@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:a4e6d71e3db486eeb3f2d04e27b6095a2ecf68a543802632156a493da4365ecf",
+  "claims": [
+    {
+      "id": "claim_23a03da13b1b4c58b070571a35c8ed53",
+      "statement": "README.md 规定仓库采用双独立 Python distribution：通用 vertical-agent-harness 与演示插件 vertical-plugin-research-citation，并支持同时以可编辑模式 pip install 安装。",
+      "evidence": [
+        {
+          "resource": "repo://README.md#L1-L16",
+          "version": "repo-lines-v1:sha256:24e684a9388c30630f6a68e4d2bab21ded37274ef987c3f30e5ca643d7860d77:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc3NzJmMTlhNDY3OWQxNzRkMGVlZTU5NzJjNjg5MjMwYmM3ZjBkNmIzODA5YTdhNWViZmZjY2EyNzBjNjBiMDEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRlOGU4MzQyNjBkYzY4ZWNmOTQ2NWZmZDAwOWZjNjlmNDIzMDU4YTk5M2ExMDI5M2Y0YTk1YjE2M2MwMjNkN2EifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_322e2feeac6b403fa399de8e010aa4db",
+      "statement": "cli.py 命令行提供 --list-plugins、--thread-id、--tenant-id、--user-id 以及 --task-tier 选项，默认 task-tier 为 quality。",
+      "evidence": [
+        {
+          "resource": "repo://packages/agent-harness/src/vertical_harness/cli.py#L20-L33",
+          "version": "repo-lines-v1:sha256:bc718b9b0b63d9aaee162e08997e0173b9a97806d0608e03f41de47eb962fa92:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVmNmMzY2VhNzAzOWY0ZmQ3YjI0MTA2N2FjMDZlMzg1M2RiZGRjNTIwYzQ4MTdmNWU0NDhhYmYzNTJhMDZlZWIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYxZGVkZmIyYTQwZTdhYWNmYzhjNjQ1NDg5MDBjMjQ0OThhY2I0NWE3MTc1YWI2NzFkOTlhMzc5MjBiNDIxY2IiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImE2MTRkZDc4YjcyYjNjY2ZjZmRmOTRiZWFiMDVjOTg0YTJlN2Q1MThiYTM4Y2E3NjJmNDJhZmQ3ZjA3NGI3MDYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImU4ODgyYWMxOTZmYTZmYWQzZTRhYWQyNmJiY2I3OGM3ODJkZjE5MGYyNzk2OGUwYTA3Nzg4ZGRkNzQ1YjczZjkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_5664a2004b9440cea62a22bc314fd18c",
+      "statement": "packages/agent-harness/pyproject.toml 声明命令行脚本入口 vertical-agent 指向 vertical_harness.cli:main。",
+      "evidence": [
+        {
+          "resource": "repo://packages/agent-harness/pyproject.toml#L24-L26",
+          "version": "repo-lines-v1:sha256:83960cd2ea2bf2b60615370232b2fe64f03fa1349f90bbd31f3fc432f54a0816:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNGVhYjRlYzYzZGU1MTdkYTRjZDhlNWM4MzA3ZmIyYzc3MzdkMzkxOTBhYjY5ZjMyYTVlOWVmODFlYTQ0MTZkZSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDFiYTQ3MTljODBiNmZlOTExYjA5MWE3YzA1MTI0YjY0ZWVlY2U5NjRlMDljMDU4ZWY4Zjk4MDVkYWNhNTQ2YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNTA0MDFkNzNkZjc0ZTFmZTg1ZGE0ZDYyMjM3ZjM0Yjg5ZDcyNWM4OGYwMzUyYzhjYWZjMDg3NTAwZDRkYzFlNSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjIsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMzU5MzhmZTFiNWM0NGJlZGNlN2M0ZTQ3OTQ5NTIyMDZlNmM5MTRmNTI5MjZjMzYyNjIzYzA2MDQ0MmY1YWUxZCJ9"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.7.2",
+    "at": "2026-10-18T03:23:43.651Z"
+  }
+}

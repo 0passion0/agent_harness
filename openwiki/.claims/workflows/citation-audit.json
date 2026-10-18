@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:c8f5effc9eaca886c0c8b683a4c51f5a8b08153572c509328e95d54fd23baed7",
+  "claims": [
+    {
+      "id": "claim_8ac7dbdeedbd454f958bb888752dadc6",
+      "statement": "numeric-citation-audit/SKILL.md 在 frontmatter 元数据中通过 metadata.include_tools 声明 research_citations_scan_numeric，指示 SkillsMiddleware 按需暴露该门控工具。",
+      "evidence": [
+        {
+          "resource": "repo://packages/research-citation/src/research_citation/skills/numeric-citation-audit/SKILL.md#L1-L6",
+          "version": "repo-lines-v1:sha256:21af79a6fc5f09e1a3960158f1b15bd9ce0bc56b12824705ea181c8dfb4a780e:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZjUyZDcxMTEwM2Q1MGE0Mzc4MzBjNmZiY2QwNGZiNGJhYjQ5YTBmODJmNmQyNmQxYzc5MWM2ZTg0ODhkZDA5MCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZjUyZDcxMTEwM2Q1MGE0Mzc4MzBjNmZiY2QwNGZiNGJhYjQ5YTBmODJmNmQyNmQxYzc5MWM2ZTg0ODhkZDA5MCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjAsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTJkYTE5ODBmMmRhMmNiNjBlZTM0ZGE3MDBhMGJkZWUwZjI3ODZhMDJlNGQxYzg5YjY4NTMyYjM0YjM2YmE1NCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_3d4029b8e68c47f8b9698b73353f899f",
+      "statement": "cli.py 在调用 agent.invoke 时使用 open_store 打开持久化存储，并注入包含 tenant_id、user_id 和 task_tier 的 RunContext 运行时上下文。",
+      "evidence": [
+        {
+          "resource": "repo://packages/agent-harness/src/vertical_harness/cli.py#L56-L68",
+          "version": "repo-lines-v1:sha256:4d3444c295116b8ea237a7dc11ce7cdc77eca325b88f246135268ec0df7f67aa:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQwNGYzY2QzYTVlYjBiNDY2NzQyMTE0ZDg5YjIxZmUyMjhiZTdlOGYxNDZjOWE2NDcxYjYzZjRiOTgxYzI3MzMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI2ODRmNDg5NDlkMjM4YWJjNWMzYzRiYTFiMGMzOTdmY2MwMDM0MWNmZjViZWVkODEwODFkNWNiYTE0MzZjZjAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBlNDg2YWE1Mzc5MzY2YWEzYjRlYTVmMmQ0NDhkOGEyM2I1YWVjMDdiZTFhZThlMWVkODRjNDAzNzI0ZTMyMzEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_975956e684934e96aebabdf12e910709",
+      "statement": "numeric-citation-audit 技能 SOP 规定 Agent 必须区分确认为序号错误与语义引用有效性，仅返回问题索引与清单且不得指控科研不端。",
+      "evidence": [
+        {
+          "resource": "repo://packages/research-citation/src/research_citation/skills/numeric-citation-audit/SKILL.md#L8-L14",
+          "version": "repo-lines-v1:sha256:9180aec0bef6bf3a81dbd39c8b0eacb58f4490b3720f572cad271c28b8d89c44:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNzdiMGY2ZDUwODRmNzI5ODJiYWE1ZTg1YjAxNjkyNTEwMDEzZWEyZWI4OWNmNmZkODJlZjdhZGYyOTkxZTlmOCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNWRmNzliZmY4OTQzNmFiODUzYWY4ZGRjYWNkYWUxM2FmMWM2OWQ4NGI0ZjgzOTFmOTE2MWQyYzNlNWU3YWQ3MyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMTA4YzYwOGMxNWFjZGZjYjU1NzU2Y2E3ZWQ3N2UxNDkxZGM3ZGMxNDdiNWQzNjhiOGQyYmUwOTk2ZjlhNDMyMCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjAsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSJ9"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.7.2",
+    "at": "2026-10-18T03:23:43.651Z"
+  }
+}

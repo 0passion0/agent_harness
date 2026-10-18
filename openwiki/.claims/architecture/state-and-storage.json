@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:21b27e100c9b0b5f13f6416af21157e1939a3b6677f000de39496e42b09cfc64",
+  "claims": [
+    {
+      "id": "claim_590959805efa4c048335b0617c31b385",
+      "statement": "tenant_memory_namespace 通过正则将租户 ID 和用户 ID 中除字母、数字、减号、下划线、@、+、:、~ 之外的非安全字符（包含点号）替换为下划线，防止破坏 LangGraph SqliteStore 点号分隔的命名空间。",
+      "evidence": [
+        {
+          "resource": "repo://packages/agent-harness/src/vertical_harness/store.py#L24-L64",
+          "version": "repo-lines-v1:sha256:1e6491d12569db96073044ac7da34e0bf526939d62beb9822394d9f1c8f8da29:eyJzZWxlY3RlZExpbmVDb3VudCI6NDEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxY2IwMzFmZTZmMDgwZDFmODAwYTg5YTZjMjIyYmEwYWQwOWViMDhmMThmZmNhODQ4ZjRmNmY0YTk5NzljNTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImYzZGJmMTcxYWJjOWYyYzNlNjQyNmMyMmUzNWJmNTM4MWQ3ZGJlYTM0YzVmNjUyZDRjNmI5NWVjYmNjNzMzNWEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA0YjFiYWE4NTFmYjkyZjQzMTI2ZDVjMTMwMTUyY2Q4ZGRkNGE4YTNjZGJhODBjZGFhMmZhYmM5Y2NjZjU5MjQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_07b9d405dba9416c8c9b7d55129dfa45",
+      "statement": "compose_backend 组合 FilesystemBackend 与 StoreBackend，将默认路径映射至物理磁盘工作区，将 memory_route 路由（默认 /memories/）重定向至 BaseStore 持久化存储。",
+      "evidence": [
+        {
+          "resource": "repo://packages/agent-harness/src/vertical_harness/store.py#L140-L168",
+          "version": "repo-lines-v1:sha256:7d25ca22eff3916bf96c9505f8bca0f1a2bf90d0e929507804c09f83e0552aa5:eyJzZWxlY3RlZExpbmVDb3VudCI6MjksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNlNWQzZjdhYTgyYjBhMDYzMmY3MGI1MTk2MGY0MmYzY2ZhMzQzYWY4NDk5NWU5NmE3NWE5YjkwZjI3ODJkMTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjkzNDdjNzRjZGZmYjY1MmFkMWFjYzBlZmJjZmFkODZlMTllNWI0OWNiM2ZiM2Q1ODJiMjU0OTZjYTA0MGE2NzQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFlNmM5NGI5OGVhNzU4MjQ2ZTYxNGFlZDNlNTljMGNkZDMyOWIwZDhjZmI5NjkyMWMxZDY1OTVkODliMzJmMGUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_610486418b9a41e698a8d58e18cbf03c",
+      "statement": "open_store 与 aopen_store 上下文管理器分别封装了 SqliteStore 与 AsyncSqliteStore 的生命周期，并在创建或打开时自动调用 setup() 完成表结构初始化。",
+      "evidence": [
+        {
+          "resource": "repo://packages/agent-harness/src/vertical_harness/store.py#L104-L138",
+          "version": "repo-lines-v1:sha256:59d5ee91c6791228a6cd6a73d78e5c76604965f5e8331a7888897806a3663b34:eyJzZWxlY3RlZExpbmVDb3VudCI6MzUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU2MWYzM2MxMzI1NjlhNzQ5NDZiMmZjZjU0NmNhM2M0NDI1ZGEwY2E1Y2Y2YjY4NmMyNjA5MGZhYTlkMTEyYjQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjlkYjRjMGQ5ODkxMzYxMTIyZTExZjY5NjQyZjVjZThkMDBjZDBlNmQ1MTJkZGYyYjEwYzU2MGI5MGYyNzUxYWIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImY1ZTY4NDc0YTM5MWMxN2U3YTk5NTEyOTM4ZDQ2ZTE4ZTZkYTA2YjliNDYyN2RmMDU3YzhjMjA4Njk5ZGVlNjgifQ"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.7.2",
+    "at": "2026-10-18T03:23:43.651Z"
+  }
+}
