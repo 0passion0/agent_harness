@@ -133,7 +133,7 @@ def create_checkpointer(settings: HarnessSettings) -> BaseCheckpointSaver[Any]:
     :return: 已执行 setup() 的 BaseCheckpointSaver 实例（InMemorySaver 或 SqliteSaver）。
     """
     target = settings.resolved_checkpoint_target
-    if settings.store_backend == StoreBackendType.MEMORY or target == ":memory:":
+    if target == ":memory:":
         logger.debug("checkpointer_created", extra={"event_fields": {"backend": "memory"}})
         return InMemorySaver()
     logger.debug("checkpointer_opening", extra={"event_fields": {"backend": "sqlite"}})
@@ -159,7 +159,7 @@ def open_checkpointer(settings: HarnessSettings) -> Iterator[BaseCheckpointSaver
     :return: 产生已完成 setup() 的 BaseCheckpointSaver 实例迭代器。
     """
     target = settings.resolved_checkpoint_target
-    backend = "memory" if (settings.store_backend == StoreBackendType.MEMORY or target == ":memory:") else "sqlite"
+    backend = "memory" if target == ":memory:" else "sqlite"
     logger.debug("checkpointer_opening", extra={"event_fields": {"backend": backend}})
     try:
         if backend == "memory":
@@ -182,7 +182,7 @@ async def aopen_checkpointer(settings: HarnessSettings) -> AsyncIterator[BaseChe
     :return: 产生已完成异步 setup() 的 BaseCheckpointSaver 实例异步迭代器。
     """
     target = settings.resolved_checkpoint_target
-    backend = "memory" if (settings.store_backend == StoreBackendType.MEMORY or target == ":memory:") else "sqlite"
+    backend = "memory" if target == ":memory:" else "sqlite"
     logger.debug("async_checkpointer_opening", extra={"event_fields": {"backend": backend}})
     try:
         if backend == "memory":
@@ -193,7 +193,9 @@ async def aopen_checkpointer(settings: HarnessSettings) -> AsyncIterator[BaseChe
                 _prepare_checkpoint_conn_string(settings)
             ) as saver:
                 await saver.setup()
-                logger.info("async_checkpointer_ready", extra={"event_fields": {"backend": backend}})
+                logger.info(
+                    "async_checkpointer_ready", extra={"event_fields": {"backend": backend}}
+                )
                 yield saver
     finally:
         logger.debug(

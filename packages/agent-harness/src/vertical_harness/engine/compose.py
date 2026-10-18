@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import AsyncIterator, Iterable
-from contextlib import AsyncExitStack, asynccontextmanager
+from collections.abc import AsyncIterator, Iterable, Iterator, Mapping
+from contextlib import AsyncExitStack, ExitStack, asynccontextmanager, contextmanager
 from dataclasses import dataclass, field
+from pathlib import PurePosixPath
 from time import perf_counter
 from typing import Any
 
@@ -18,6 +19,7 @@ from deepagents import (
 )
 from deepagents.backends.protocol import BackendProtocol
 from deepagents.middleware import SkillsMiddleware
+from deepagents.middleware.subagents import SubAgentMiddleware
 from langchain.agents.middleware import (
     AgentMiddleware,
     InterruptOnConfig,
@@ -31,7 +33,7 @@ from langgraph.graph.state import CompiledStateGraph
 from langgraph.store.base import BaseStore
 
 from vertical_harness.config.settings import HarnessSettings
-from vertical_harness.engine.mcp import aopen_mcp_tools
+from vertical_harness.engine.mcp import aopen_mcp_tools, mcp_skill_assets
 from vertical_harness.engine.memory import UserMemoryMiddleware
 from vertical_harness.engine.policy import (
     SupervisorPolicyMiddleware,
@@ -43,6 +45,7 @@ from vertical_harness.plugins.contracts import (
     BuildServices,
     DomainPlugin,
     Exposure,
+    PluginContribution,
     RunContext,
     SkillAsset,
     SubAgentSpec,
@@ -55,6 +58,8 @@ from vertical_harness.storage.backends import (
     aopen_store,
     compose_backend,
     create_store,
+    open_checkpointer,
+    open_store,
 )
 
 logger = logging.getLogger(__name__)
@@ -79,10 +84,39 @@ RESERVED_SUBAGENT_NAMES = frozenset({"general-purpose"})
 
 # 纯监督者模式下可按需排除的内置文件系统与命令执行工具集合
 SUPERVISOR_EXCLUDED_FS_TOOLS: frozenset[str] = frozenset(
-    {"ls", "read_file", "write_file", "edit_file", "glob", "grep", "execute"}
+    {"ls", "read_file", "write_file", "edit_file", "delete", "glob", "grep", "execute"}
 )
 
-_RESERVED_TOOL_NAMES = SUPERVISOR_EXCLUDED_FS_TOOLS | {"delete", "task", "write_todos"}
+_RESERVED_TOOL_NAMES = SUPERVISOR_EXCLUDED_FS_TOOLS | {
+    "task",
+    "write_todos",
+    "start_async_task",
+    "check_async_task",
+    "update_async_task",
+    "cancel_async_task",
+    "list_async_tasks",
+    "recall_user_memory",
+}
+
+_RESERVED_MIDDLEWARE_NAMES = frozenset(
+    {
+        "FilesystemMiddleware",
+        "SubAgentMiddleware",
+        "AsyncSubAgentMiddleware",
+        "HumanInTheLoopMiddleware",
+        "SummarizationMiddleware",
+        "PatchToolCallsMiddleware",
+        "TodoListMiddleware",
+        "ModelCallLimitMiddleware",
+        "SupervisorPolicyMiddleware",
+        "UserMemoryMiddleware",
+        "ModelRouterMiddleware",
+        "SkillsMiddleware",
+        "UnsupportedContentMiddleware",
+        "_ToolExclusionMiddleware",
+        "_ParentNotifierMiddleware",
+    }
+)
 
 # 默认虚拟文件系统安全权限策略：只读保护 /skills/ 目录，禁止读写任何 .env 敏感配置文件
 DEFAULT_FILESYSTEM_PERMISSIONS: tuple[FilesystemPermission, ...] = (
@@ -137,6 +171,7 @@ class AgentComposer:
     subagents: list[SubAgentSpec] = field(default_factory=list)
     interrupts: dict[str, bool | InterruptOnConfig] = field(default_factory=dict)
     uploads: list[tuple[str, bytes]] = field(default_factory=list)
+    skill_sources: list[str] = field(default_factory=lambda: ["/skills/"])
     instructions: list[str] = field(default_factory=lambda: [BASE_PROMPT])
     prompt_overrides: dict[str, str] = field(default_factory=dict)
     _tool_names: set[str] = field(default_factory=set)
@@ -147,6 +182,7 @@ class AgentComposer:
         self,
         plugins: Iterable[DomainPlugin],
         services: BuildServices,
+        contributions: Mapping[str, PluginContribution] | None = None,
     ) -> None:
         """遍历并注册所有已启用的领域插件贡献。
 
@@ -154,9 +190,49 @@ class AgentComposer:
         :param services: 注入给插件 build() 方法的宿主服务集合。
         """
         for plugin in plugins:
-            self.register_plugin(plugin, services)
+            self.register_plugin(
+                plugin, services, contribution=(contributions or {}).get(plugin.manifest.plugin_id)
+            )
+        self.validate_workflows()
 
-    def register_plugin(self, plugin: DomainPlugin, services: BuildServices) -> None:
+    def validate_workflows(self) -> None:
+        """Validate the complete contribution set, independently of loading order."""
+        visiting: set[str] = set()
+        visited: set[str] = set()
+
+        def visit(name: str) -> None:
+            if name not in self.workflows:
+                raise ValueError(f"Missing workflow dependency: {name}")
+            if name in visiting:
+                raise ValueError(f"Workflow dependency cycle: {name}")
+            if name in visited:
+                return
+            visiting.add(name)
+            wf = self.workflows[name]
+            for dependency in wf.depends_on:
+                visit(dependency)
+            if wf.resolve_mode(self.settings.workflow_mode).value == "async" and (
+                wf.depends_on
+                or wf.idempotent
+                or wf.result_schema is not None
+                or any(name in other.depends_on for other in self.workflows.values())
+            ):
+                raise ValueError(
+                    f"Async workflow '{name}' cannot declare dependency/idempotency/result contracts; use compiled mode"
+                )
+            visiting.remove(name)
+            visited.add(name)
+
+        for name in self.workflows:
+            visit(name)
+
+    def register_plugin(
+        self,
+        plugin: DomainPlugin,
+        services: BuildServices,
+        *,
+        contribution: PluginContribution | None = None,
+    ) -> None:
         """提取单个插件的贡献并执行唯一性及安全策略校验。
 
         :param plugin: 领域插件实例。
@@ -166,7 +242,15 @@ class AgentComposer:
         logger.debug(
             "plugin_registration_started", extra={"event_fields": {"plugin_id": manifest.plugin_id}}
         )
-        contributed = plugin.build(services)
+        if contribution is None and any(
+            callable(getattr(plugin, hook, None)) for hook in ("open", "aopen")
+        ):
+            raise ValueError(
+                f"Resource plugin '{manifest.plugin_id}' requires open_agent/aopen_agent"
+            )
+        contributed = contribution if contribution is not None else plugin.build(services)
+        if not isinstance(contributed, PluginContribution):
+            raise TypeError(f"Plugin '{manifest.plugin_id}' must return PluginContribution")
 
         if manifest.plugin_id in self.prompt_overrides:
             contributed = contributed.model_copy(
@@ -183,9 +267,16 @@ class AgentComposer:
             for tool_item in contributed.tools:
                 self._register_tool(tool_item)
 
-        self.plugin_middleware.extend(contributed.middleware)
+        for middleware in contributed.middleware:
+            if middleware.name in _RESERVED_MIDDLEWARE_NAMES or any(
+                m.name == middleware.name for m in self.plugin_middleware
+            ):
+                raise ValueError(f"Reserved/duplicate plugin middleware: {middleware.name}")
+            self.plugin_middleware.append(middleware)
 
         for subagent in contributed.subagents:
+            if self.settings.supervisor_only:
+                raise ValueError("supervisor_only requires managed workflows, not raw subagents")
             self._register_subagent(subagent)
 
         for skill in contributed.skills:
@@ -212,7 +303,11 @@ class AgentComposer:
         :raises ValueError: 当工作流名称重复或使用了保留名称时抛出。
         """
         name = workflow.name
-        if name in self.workflows or name in self._subagent_names or name in RESERVED_SUBAGENT_NAMES:
+        if (
+            name in self.workflows
+            or name in self._subagent_names
+            or name in RESERVED_SUBAGENT_NAMES
+        ):
             raise ValueError(f"Duplicate/reserved subagent name: {name}")
         resolved_mode = workflow.resolve_mode(self.settings.workflow_mode)
         spec = workflow.to_subagent_spec(
@@ -341,14 +436,28 @@ class AgentComposer:
                     workflows=self.workflows,
                     allowed_subagents=allowed_names,
                     enforce_allowlist=True,
+                    blocked_tools=(
+                        SUPERVISOR_EXCLUDED_FS_TOOLS
+                        | (
+                            frozenset({"task"})
+                            if not any("runnable" in spec for spec in self.subagents)
+                            else frozenset()
+                        )
+                    )
+                    if self.settings.supervisor_only
+                    else frozenset(),
                 )
             )
 
         stack.extend(self.plugin_middleware)
+        if self.settings.supervisor_only:
+            compiled = [spec for spec in self.subagents if "runnable" in spec]
+            if compiled:
+                stack.append(SubAgentMiddleware(backend=backend, subagents=compiled))
 
         if self.gated_tools:
             stack.append(
-                SkillsMiddleware(backend=backend, sources=["/skills/"], tools=self.gated_tools)
+                SkillsMiddleware(backend=backend, sources=self.skill_sources, tools=self.gated_tools)
             )
         logger.debug(
             "middleware_configured", extra={"event_fields": {"middleware_count": len(stack)}}
@@ -362,7 +471,9 @@ class AgentComposer:
         :return: 完整系统提示词字符串。
         """
         prompt_parts = list(self.instructions)
-        if (self.workflows or self.settings.supervisor_only) and SUPERVISOR_PROMPT not in prompt_parts:
+        if (
+            self.workflows or self.settings.supervisor_only
+        ) and SUPERVISOR_PROMPT not in prompt_parts:
             prompt_parts.insert(1, SUPERVISOR_PROMPT)
         return "\n".join(prompt_parts)
 
@@ -374,12 +485,14 @@ def build_agent(
     store: BaseStore | None = None,
     mcp_tools: Iterable[ToolContribution] | None = None,
     prompt_overrides: dict[str, str] | None = None,
+    plugins: Iterable[DomainPlugin] | None = None,
+    _contributions: Mapping[str, PluginContribution] | None = None,
 ) -> CompiledStateGraph[Any, RunContext, Any, Any]:
     """从独立分发的领域插件组装原生框架对象并构建 Deep Agent Supervisor。
 
     :param settings: 经校验的宿主配置对象。
     :param checkpointer: 可选的外部管理持久化检查点保存器（未指定时使用内存检查点 InMemorySaver）。
-    :param store: 可选的 LangGraph 长期存储实例（未指定时根据配置自动创建 SQLite 或内存存储）。
+    :param store: 调用方托管的存储；持久化配置必须传入或使用 open_agent/aopen_agent。
     :param mcp_tools: 由异步宿主管理生命周期的 MCP 工具；通常使用 aopen_agent 自动加载。
     :return: 编译完成的 Deep Agent LangGraph 状态图可运行对象。
     :raises ValueError: 当工具名称、子智能体名称冲突，或技能路径重复、副作用工具暴露模式非法时抛出。
@@ -392,25 +505,43 @@ def build_agent(
     root.mkdir(parents=True, exist_ok=True)
     logger.debug("workspace_prepared")
 
+    if store is None and settings.store_backend != "memory":
+        raise ValueError(
+            "Persistent stores require with open_agent(settings) or an explicit caller-owned store"
+        )
     active_store = store if store is not None else create_store(settings)
     backend = compose_backend(
-        root, active_store if settings.enable_memory else None,
+        root,
+        active_store if settings.enable_memory else None,
         memory_route=settings.memory_route,
     )
-    services = BuildServices(workspace_root=root, store=active_store)
+    services = BuildServices(
+        workspace_root=root, store=active_store, plugin_config=settings.plugin_config
+    )
 
     overrides = prompt_overrides or {}
     unknown = set(overrides) - {"main", *settings.enabled_plugins}
     if unknown or any(not value.strip() for value in overrides.values()):
         raise ValueError("Prompt overrides require enabled plugin IDs or 'main', and nonempty text")
     composer = AgentComposer(
-        settings=settings, instructions=[overrides.get("main", BASE_PROMPT)],
+        settings=settings,
+        instructions=[overrides.get("main", BASE_PROMPT)],
         prompt_overrides=overrides,
     )
-    composer.register_plugins(discover_plugins(settings.enabled_plugins), services)
+    composer.register_plugins(
+        discover_plugins(settings.enabled_plugins) if plugins is None else plugins,
+        services,
+        contributions=_contributions,
+    )
     if not settings.supervisor_only:
-        for item in mcp_tools or ():
+        active_mcp_tools = list(mcp_tools or ())
+        for item in active_mcp_tools:
             composer._register_tool(item)
+        for skill in mcp_skill_assets(settings, active_mcp_tools):
+            composer._register_skill("harness", skill)
+            source = str(PurePosixPath(skill.to_virtual_path("harness")).parent.parent) + "/"
+            if source not in composer.skill_sources:
+                composer.skill_sources.append(source)
 
     if composer.uploads:
         logger.debug(
@@ -434,11 +565,38 @@ def build_agent(
         middleware.append(UserMemoryMiddleware(settings, active_store))
 
     permissions = list(DEFAULT_FILESYSTEM_PERMISSIONS)
+    # Explicit legacy/custom paths remain usable by the host, never by model tools.
+    private_targets = [
+        settings.resolved_store_target,
+        settings.resolved_checkpoint_target,
+        settings.log_file,
+    ]
+    for target in private_targets:
+        if target is None or str(target) == ":memory:":
+            continue
+        try:
+            relative = "/" + str(target.expanduser().resolve().relative_to(root)).replace("\\", "/")
+        except ValueError:
+            continue
+        permissions.append(
+            FilesystemPermission(
+                operations=["read", "write"],
+                mode="deny",
+                paths=[
+                    relative,
+                    relative + "-wal",
+                    relative + "-shm",
+                    relative + "-journal",
+                    relative + ".*",
+                ],
+            )
+        )
     if not settings.enable_memory:
         permissions.append(
             FilesystemPermission(
                 operations=["read", "write"],
-                paths=[f"{settings.normalized_memory_route}**"], mode="deny",
+                paths=[f"{settings.normalized_memory_route}**"],
+                mode="deny",
             )
         )
 
@@ -449,7 +607,7 @@ def build_agent(
         tools=composer.eager_tools,
         system_prompt=composer.system_prompt,
         backend=backend,
-        skills=["/skills/"] if composer.uploads and not composer.gated_tools else None,
+        skills=composer.skill_sources if composer.uploads and not composer.gated_tools else None,
         subagents=composer.subagents,
         middleware=middleware,
         permissions=permissions,
@@ -458,6 +616,14 @@ def build_agent(
         checkpointer=checkpointer if checkpointer is not None else InMemorySaver(),
         store=active_store,
     )
+    agent.step_timeout = min(settings.workflow_timeout_seconds, settings.run_timeout_seconds)
+    agent.config = {
+        **(agent.config or {}),
+        "metadata": {
+            **(agent.config or {}).get("metadata", {}),
+            "harness_run_timeout_seconds": settings.run_timeout_seconds,
+        },
+    }
     logger.info(
         "agent_build_completed",
         extra={
@@ -470,6 +636,49 @@ def build_agent(
         },
     )
     return agent
+
+
+@contextmanager
+def open_agent(
+    settings: HarnessSettings,
+    *,
+    checkpointer: BaseCheckpointSaver[Any] | bool | None = None,
+    store: BaseStore | None = None,
+    prompt_overrides: dict[str, str] | None = None,
+) -> Iterator[CompiledStateGraph[Any, RunContext, Any, Any]]:
+    """Own sync storage and optional plugin contexts; borrowed resources stay open.
+
+    :param settings: Host settings.
+    :param checkpointer: Optional caller-owned saver.
+    :param store: Optional caller-owned store.
+    :param prompt_overrides: Explicit main/plugin prompt overrides.
+    :return: Agent usable inside this context only.
+    """
+    if settings.mcp_servers and not settings.supervisor_only:
+        raise ValueError("MCP requires async with aopen_agent(settings)")
+    with ExitStack() as stack:
+        stack.enter_context(tracing_session())
+        if store is None:
+            store = stack.enter_context(open_store(settings))
+        if checkpointer is None:
+            checkpointer = stack.enter_context(open_checkpointer(settings))
+        plugins = discover_plugins(settings.enabled_plugins)
+        services = BuildServices(settings.resolved_workspace_root, store, settings.plugin_config)
+        contributions = {}
+        for plugin in plugins:
+            if callable(hook := getattr(plugin, "open", None)):
+                contributions[plugin.manifest.plugin_id] = stack.enter_context(hook(services))
+            elif callable(getattr(plugin, "aopen", None)):
+                raise ValueError(f"Plugin '{plugin.manifest.plugin_id}' requires aopen_agent")
+        yield build_agent(
+            settings,
+            store=store,
+            checkpointer=checkpointer,
+            mcp_tools=(),
+            prompt_overrides=prompt_overrides,
+            plugins=plugins,
+            _contributions=contributions,
+        )
 
 
 @asynccontextmanager
@@ -491,10 +700,29 @@ async def aopen_agent(
             store = await stack.enter_async_context(aopen_store(settings))
         if checkpointer is None:
             checkpointer = await stack.enter_async_context(aopen_checkpointer(settings))
-        tools = await stack.enter_async_context(aopen_mcp_tools(settings))
+        tools = (
+            ()
+            if settings.supervisor_only
+            else await stack.enter_async_context(aopen_mcp_tools(settings))
+        )
+        plugins = discover_plugins(settings.enabled_plugins)
+        services = BuildServices(settings.resolved_workspace_root, store, settings.plugin_config)
+        contributions = {}
+        for plugin in plugins:
+            if callable(hook := getattr(plugin, "aopen", None)):
+                contributions[plugin.manifest.plugin_id] = await stack.enter_async_context(
+                    hook(services)
+                )
+            elif callable(hook := getattr(plugin, "open", None)):
+                contributions[plugin.manifest.plugin_id] = stack.enter_context(hook(services))
         yield build_agent(
-            settings, store=store, checkpointer=checkpointer, mcp_tools=tools,
+            settings,
+            store=store,
+            checkpointer=checkpointer,
+            mcp_tools=tools,
             prompt_overrides=prompt_overrides,
+            plugins=plugins,
+            _contributions=contributions,
         )
 
 
@@ -507,5 +735,6 @@ __all__ = [
     "AgentComposer",
     "aopen_agent",
     "build_agent",
+    "open_agent",
     "register_supervisor_harness_profile",
 ]

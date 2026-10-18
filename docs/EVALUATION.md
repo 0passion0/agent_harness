@@ -1,5 +1,7 @@
 # LangSmith 质量闭环
 
+`required_tools` 保留“模型尝试调用”的历史指标；需要成功执行回执时使用 `required_successful_tools`，它要求匹配成功 ToolMessage。成功回执不证明领域事实正确，仍需结构化参考断言。执行目标同时受调用 deadline 限制，见[稳定化说明](STABILIZATION.md)。
+
 本模块用 LangSmith SDK 运行实验、存储反馈与数据集，OpenEvals 调用评审模型，LangMem `prompt_memory` 生成一次候选提示词。普通对话没有评测调用；在线评测在独立 worker 中执行。
 
 ```mermaid
@@ -62,6 +64,10 @@ vertical-eval run --dataset vertical-regression --report .agent-workspace/regres
 ```
 
 新报告不覆盖已有文件；失败案例或评审异常导致 `run` 返回非零退出码，便于接入 CI。`completed` 检查执行是否正常完成，`reference_match` 检查结构化参考，`required_tools` 检查工具调用，`quality` 是 OpenEvals 的 0/1 评审分。没有参考答案的在线/离线模型分只表示可观察的回答质量，不代表事实已核实。
+
+每条目标输出及报告汇总增加 `usage`：`model_calls`、`input_tokens`、`output_tokens`、`total_tokens`、`duration_ms` 与 `complete`。逐案例还保留供应商上报的缓存/推理计数和 `usage_reported_calls`。`complete=false` 时 token 只是已知小计；异常调用或缺少用量元数据不能视为免费。耗时汇总是各案例耗时之和，包含构建和关闭资源，不是并发实验的墙钟时间。评审与后台 worker 的开销不计入目标用量，`usage` 不发送给质量评审。
+
+比较报告返回 `usage_deltas`（候选减基线）；只有两边统计完整时才计算。原有质量改善条件继续有效；逐案例与平均质量均无退步、任务集匹配且总 token 降低的候选，也可标记为 `review_candidate`，仍不修改生产配置。远端子任务内部和供应商隐藏重试的计费须另行核对，详见 [Token 优化说明](TOKEN_EFFICIENCY.md)。
 
 目标每条案例使用新的临时目录、内存 store/checkpoint 和隔离身份，不读取或更新生产记忆。工具审批仍然有效，不自动批准；直接工作流只接受无租户限制的只读 runnable。插件及 MCP 仍是受信任执行代码，评测不是 OS sandbox；可能有副作用的集成应连接测试环境。`workflow:*` 不重放 Supervisor 的依赖调度策略，需要验证调度时使用 `main` 或 `plugin:*`。
 

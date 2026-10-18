@@ -54,6 +54,7 @@ def settings(tmp_path, **kwargs):
         api_key="private-va-key",
         base_url="https://va.invalid/v1",
         workspace_root=tmp_path,
+        enabled_plugins=["research.citations"],
         **kwargs,
     )
 
@@ -81,6 +82,9 @@ def test_real_local_runner_executes_plugin_workflow_without_network(tmp_path, lo
     )
     assert report["scores"] == {"completed": 1, "reference_match": 1}
     assert report["errors"] == report["failures"] == 0
+    assert report["usage"]["complete"]
+    assert report["usage"]["model_calls"] == report["usage"]["total_tokens"] == 0
+    assert report["usage"]["duration_ms"] >= 0
     assert not list(tmp_path.iterdir())
 
 
@@ -189,6 +193,44 @@ def test_candidate_cannot_be_recommended_on_regressions_or_missing_metrics():
     candidate["scores"] = {"quality": 1, "completed": 1}
     candidate["errors"] = 1
     assert compare_reports(baseline, candidate)["recommendation"] == "keep_baseline"
+
+
+@pytest.mark.parametrize("complete,quality,expected", [
+    (True, 1, "review_candidate"),
+    (False, 1, "keep_baseline"),
+    (True, 0, "keep_baseline"),
+])
+def test_lower_token_usage_requires_complete_accounting_and_no_quality_regression(complete, quality, expected):
+    row = {"example_id": "one", "feedback": [{"key": "quality", "score": 1}]}
+    usage = {"model_calls": 2, "input_tokens": 80, "output_tokens": 20, "total_tokens": 100, "duration_ms": 10, "complete": True}
+    baseline = {"count": 1, "errors": 0, "scores": {"quality": 1}, "rows": [row], "usage": usage}
+    candidate = {**baseline, "scores": {"quality": quality}, "usage": {**usage, "total_tokens": 60, "input_tokens": 40, "complete": complete}}
+    result = compare_reports(baseline, candidate)
+    assert result["recommendation"] == expected
+    assert (result["usage_deltas"] is not None) == complete
+
+
+def test_judge_does_not_receive_execution_cost_as_answer_evidence():
+    assert scoring.judge_payload({"output": "answer", "usage": {"total_tokens": 123}}) == '{"output": "answer"}'
+
+
+def test_offline_report_accounts_for_model_usage_without_network(tmp_path, local_client, monkeypatch):
+    from test_supervisor_workflows_and_time_travel import ToolCallingFakeModel
+    from vertical_harness.engine import compose
+
+    model = ToolCallingFakeModel(responses=[AIMessage(content="answer", usage_metadata={
+        "input_tokens": 80, "output_tokens": 20, "total_tokens": 100,
+        "input_token_details": {"cache_read": 40},
+    })])
+    monkeypatch.setattr(compose, "init_configured_model", lambda *_: model)
+    report = asyncio.run(evaluate_offline(
+        settings(tmp_path), EvaluationSettings(_env_file=None), local_client,
+        [RegressionCase(inputs={"prompt": "task"})], judge=False,
+    ))
+    assert report["usage"]["complete"]
+    assert report["usage"]["model_calls"] == 1
+    assert report["usage"]["total_tokens"] == 100
+    assert report["rows"][0]["outputs"]["usage"]["input_token_details"]["cache_read"] == 40
 
 
 def test_individual_regression_is_not_hidden_by_better_average():

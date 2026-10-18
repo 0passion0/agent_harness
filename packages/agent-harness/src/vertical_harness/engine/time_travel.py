@@ -230,9 +230,7 @@ def fork_checkpoint(
         raise ValueError("Graph must be compiled with a checkpointer to support Time Travel Fork")
 
     target_fork_thread = fork_thread_id or new_thread_id
-    snapshot = get_checkpoint_snapshot(
-        graph, thread_id, checkpoint_id, checkpoint_ns=checkpoint_ns
-    )
+    snapshot = get_checkpoint_snapshot(graph, thread_id, checkpoint_id, checkpoint_ns=checkpoint_ns)
     source_cfg = snapshot.config
     source_cid = source_cfg.get("configurable", {}).get("checkpoint_id", "")
     effective_as_node = (
@@ -249,6 +247,16 @@ def fork_checkpoint(
                 "checkpoint_ns": checkpoint_ns,
             }
         }
+        if (
+            checkpoint_ns
+            or any(task.state is not None for task in snapshot.tasks)
+            or any(graph.get_subgraphs())
+        ):
+            raise ValueError(
+                "Cross-thread fork does not support nested subgraph checkpoints; use a same-thread fork"
+            )
+        if graph.checkpointer.get_tuple(target_base) is not None:
+            raise ValueError("Fork destination thread already exists")
         cloned_metadata = deepcopy(tup.metadata) if tup.metadata else {"source": "fork", "step": 0}
         cloned_cfg = graph.checkpointer.put(
             target_base,
@@ -256,6 +264,11 @@ def fork_checkpoint(
             cloned_metadata,
             dict(tup.checkpoint.get("channel_versions", {})),
         )
+        pending: dict[str, list[tuple[str, Any]]] = {}
+        for task_id, channel, value in tup.pending_writes or ():
+            pending.setdefault(task_id, []).append((channel, deepcopy(value)))
+        for task_id, writes in pending.items():
+            graph.checkpointer.put_writes(cloned_cfg, writes, task_id)
         if values is not None:
             forked_cfg = graph.update_state(cloned_cfg, values, as_node=effective_as_node)
         else:
@@ -312,6 +325,16 @@ async def afork_checkpoint(
                 "checkpoint_ns": checkpoint_ns,
             }
         }
+        if (
+            checkpoint_ns
+            or any(task.state is not None for task in snapshot.tasks)
+            or any(graph.get_subgraphs())
+        ):
+            raise ValueError(
+                "Cross-thread fork does not support nested subgraph checkpoints; use a same-thread fork"
+            )
+        if await graph.checkpointer.aget_tuple(target_base) is not None:
+            raise ValueError("Fork destination thread already exists")
         cloned_metadata = deepcopy(tup.metadata) if tup.metadata else {"source": "fork", "step": 0}
         cloned_cfg = await graph.checkpointer.aput(
             target_base,
@@ -319,6 +342,11 @@ async def afork_checkpoint(
             cloned_metadata,
             dict(tup.checkpoint.get("channel_versions", {})),
         )
+        pending: dict[str, list[tuple[str, Any]]] = {}
+        for task_id, channel, value in tup.pending_writes or ():
+            pending.setdefault(task_id, []).append((channel, deepcopy(value)))
+        for task_id, writes in pending.items():
+            await graph.checkpointer.aput_writes(cloned_cfg, writes, task_id)
         if values is not None:
             forked_cfg = await graph.aupdate_state(cloned_cfg, values, as_node=effective_as_node)
         else:

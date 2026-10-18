@@ -49,6 +49,11 @@ def scan_numeric(manuscript_text: str, bibliography: list[str]) -> str:
     return result.model_dump_json()
 
 
+scan_numeric.handle_validation_error = (
+    "Invalid citation input: check size/schema and use citation IDs of at most 9 digits."
+)
+
+
 class ResearchCitationToolkit(BaseToolkit):
     """遵循 LangChain 标准 BaseToolkit 规范的学术引用核查工具包。"""
 

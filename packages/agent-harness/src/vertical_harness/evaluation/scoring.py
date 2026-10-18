@@ -33,6 +33,7 @@ def json_value(value: Any) -> Any:
             message["tool_calls"] = value.tool_calls
         if hasattr(value, "tool_call_id"):
             message["tool_call_id"] = value.tool_call_id
+            message["status"] = getattr(value, "status", "success")
         return message
     if hasattr(value, "model_dump"):
         return json_value(value.model_dump(mode="json"))
@@ -70,21 +71,32 @@ def normalize_outputs(state: dict[str, Any], *, inputs: dict | None = None) -> d
         message = message.get("kwargs", message)
         prior_calls.update(call["id"] for call in message.get("tool_calls", []) if call.get("id"))
     tools = []
+    successful_tools = []
+    succeeded = {
+        m.get("tool_call_id")
+        for m in messages
+        if m.get("role", m.get("type")) == "tool" and m.get("status", "success") == "success"
+    }
     for message in messages:
         for call in message.get("tool_calls", []):
             if call.get("id") in prior_calls:
                 continue
             tools.append(call["name"])
+            if call.get("id") in succeeded:
+                successful_tools.append(call["name"])
             if call["name"] in {"task", "start_async_task"}:
                 subagent = call.get("args", {}).get("subagent_type")
                 if subagent:
                     tools.append(f"{call['name']}:{subagent}")
+                    if call.get("id") in succeeded:
+                        successful_tools.append(f"{call['name']}:{subagent}")
     return {
         "output": messages[-1].get("content", "")
         if messages and messages[-1].get("role", messages[-1].get("type")) in {"ai", "assistant"}
         else "",
         "structured_response": json_value(state.get("structured_response")),
         "tool_calls": tools,
+        "successful_tools": successful_tools,
         "interrupted": bool(state.get("__interrupt__")),
     }
 
@@ -119,6 +131,11 @@ def deterministic_scores(
     if "required_tools" in reference:
         matched = set(reference["required_tools"]) <= set(outputs.get("tool_calls", []))
         scores.append({"key": "required_tools", "score": int(matched)})
+    if "required_successful_tools" in reference:
+        matched = set(reference["required_successful_tools"]) <= set(
+            outputs.get("successful_tools", [])
+        )
+        scores.append({"key": "required_successful_tools", "score": int(matched)})
     return scores
 
 
@@ -134,4 +151,5 @@ def make_judge(settings: HarnessSettings, evaluation: EvaluationSettings):
 
 
 def judge_payload(value: dict | None) -> str:
-    return json.dumps(json_value(value or {}), ensure_ascii=False, sort_keys=True)
+    # Execution telemetry is not answer evidence and should not bias the judge.
+    return json.dumps(json_value({key: item for key, item in (value or {}).items() if key != "usage"}), ensure_ascii=False, sort_keys=True)

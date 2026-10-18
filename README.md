@@ -2,6 +2,10 @@
 
 本仓库采用两个**独立 Python distribution**：通用 `vertical-agent-harness` 和演示插件 `vertical-plugin-research-citation`。
 
+核心默认不启用领域插件；`.env.example` 显式启用科研样例。升级前请阅读[稳定化与迁移说明](docs/STABILIZATION.md)：默认数据目录、文件记忆 namespace 与持久化资源托管有调整，已有数据不会自动移动或删除。
+
+统一模型入口将 SDK 的 `max_retries` 设为 5，覆盖主模型、动态路由、记忆提取和评估模型。DeepSeek/OpenAI 兼容请求遇到连接异常、超时、408/409/429 或 5xx 时，首次失败后最多重试 5 次（共 6 次请求）；指数退避基准为 0.5、1、2、4、8 秒，加入随机抖动，并遵循 SDK 的服务端 Retry-After 规则。鉴权/参数错误默认不重试，取消与既有总 deadline 保持生效。其他提供商的错误分类和退避由各自 SDK 决定。流式请求在返回数据前同样重试，已开始输出后发生中断则向上传播错误，避免自动重放造成重复文本或工具调用；此策略不会重试整个工作流或有副作用的工具。
+
 ## 安装
 
 ```bash
@@ -14,7 +18,7 @@ vertical-agent '检查下面正文的参考文献索引：正文 [1] 和 [3]；�
 pytest -q
 ```
 
-也可使用 uv workspace：`uv sync --all-packages` 后 `uv run --package vertical-agent-harness vertical-agent --list-plugins`。
+也可使用锁定的 uv workspace：`uv sync --frozen --all-packages --extra dev` 后 `uv run --package vertical-agent-harness vertical-agent --list-plugins`。
 
 ## 图片理解
 
@@ -101,7 +105,7 @@ async def run():
         )
 ```
 
-已有不使用 MCP 的同步 `build_agent` / `invoke` 调用不变。配置 MCP 后直接调用 `build_agent` 会提示改用 `aopen_agent`，避免静默漏载工具。调用方显式提供的 store / checkpointer 仍由调用方管理生命周期。MCP 工具适配使用 LangChain 原生 `MCPAdapter`（beta），依赖随 `langchain[mcp]` 安装，API 边界参见 [官方文档](https://docs.langchain.com/oss/python/langchain/mcp)。
+同步持久化调用使用 `with open_agent(settings) as agent`；`build_agent` 仅在纯内存或显式传入托管 store 时直接使用。MCP 使用 `aopen_agent`。调用方提供的 store/checkpointer 仍由调用方关闭。插件 open/aopen 生命周期与配置见[插件契约](docs/STABILIZATION.md)。MCP 适配使用 LangChain 原生 `MCPAdapter`（beta），API 边界参见[官方文档](https://docs.langchain.com/oss/python/langchain/mcp)。
 
 ## 日志
 
@@ -120,7 +124,7 @@ CLI 启动时统一配置 Python 标准库 `logging`，默认输出 INFO 级别�
 ```dotenv
 VA_LOG_LEVEL=DEBUG
 VA_LOG_FORMAT=json
-VA_LOG_FILE=./.agent-workspace/logs/harness.log
+VA_LOG_FILE=./.agent-workspace.runtime/logs/harness.log
 ```
 
 DEBUG 覆盖插件发现和契约验证、工具/技能/子智能体注册、资源加载、存储生命周期、模型初始化与路由、中间件配置和 Agent 编译。运行时通过 LangChain 原生 callbacks 记录完整执行树中的链、模型、工具及嵌套子调用的开始、完成、失败、取消、挂起和框架重试；同步、异步共用同一机制。`run_id` 关联一次 CLI 调用，`operation_id` / `parent_operation_id` 关联执行树，结束事件包含 `duration_ms`。
@@ -169,9 +173,11 @@ with log_context(str(uuid4())):
 
 宿主 `SupervisorPolicyMiddleware` 提供确定性监督治理（工作流白名单、租户 RBAC、`depends_on` 依赖顺序、`max_dispatches` 重试上限、`idempotent` 幂等复用、`result_schema` 验收与 `InterruptOnConfig(when=...)` 按需审批）。
 
+依赖、幂等与结果校验当前面向 compiled 工作流；async 的这些组合会明确拒绝。纯监督按 agent 隔离并在执行层拒绝直接文件操作。同批重复幂等委派只执行第一个，其余待结果后重试。
+
 ## Time Travel 与 Time Travel Fork（`durability="sync"`）
 
-默认启用 `durability="sync"` 并支持 SQLite 持久化检查点（默认路径 `<workspace_root>/.checkpoints/checkpoints.sqlite`，可通过 `VA_CHECKPOINT_DB_PATH` 配置）：
+默认启用 `durability="sync"`，SQLite 检查点位于工作区旁 `<workspace-name>.runtime/checkpoints.sqlite`，可配置 `VA_RUNTIME_DATA_DIR` / `VA_CHECKPOINT_DB_PATH`。跨线程 fork 复制根 checkpoint 的 pending writes，拒绝已有目标及可识别嵌套子图。指定 checkpoint ID 是回放，可能重跑后续步骤；不指定 ID 才是正常恢复。
 
 ```bash
 # 列出已注册的插件工作流（含模式、三层状态与监督策略）
@@ -205,6 +211,12 @@ vertical-agent --thread-id demo-thread \
 5. 安装与完整 Agent 运行需相应官方包及 LLM 凭据；框架 API 可能演进，部署时应锁定并测试依赖版本。
 
 详细设计参见 `docs/ARCHITECTURE.md`。
+
+## Token 使用优化
+
+大知识档案默认通过简短目录和 `recall_user_memory` 按需回读；小档案与启用后的用户偏好保持直接注入。MCP 可用 `allowed_tools` 限定工具，并为大型只读集成设置 `defer_tools=true`，复用原生 SkillsMiddleware 延迟加载工具定义。写操作与外部操作继续使用现有审批流程。
+
+离线评测报告增加模型调用数、实际输入/输出 token、耗时与用量完整性；在逐案例质量无退步且统计完整时，减少 token 的候选可以进入人工审阅。配置、统计边界和设计来源见 [Token 优化说明](docs/TOKEN_EFFICIENCY.md)。
 
 前端实时集成可直接消费 `vertical_harness.astream_agent()` 的模型增量、工具状态和 Subagent 进度事件。
 接口与传输分离，可由后续本地进程通过 JSON-RPC notifications 转发；契约与调用示例见 [Streaming 接口](docs/STREAMING.md)。

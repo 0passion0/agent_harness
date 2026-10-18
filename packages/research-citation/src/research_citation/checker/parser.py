@@ -13,6 +13,7 @@ _TOKEN_PATTERN = re.compile(r"^(\d+)(?:\s*-\s*(\d+))?$", re.ASCII)
 
 # 区间引用允许的最大跨度阈值，防范恶意超大范围（如 [1-99999999]）造成的内存消耗
 MAX_CITATION_SPAN = 1000
+MAX_CITATION_DIGITS = 9
 logger = logging.getLogger(__name__)
 
 
@@ -28,8 +29,10 @@ def _parse_citation_token(token: str, *, max_span: int = MAX_CITATION_SPAN) -> r
         logger.debug("citation_token_ignored", extra={"event_fields": {"status": "invalid_format"}})
         return range(0)
 
-    start = int(match.group(1))
-    end = int(match.group(2) or match.group(1))
+    numbers = [match.group(1), match.group(2) or match.group(1)]
+    if any(len(number) > MAX_CITATION_DIGITS for number in numbers):
+        raise ValueError(f"Numeric citation IDs must contain at most {MAX_CITATION_DIGITS} digits")
+    start, end = map(int, numbers)
     if 0 < start <= end and (end - start) <= max_span:
         return range(start, end + 1)
     logger.debug("citation_token_ignored", extra={"event_fields": {"status": "invalid_range"}})

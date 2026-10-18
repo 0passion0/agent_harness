@@ -30,6 +30,21 @@ from vertical_harness import (
 from vertical_harness.engine import compose
 
 
+def test_model_completed_reports_usage_without_stream_double_counting():
+    from vertical_harness.engine.streaming import _project
+
+    usage = {"input_tokens": 10, "output_tokens": 5, "total_tokens": 15}
+    message = AIMessage(content="answer", usage_metadata=usage)
+    event = {"event": "on_chat_model_end", "data": {"output": message}}
+    kind, payload = _project(event, "root", ())
+    assert kind == "model.completed"
+    assert payload["usage"] == usage
+    event = {"event": "on_chat_model_stream", "data": {"chunk": AIMessageChunk(content="answer", usage_metadata=usage)}}
+    kind, payload = _project(event, "root", ())
+    assert kind == "model.delta"
+    assert "usage" not in payload
+
+
 class StreamingModel(FakeMessagesListChatModel):
     def bind_tools(self, tools, **kwargs):
         return self

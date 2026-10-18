@@ -1,0 +1,38 @@
+name: Python quality and plugin compatibility
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.11', '3.12']
+    env:
+      LANGSMITH_TRACING: 'false'
+      LANGCHAIN_TRACING_V2: 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ matrix.python }}
+      - run: uv sync --frozen --all-packages --extra dev
+      - run: uv run --frozen ruff check .
+      - run: uv run --frozen mypy
+      - run: uv run --frozen pytest
+      - run: uv build --all-packages
+      - name: Install wheels without editable source packages
+        run: |
+          uv venv .wheel-env
+          uv export --frozen --all-packages --no-dev --no-emit-workspace --no-hashes --output-file /tmp/wheel-constraints.txt
+          uv pip install --python .wheel-env/bin/python --constraint /tmp/wheel-constraints.txt dist/vertical_agent_harness-*.whl
+          cd /tmp
+          "$GITHUB_WORKSPACE/.wheel-env/bin/python" "$GITHUB_WORKSPACE/scripts/check_wheels.py" --core-only
+          uv pip install --python "$GITHUB_WORKSPACE/.wheel-env/bin/python" --constraint /tmp/wheel-constraints.txt "$GITHUB_WORKSPACE"/dist/vertical_plugin_research_citation-*.whl
+          "$GITHUB_WORKSPACE/.wheel-env/bin/python" "$GITHUB_WORKSPACE/scripts/check_wheels.py"

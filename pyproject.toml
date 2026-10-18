@@ -17,3 +17,14 @@ src = ["packages/agent-harness/src", "packages/research-citation/src", "tests"]
 select = ["E", "F", "I", "UP", "B", "SIM", "C4", "RUF"]
 ignore = ["E501", "RUF001", "RUF002", "RUF003"]
 
+[tool.mypy]
+python_version = "3.11"
+files = [
+  "packages/agent-harness/src/vertical_harness/plugins/contracts.py",
+  "packages/agent-harness/src/vertical_harness/config",
+  "packages/agent-harness/src/vertical_harness/storage/namespace.py",
+]
+follow_imports = "silent"
+ignore_missing_imports = true
+check_untyped_defs = true
+

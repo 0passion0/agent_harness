@@ -1,6 +1,6 @@
 # Deep Agents / LangChain / LangGraph 可插拔领域 Harness 设计规范
 
-**设计基线**：2026-10-17 LangChain 官方文档；示例依赖区间 `deepagents>=0.7.22,<0.8`、`langchain>=1.4,<2`、Pydantic v2。具体部署前必须锁定并验证版本。
+**设计基线**：Deep Agents / LangChain / LangGraph 原生组合。稳定化实现和升级边界以 [STABILIZATION.md](STABILIZATION.md) 为准，部署解析见 uv.lock；最低适配版本为 Deep Agents 0.7.28、LangChain 1.4.6、LangGraph 1.2.16。设计建议不代表全部已实现。
 
 ## 1. 核心职责划分
 

@@ -79,7 +79,9 @@ def test_workflow_contract_requires_distinct_three_layer_schemas() -> None:
     single_builder.add_edge("noop", END)
     single_graph = single_builder.compile()
 
-    with pytest.raises(ValidationError, match="distinct 'internal_state', 'input_schema', and 'output_schema'"):
+    with pytest.raises(
+        ValidationError, match="distinct 'internal_state', 'input_schema', and 'output_schema'"
+    ):
         WorkflowContribution.from_compiled_graph(
             name="invalid_single_state",
             description="Graph without separated state schemas",
@@ -295,9 +297,7 @@ def test_supervisor_policy_middleware_rules_and_hitl() -> None:
             ),
             lambda req: asyncio.sleep(
                 0,
-                result=ToolMessage(
-                    content='{"status": "ok", "score": 100}', tool_call_id="call-4"
-                ),
+                result=ToolMessage(content='{"status": "ok", "score": 100}', tool_call_id="call-4"),
             ),
         )
     )
@@ -352,6 +352,8 @@ def test_supervisor_workflow_execution_and_time_travel_fork(
     settings = HarnessSettings(
         _env_file=None,
         model="test:supervisor-model",
+        enabled_plugins=["research.citations"],
+        store_backend="memory",
         workspace_root=tmp_path,
         checkpoint_db_path=db_path,
         durability="sync",
@@ -465,6 +467,7 @@ def test_supervisor_workflow_execution_and_time_travel_fork(
     monkeypatch.setenv("VA_MODEL", "test:supervisor-model")
     monkeypatch.setenv("VA_WORKSPACE_ROOT", str(tmp_path))
     monkeypatch.setenv("VA_CHECKPOINT_DB_PATH", str(db_path))
+    monkeypatch.setenv("VA_ENABLED_PLUGINS", '["research.citations"]')
 
     cli_main(["--thread-id", "thread-main", "--history"])
     history_stdout = capsys.readouterr().out
@@ -494,6 +497,7 @@ def test_async_time_travel_helpers(tmp_path: Path, monkeypatch: pytest.MonkeyPat
     settings = HarnessSettings(
         _env_file=None,
         model="test:async-model",
+        store_backend="memory",
         workspace_root=tmp_path,
         checkpoint_db_path=tmp_path / "async_checkpoints.sqlite",
         durability="sync",

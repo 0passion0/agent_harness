@@ -53,6 +53,7 @@ def test_debug_covers_real_execution_and_subagents(
         enable_skill_gating=False,
         log_level="DEBUG",
         log_format="json",
+        enabled_plugins=["research.citations"],
     )
     configure_logging(config)
     scan_call = AIMessage(
@@ -104,6 +105,11 @@ def test_debug_covers_real_execution_and_subagents(
                 AIMessage(content="private answer"),
             ]
         )
+    for response in model.responses + (worker_model.responses if delegate else []):
+        response.usage_metadata = {
+            "input_tokens": 10, "output_tokens": 5, "total_tokens": 15,
+            "input_token_details": {"cache_read": 4},
+        }
     monkeypatch.setattr(compose, "init_configured_model", lambda settings: model)
     callback = WorkflowLoggingHandler()
     run_config = {"configurable": {"thread_id": "test-thread"}, "callbacks": [callback]}
@@ -117,6 +123,12 @@ def test_debug_covers_real_execution_and_subagents(
             result = agent.invoke(inputs, config=run_config, context=context)
 
     assert result["messages"][-1].content == "private answer"
+    calls = 4 if delegate else 2
+    assert callback.usage == {
+        "model_calls": calls, "usage_reported_calls": calls, "complete": True,
+        "input_tokens": calls * 10, "output_tokens": calls * 5, "total_tokens": calls * 15,
+        "input_token_details": {"cache_read": calls * 4},
+    }
     output = capsys.readouterr().err
     assert "private" not in output
     logged = [json.loads(line) for line in output.splitlines()]
@@ -147,6 +159,21 @@ def test_debug_covers_real_execution_and_subagents(
     assert all(
         item["duration_ms"] >= 0 for item in operations if item["event"].endswith("_completed")
     )
+
+
+def test_usage_marks_missing_provider_metadata_and_errors_incomplete():
+    from langchain_core.outputs import ChatGeneration, LLMResult
+
+    callback = WorkflowLoggingHandler()
+    run_id = uuid4()
+    callback.on_chat_model_start({}, [], run_id=run_id)
+    callback.on_llm_end(LLMResult(generations=[[ChatGeneration(message=AIMessage(content="ok"))]]), run_id=run_id)
+    assert callback.usage["model_calls"] == 1
+    assert not callback.usage["complete"]
+    callback.on_chat_model_start({}, [], run_id=run_id)
+    callback.on_llm_error(RuntimeError("private error"), run_id=run_id)
+    assert callback.usage["model_calls"] == 2
+    assert callback.usage["usage_reported_calls"] == 0
 
 
 @pytest.mark.parametrize("kind", ["chain", "llm", "tool"])
@@ -209,6 +236,7 @@ def test_failed_skill_upload_stops_build_without_logging_false_success(
         store_backend="memory",
         log_level="DEBUG",
         log_format="json",
+        enabled_plugins=["research.citations"],
     )
     configure_logging(config)
     backend = SimpleNamespace(

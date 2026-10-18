@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import logging
 from asyncio import CancelledError
+from copy import deepcopy
 from threading import Lock
 from time import perf_counter
 from typing import Any
 from uuid import UUID
 
 from langchain_core.callbacks import BaseCallbackHandler
+from langchain_core.messages.ai import UsageMetadata, add_usage
 from langgraph.errors import GraphBubbleUp
 
 logger = logging.getLogger(__name__)
@@ -26,11 +28,27 @@ class WorkflowLoggingHandler(BaseCallbackHandler):
     def __init__(self) -> None:
         self._started: dict[UUID, float] = {}
         self._lock = Lock()
+        self._model_calls = 0
+        self._usage_reported_calls = 0
+        self._usage: UsageMetadata = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+
+    @property
+    def usage(self) -> dict[str, Any]:
+        """Reported execution-tree usage; missing provider metadata is never a zero-cost claim."""
+        with self._lock:
+            return {
+                **deepcopy(self._usage),
+                "model_calls": self._model_calls,
+                "usage_reported_calls": self._usage_reported_calls,
+                "complete": self._model_calls == self._usage_reported_calls,
+            }
 
     def _start(self, kind: str, serialized: dict[str, Any] | None, **kwargs: Any) -> None:
         run_id = kwargs["run_id"]
         with self._lock:
             self._started[run_id] = perf_counter()
+            if kind == "model":
+                self._model_calls += 1
         logger.debug(
             f"{kind}_started",
             extra={
@@ -91,6 +109,13 @@ class WorkflowLoggingHandler(BaseCallbackHandler):
         self._start("model", serialized, **kwargs)
 
     def on_llm_end(self, response: Any, **kwargs: Any) -> None:
+        generations = getattr(response, "generations", [])
+        message = getattr(generations[0][0], "message", None) if generations and generations[0] else None
+        usage = getattr(message, "usage_metadata", None)
+        if usage is not None:
+            with self._lock:
+                self._usage = add_usage(self._usage, usage)
+                self._usage_reported_calls += 1
         self._finish("model", **kwargs)
 
     def on_llm_error(self, error: BaseException, **kwargs: Any) -> None:

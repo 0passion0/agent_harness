@@ -40,6 +40,60 @@ def runtime(user="user", tenant="tenant"):
     return SimpleNamespace(context=RunContext(tenant_id=tenant, user_id=user))
 
 
+@pytest.mark.parametrize("async_mode", [False, True])
+def test_large_memory_disclosure_is_lossless_and_scoped(tmp_path, monkeypatch, async_mode):
+    from langchain.agents.middleware import ModelRequest
+    from langchain_core.messages import ToolMessage
+
+    config = settings(tmp_path, store_backend="memory", enable_user_preferences=False)
+    store = InMemoryStore()
+    facts = [f"fact {index}: " + "证据不能丢失" * 75 for index in range(20)]
+    ns = memory._namespace(runtime())
+    store.put((*ns, "knowledge"), "profile", {"facts": facts})
+    model = RecordingModel(responses=[
+        AIMessage(content="", tool_calls=[{"name": "recall_user_memory", "args": {}, "id": "recall"}]),
+        AIMessage(content="done"),
+    ])
+    monkeypatch.setattr(compose, "init_configured_model", lambda *_: model)
+    agent = build_agent(config, store=store)
+    kwargs = {"config": {"configurable": {"thread_id": "memory-index"}}, "context": runtime().context}
+    result = asyncio.run(agent.ainvoke(state("use project facts"), **kwargs)) if async_mode else agent.invoke(state("use project facts"), **kwargs)
+    assert len(model.seen[0][0].text) < len(memory._memory_json({"facts": facts})) // 2
+    assert "recall_user_memory" in model.seen[0][0].text
+    output = next(message for message in result["messages"] if isinstance(message, ToolMessage))
+    assert all(fact in output.text for fact in facts)
+    # The complete profile is already in model history; do not repeat its index in the system prompt.
+    assert "fact_previews" not in model.seen[1][0].text
+
+    middleware = memory.UserMemoryMiddleware(config, store)
+    request = ModelRequest(model=model, messages=[], tools=middleware.tools, runtime=runtime("other"))
+    other = middleware._recall(request)
+    assert not other.tools and other.system_message is None
+    assert middleware._read_knowledge(runtime("other")).endswith('{"facts":[]}')
+    with pytest.raises(ValueError, match="trusted"):
+        middleware._read_knowledge(SimpleNamespace(context=None))
+    cleared = middleware._recall(request.override(messages=[output.model_copy(update={"content": "[cleared]"})], runtime=runtime()))
+    assert "fact_previews" in cleared.system_message.text
+    # Once a profile changes, an old read must not suppress fresh recall.
+    store.put((*ns, "knowledge"), "profile", {"facts": [*facts, "new fact"]})
+    fresh = middleware._recall(request.override(messages=[output], runtime=runtime()))
+    assert "new fact" in fresh.system_message.text
+    assert fresh.tools
+
+
+def test_small_memory_and_inline_opt_out_keep_complete_facts(tmp_path):
+    from langchain.agents.middleware import ModelRequest
+
+    store = InMemoryStore()
+    profile = {"facts": ["An exact fact with a decisive detail."]}
+    store.put((*memory._namespace(runtime()), "knowledge"), "profile", profile)
+    middleware = memory.UserMemoryMiddleware(settings(tmp_path, memory_inline_max_chars=0), store)
+    request = ModelRequest(model=RecordingModel(responses=[AIMessage(content="ok")]), messages=[], tools=middleware.tools, runtime=runtime())
+    recalled = middleware._recall(request)
+    assert profile["facts"][0] in recalled.system_message.text
+    assert not recalled.tools
+
+
 def state(text="请始终使用中文", id="message-1"):
     return {"messages": [HumanMessage(content=text, id=id)]}
 
@@ -107,7 +161,7 @@ def test_real_langmem_preferences_persist_recall_and_update(tmp_path, monkeypatc
     # 无用户输入的召回不会再次提取；其他用户不能读取此偏好。
     with open_store(config) as store:
         middleware = memory.UserMemoryMiddleware(config, store)
-        request = SimpleNamespace(runtime=runtime("other"))
+        request = SimpleNamespace(runtime=runtime("other"), tools=[], messages=[])
         assert middleware._recall(request) is request
         assert store.get((*memory._namespace(runtime()), "preferences"), "profile").value == {
             "preferences": ["使用英文"]
@@ -129,7 +183,7 @@ def test_switches_and_trusted_identity(tmp_path, monkeypatch):
     with pytest.raises(ValueError, match="trusted"):
         memory.UserMemoryMiddleware(config, store).before_agent(state(), runtime(user=""))
 
-    compiled = Mock()
+    compiled = Mock(return_value=SimpleNamespace(config=None))
     monkeypatch.setattr(compose, "create_deep_agent", compiled)
     monkeypatch.setattr(compose, "init_configured_model", Mock())
     build_agent(settings(tmp_path, enable_memory=False, enable_user_preferences=True), store=store)

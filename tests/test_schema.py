@@ -49,7 +49,9 @@ def test_reference_mismatch():
     :raises AssertionError: 当校验状态不符合预期或异常问题集合不匹配时触发断言失败。
     """
     # 手稿中引用了 [1] 和 [3]，但参考文献列表仅提供了 2 篇（索引 1 和 2）
-    text = scan_numeric.invoke({"manuscript_text": "Source [1] and [3].", "bibliography": ["Paper A", "Paper B"]})
+    text = scan_numeric.invoke(
+        {"manuscript_text": "Source [1] and [3].", "bibliography": ["Paper A", "Paper B"]}
+    )
     result = ReferenceCheckResult.model_validate_json(text)
 
     # 验证状态应判定为存在问题（issues）
@@ -80,7 +82,9 @@ def test_citation_parser_and_toolkit_integration(tmp_path: Path):
     plugin = ResearchCitationPlugin()
     assert isinstance(plugin, DomainPlugin)
 
-    settings = HarnessSettings(_env_file=None, model="deepseek:deepseek-chat", workspace_root=tmp_path)
+    settings = HarnessSettings(
+        _env_file=None, model="deepseek:deepseek-chat", workspace_root=tmp_path
+    )
     composer = AgentComposer(settings=settings)
     composer.register_plugin(plugin, BuildServices(workspace_root=tmp_path))
     assert len(composer.workflows) == 1
@@ -97,7 +101,9 @@ def test_plugin_contract():
     """
     # 验证插件 ID 包含目录遍历字符时必须被拒绝
     with pytest.raises(ValidationError):
-        PluginManifest(plugin_id="../../evil", version="0.1.0", description="Malformed plugin identifier")
+        PluginManifest(
+            plugin_id="../../evil", version="0.1.0", description="Malformed plugin identifier"
+        )
 
     # 验证技能路径包含向上跳转 '..' 时必须被校验拦截
     with pytest.raises(ValidationError):
@@ -147,11 +153,9 @@ def test_settings_require_explicit_model(monkeypatch, capsys):
     }
 
     monkeypatch.setenv("VA_MODEL", "deepseek:deepseek-flash")
+    monkeypatch.setenv("VA_ENABLED_PLUGINS", '["research.citations"]')
     cli_main(["--list-plugins"])
     assert "research.citations" in capsys.readouterr().out
 
     cli_main(["--list-workflows"])
     assert "citation_audit" in capsys.readouterr().out
-
-
-

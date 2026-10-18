@@ -1,31 +1,21 @@
-"""LangGraph Store 多租户隔离命名空间派生与分段清洗模块。"""
+"""LangGraph Store 多租户隔离命名空间派生与显式迁移模块。"""
 
 from __future__ import annotations
 
-import re
+import hashlib
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from langgraph.runtime import Runtime
+    from langgraph.store.base import BaseStore
 
     from vertical_harness.plugins.contracts import RunContext
 
-# LangGraph 原生 SqliteStore 使用 '.' 拼接命名空间分段，因此分段内部严禁出现 '.' 字符；
-# 此处正则匹配除英文字母、数字、减号、下划线、@、+、:、~ 之外的所有不安全字符。
-_UNSAFE_NS_CHARS = re.compile(r"[^A-Za-z0-9\-_@+:~]")
 
-
-def _sanitize_segment(value: str | None, fallback: str = "default") -> str:
-    """将运行时标识符规范化为 LangGraph 与 StoreBackend 安全合法的命名空间标签。
-
-    :param value: 待清洗的原始命名空间分段字符串，可能为 None 或包含特殊字符。
-    :param fallback: 当输入为 None 或清洗后为空字符串时的回退默认值。
-    :return: 仅包含安全字符的规范化命名空间分段字符串。
-    """
-    if not value:
-        return fallback
-    cleaned = _UNSAFE_NS_CHARS.sub("_", value.strip())
-    return cleaned or fallback
+def _identity_segment(value: str | None) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError("Memory namespaces require nonempty trusted tenant/user/bucket IDs")
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
 def tenant_memory_namespace(
@@ -37,16 +27,56 @@ def tenant_memory_namespace(
 
     :param runtime: LangGraph 运行时对象，其 context 属性包含当前租户与用户标识。
     :param bucket: 存储分类桶标识，默认为 'memories'。
-    :return: 由清洗后的 (tenant_id, user_id, bucket) 组成的隔离命名空间三元组。
+    :return: 版本标识及未经清洗的身份摘要，不回退到共享默认身份。
+    :raises ValueError: 当身份缺失或为空时抛出。
     """
     context = getattr(runtime, "context", None) if runtime is not None else None
     return (
-        _sanitize_segment(getattr(context, "tenant_id", None), "default"),
-        _sanitize_segment(getattr(context, "user_id", None), "default"),
-        _sanitize_segment(bucket, "memories"),
+        "file_memory_v2",
+        _identity_segment(getattr(context, "tenant_id", None)),
+        _identity_segment(getattr(context, "user_id", None)),
+        _identity_segment(bucket),
     )
 
 
+def copy_memory_namespace(
+    store: BaseStore,
+    source: tuple[str, ...],
+    destination: tuple[str, ...],
+) -> int:
+    """Copy explicitly attributed legacy records without deleting or overwriting data.
+
+    The operator must verify ownership first: legacy sanitized IDs can collide.
+    Repeating a partial copy is safe when existing values match.
+
+    :param store: Caller-owned synchronous store.
+    :param source: Exact namespace whose ownership has been verified.
+    :param destination: Explicit new namespace.
+    :return: Number of copied records.
+    :raises ValueError: If namespaces match or destination data conflicts.
+    """
+    if (
+        not source
+        or not destination
+        or source[: len(destination)] == destination
+        or destination[: len(source)] == source
+    ):
+        raise ValueError("Migration requires distinct, nonempty namespaces")
+    count = offset = 0
+    while items := store.search(source, limit=100, offset=offset):
+        for item in items:
+            if item.namespace != source:
+                continue
+            existing = store.get(destination, item.key)
+            if existing is not None and existing.value != item.value:
+                raise ValueError(f"Destination contains conflicting memory key: {item.key}")
+            store.put(destination, item.key, item.value)
+            count += 1
+        offset += len(items)
+    return count
+
+
 __all__ = [
+    "copy_memory_namespace",
     "tenant_memory_namespace",
 ]

@@ -54,6 +54,8 @@ def _instantiate_and_verify(identifier: str, ep: EntryPoint) -> DomainPlugin:
     logger.debug("plugin_factory_loaded", extra={"event_fields": {"plugin_id": identifier}})
     plugin = factory()
 
+    if not isinstance(plugin.manifest, PluginManifest):
+        raise TypeError(f"Plugin {identifier} manifest must be a PluginManifest instance")
     manifest = PluginManifest.model_validate(plugin.manifest)
     if manifest.plugin_id != identifier:
         raise ValueError(f"Entry point / manifest mismatch: {identifier}")

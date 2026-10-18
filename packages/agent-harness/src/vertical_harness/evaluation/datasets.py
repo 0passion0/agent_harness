@@ -28,11 +28,12 @@ class RegressionCase(BaseModel):
     @model_validator(mode="after")
     def validate_case(self) -> RegressionCase:
         input_payload(self.inputs)
-        if "required_tools" in self.outputs and (
-            not isinstance(self.outputs["required_tools"], list)
-            or any(not isinstance(tool, str) for tool in self.outputs["required_tools"])
-        ):
-            raise ValueError("required_tools must be a list of tool names")
+        for key in ("required_tools", "required_successful_tools"):
+            if key in self.outputs and (
+                not isinstance(self.outputs[key], list)
+                or any(not isinstance(tool, str) for tool in self.outputs[key])
+            ):
+                raise ValueError(f"{key} must be a list of tool names")
         return self
 
     @property

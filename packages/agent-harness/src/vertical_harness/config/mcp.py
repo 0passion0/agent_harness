@@ -14,6 +14,10 @@ class _MCPServer(BaseModel):
     timeout: float = Field(default=30, gt=0, allow_inf_nan=False)
     # 服务端声明的 readOnlyHint 不作为授权依据，由宿主显式指定副作用级别。
     effect: Literal["read", "write", "external"] = "external"
+    allowed_tools: list[Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]] | None = None
+    # Native skill disclosure applies only to tools the host declares read-only.
+    defer_tools: bool = False
+    description: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1024)] | None = None
 
 
 class MCPStdioServer(_MCPServer):

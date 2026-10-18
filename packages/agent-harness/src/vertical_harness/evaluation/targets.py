@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from time import perf_counter
 from typing import Any
 from uuid import uuid4
 
 from langgraph.store.memory import InMemoryStore
 
 from vertical_harness.config import HarnessSettings
+from vertical_harness.engine.callbacks import WorkflowLoggingHandler
 from vertical_harness.engine.compose import BASE_PROMPT, aopen_agent
 from vertical_harness.evaluation.scoring import input_payload, normalize_outputs
 from vertical_harness.plugins import BuildServices, RunContext, discover_plugins
@@ -53,6 +56,11 @@ class EvaluationTarget:
                 "enable_user_preferences": False,
                 "enable_memory_consolidation": False,
                 "enabled_plugins": plugins,
+                "plugin_config": {
+                    key: settings.plugin_config[key]
+                    for key in plugins
+                    if key in settings.plugin_config
+                },
             }
         )
 
@@ -62,7 +70,9 @@ class EvaluationTarget:
         with TemporaryDirectory(prefix="va-prompt-") as root:
             isolated = self.isolated_settings(settings, Path(root))
             (plugin,) = discover_plugins(isolated.enabled_plugins)
-            prompt = plugin.build(BuildServices(Path(root), InMemoryStore())).instructions
+            prompt = plugin.build(
+                BuildServices(Path(root), InMemoryStore(), isolated.plugin_config)
+            ).instructions
         if not prompt.strip():
             raise ValueError("Plugin has no instruction prompt to optimize")
         return prompt
@@ -70,6 +80,8 @@ class EvaluationTarget:
 
 def make_target(settings: HarnessSettings, target: EvaluationTarget, *, prompt: str | None = None):
     async def predict(inputs: dict[str, Any]) -> dict[str, Any]:
+        started = perf_counter()
+        usage = WorkflowLoggingHandler()
         with TemporaryDirectory(prefix="va-eval-") as directory:
             root = Path(directory)
             isolated = target.isolated_settings(settings, root)
@@ -79,13 +91,16 @@ def make_target(settings: HarnessSettings, target: EvaluationTarget, *, prompt: 
             config = {
                 "configurable": {"thread_id": str(uuid4())},
                 "metadata": {"evaluation_target": target.name},
+                "callbacks": [usage],
             }
             if target.name.startswith("workflow:"):
                 name = target.name.partition(":")[2]
                 workflows = [
                     workflow
                     for plugin in discover_plugins(isolated.enabled_plugins)
-                    for workflow in plugin.build(BuildServices(root, store)).workflows
+                    for workflow in plugin.build(
+                        BuildServices(root, store, isolated.plugin_config)
+                    ).workflows
                     if workflow.name == name
                 ]
                 if len(workflows) != 1:
@@ -97,13 +112,18 @@ def make_target(settings: HarnessSettings, target: EvaluationTarget, *, prompt: 
                     )
                 if workflow.runnable is None:
                     raise ValueError("Direct workflow evaluation requires a local runnable")
-                result = await workflow.runnable.ainvoke(payload, config=config)
+                async with asyncio.timeout(settings.run_timeout_seconds):
+                    result = await workflow.runnable.ainvoke(payload, config=config)
                 if workflow.result_schema:
                     workflow.result_schema.model_validate(result.get("structured_response"))
             else:
                 overrides = {target.prompt_key: prompt} if prompt is not None else None
                 async with aopen_agent(isolated, store=store, prompt_overrides=overrides) as agent:
-                    result = await agent.ainvoke(payload, config=config, context=context)
-            return normalize_outputs(result, inputs=payload)
+                    async with asyncio.timeout(settings.run_timeout_seconds):
+                        result = await agent.ainvoke(payload, config=config, context=context)
+            return {
+                **normalize_outputs(result, inputs=payload),
+                "usage": {**usage.usage, "duration_ms": round((perf_counter() - started) * 1000, 2)},
+            }
 
     return predict

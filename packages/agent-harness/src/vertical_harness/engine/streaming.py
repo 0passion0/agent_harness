@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import math
 from collections.abc import AsyncIterator
 from contextlib import aclosing
 from typing import Any, Literal
@@ -24,11 +26,21 @@ class StreamEvent(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     type: Literal[
-        "run.started", "run.completed", "run.interrupted", "run.failed",
-        "chain.started", "chain.completed",
-        "subagent.started", "subagent.completed",
-        "model.started", "model.delta", "model.completed",
-        "tool.started", "tool.completed", "tool.failed", "custom.progress",
+        "run.started",
+        "run.completed",
+        "run.interrupted",
+        "run.failed",
+        "chain.started",
+        "chain.completed",
+        "subagent.started",
+        "subagent.completed",
+        "model.started",
+        "model.delta",
+        "model.completed",
+        "tool.started",
+        "tool.completed",
+        "tool.failed",
+        "custom.progress",
     ]
     run_id: str
     thread_id: str
@@ -42,7 +54,9 @@ class StreamEvent(BaseModel):
 
 
 def _project(
-    event: dict[str, Any], root_id: str, interrupts: tuple[Interrupt, ...],
+    event: dict[str, Any],
+    root_id: str,
+    interrupts: tuple[Interrupt, ...],
 ) -> tuple[str, dict[str, JsonValue]] | None:
     """只输出明确允许的字段；不转发原始 state、工具参数、工具结果或模型配置。"""
     kind = event["event"]
@@ -57,9 +71,12 @@ def _project(
         if isinstance(message, BaseMessage) and phase in {"stream", "end"}:
             if phase == "stream" and not message.text:
                 return None
+            projected = {"text": message.text, "message_id": message.id}
+            if phase == "end" and getattr(message, "usage_metadata", None) is not None:
+                projected["usage"] = _JSON.validate_python(message.usage_metadata)
             return (
                 "model.delta" if phase == "stream" else "model.completed",
-                {"text": message.text, "message_id": message.id},
+                projected,
             )
     if kind == "on_tool_start":
         # 委派名称可用于显示任务卡片，任务描述和其他参数不自动公开。
@@ -98,6 +115,45 @@ def _project(
     return None
 
 
+def _run_timeout(agent: CompiledStateGraph, timeout_seconds: float | None) -> float:
+    timeout = (
+        timeout_seconds
+        if timeout_seconds is not None
+        else (agent.config or {}).get("metadata", {}).get("harness_run_timeout_seconds", 900)
+    )
+    if not isinstance(timeout, (int, float)) or not math.isfinite(timeout) or timeout <= 0:
+        raise ValueError("timeout_seconds must be positive")
+    return timeout
+
+
+async def ainvoke_agent(
+    agent: CompiledStateGraph,
+    inputs: dict[str, Any] | Command[Any] | None,
+    *,
+    config: RunnableConfig,
+    context: RunContext | None = None,
+    durability: Literal["sync", "async", "exit"] = "sync",
+    timeout_seconds: float | None = None,
+) -> Any:
+    """Invoke a native graph with a host-owned deadline, fresh on approval resume.
+
+    :param agent: Native graph; raw ainvoke callers must own their own deadline.
+    :param inputs: Messages, resume command, or None.
+    :param config: Caller's checkpoint/callback configuration.
+    :param context: Trusted identity.
+    :param durability: Native checkpoint durability.
+    :param timeout_seconds: Override the configured invocation timeout.
+    :return: Native graph output.
+    """
+    async with asyncio.timeout(_run_timeout(agent, timeout_seconds)):
+        return await agent.ainvoke(
+            inputs,
+            config=config,
+            context=context,
+            durability=durability if agent.checkpointer else None,
+        )
+
+
 async def astream_agent(
     agent: CompiledStateGraph,
     inputs: dict[str, Any] | Command[Any] | None,
@@ -105,6 +161,7 @@ async def astream_agent(
     config: RunnableConfig,
     context: RunContext | None = None,
     durability: Literal["sync", "async", "exit"] = "sync",
+    timeout_seconds: float | None = None,
 ) -> AsyncIterator[StreamEvent]:
     """执行一次 Agent 并产生 UI 事件，支持 None / Command(resume=...) 输入。
 
@@ -121,11 +178,14 @@ async def astream_agent(
     seq = 0
     interrupts: tuple[Interrupt, ...] = ()
     source = agent.astream_events(
-        inputs, config=run_config, version="v2", context=context,
+        inputs,
+        config=run_config,
+        version="v2",
+        context=context,
         durability=durability if agent.checkpointer else None,
     )
     try:
-        async with aclosing(source):
+        async with asyncio.timeout(_run_timeout(agent, timeout_seconds)), aclosing(source):
             async for raw in source:
                 if seq == 0:
                     root_id = raw["run_id"]
@@ -141,18 +201,29 @@ async def astream_agent(
                 metadata = raw.get("metadata", {})
                 seq += 1
                 yield StreamEvent(
-                    type=event_type, run_id=str(run_id), thread_id=thread_id, seq=seq,
-                    operation_id=raw["run_id"], parent_ids=raw.get("parent_ids", []),
-                    name=raw["name"], agent_name=metadata.get("lc_agent_name"),
-                    node=metadata.get("langgraph_node"), data=data,
+                    type=event_type,
+                    run_id=str(run_id),
+                    thread_id=thread_id,
+                    seq=seq,
+                    operation_id=raw["run_id"],
+                    parent_ids=raw.get("parent_ids", []),
+                    name=raw["name"],
+                    agent_name=metadata.get("lc_agent_name"),
+                    node=metadata.get("langgraph_node"),
+                    data=data,
                 )
     except Exception as exc:
         yield StreamEvent(
-            type="run.failed", run_id=str(run_id), thread_id=thread_id, seq=seq + 1,
-            operation_id=root_id, parent_ids=[], name=agent.name or "agent",
+            type="run.failed",
+            run_id=str(run_id),
+            thread_id=thread_id,
+            seq=seq + 1,
+            operation_id=root_id,
+            parent_ids=[],
+            name=agent.name or "agent",
             data={"error_type": type(exc).__name__},
         )
         raise
 
 
-__all__ = ["StreamEvent", "astream_agent"]
+__all__ = ["StreamEvent", "ainvoke_agent", "astream_agent"]

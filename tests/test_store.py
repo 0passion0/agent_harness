@@ -51,7 +51,7 @@ def test_native_sqlite_store_lifecycle_and_crud(tmp_path: Path) -> None:
         assert store.get(ns, "pref") is None
 
     # 验证磁盘上物理 SQLite 文件确实生成在工作区根目录下
-    assert (tmp_path / "ws" / "store.sqlite").exists()
+    assert settings.resolved_store_target.exists()
 
 
 def test_native_async_sqlite_store_lifecycle(tmp_path: Path) -> None:
@@ -129,7 +129,7 @@ def test_composite_backend_routes_memories_to_sqlite_store(tmp_path: Path) -> No
         assert not (workspace / "memories" / "AGENTS.md").exists()
 
         # 验证命名空间字符清洗机制：租户与用户 ID 中的 '.' 被自动清洗为 '_'，防止与 SqliteStore 分隔符冲突
-        item = store.get(("lab_a", "researcher_7", "memories"), "/AGENTS.md")
+        item = store.get(tenant_memory_namespace(fake_runtime), "/AGENTS.md")
         assert item is not None
         assert "Always check DOI." in item.value["content"]
 
@@ -138,4 +138,3 @@ def test_composite_backend_routes_memories_to_sqlite_store(tmp_path: Path) -> No
         assert read_mem.error is None
         assert read_mem.file_data is not None
         assert "Always check DOI." in read_mem.file_data["content"]
-

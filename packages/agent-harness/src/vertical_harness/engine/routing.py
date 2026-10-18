@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from langchain.agents.middleware import (
     AgentMiddleware,
     ModelRequest,
     ModelResponse,
-    wrap_model_call,
 )
 from langchain.chat_models import init_chat_model
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -32,7 +31,8 @@ def init_configured_model(
     """
     model_name = model or settings.model
     logger.debug("model_initialization_started", extra={"event_fields": {"model": model_name}})
-    configured_model = init_chat_model(model_name, **settings.model_init_kwargs)
+    # Reuse provider backoff without wrapping tool binding or stacking retry loops.
+    configured_model = init_chat_model(model_name, max_retries=5, **settings.model_init_kwargs)
     logger.debug("model_initialization_completed", extra={"event_fields": {"model": model_name}})
     return configured_model
 
@@ -52,16 +52,11 @@ def make_router(settings: HarnessSettings) -> AgentMiddleware[Any, Any, Any] | N
     quality_model = init_configured_model(settings, settings.quality_model)
     logger.info("model_routing_enabled")
 
-    @wrap_model_call
-    def route_model(
-        request: ModelRequest,
-        handler: Callable[[ModelRequest], ModelResponse],
-    ) -> ModelResponse:
+    def select_model(request: ModelRequest) -> ModelRequest:
         """根据每次运行由宿主注入并验证的可信任务层级动态选择底层模型。
 
         :param request: 包含运行时上下文及调用参数的模型调用请求对象。
-        :param handler: 后续的模型调用处理器函数。
-        :return: 模型调用生成的响应对象。
+        :return: 已选择底层模型的请求对象。
         """
         task_tier = getattr(request.runtime.context, "task_tier", TaskTier.QUALITY)
         target_model = economy_model if task_tier == TaskTier.ECONOMY else quality_model
@@ -78,9 +73,26 @@ def make_router(settings: HarnessSettings) -> AgentMiddleware[Any, Any, Any] | N
                 }
             },
         )
-        return handler(request.override(model=target_model))
+        return request.override(model=target_model)
 
-    return route_model
+    class ModelRouterMiddleware(AgentMiddleware[Any, Any, Any]):
+        """Share model selection across native sync and async invocation paths."""
+
+        def wrap_model_call(
+            self,
+            request: ModelRequest,
+            handler: Callable[[ModelRequest], ModelResponse],
+        ) -> ModelResponse:
+            return handler(select_model(request))
+
+        async def awrap_model_call(
+            self,
+            request: ModelRequest,
+            handler: Callable[[ModelRequest], Awaitable[ModelResponse]],
+        ) -> ModelResponse:
+            return await handler(select_model(request))
+
+    return ModelRouterMiddleware()
 
 
 __all__ = [

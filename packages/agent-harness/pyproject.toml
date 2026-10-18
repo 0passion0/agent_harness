@@ -8,10 +8,10 @@ version = "0.1.0"
 description = "Composable Deep Agents harness with Python distribution plugins"
 requires-python = ">=3.11"
 dependencies = [
-  "deepagents>=0.7.22,<0.8",
-  "langchain[mcp]>=1.4,<2",
-  "langchain-deepseek>=0.1",
-  "langgraph>=1,<2",
+  "deepagents>=0.7.28,<0.8",
+  "langchain[mcp]>=1.4.6,<2",
+  "langchain-deepseek>=1.1.1,<2",
+  "langgraph>=1.2.16,<2",
   "langgraph-checkpoint-sqlite>=3,<4",
   "pydantic>=2.10,<3",
   "pydantic-settings>=2.6,<3",
@@ -22,7 +22,7 @@ dependencies = [
 
 [project.optional-dependencies]
 postgres = ["langgraph-checkpoint-postgres>=2,<4"]
-dev = ["pytest>=8", "ruff>=0.9"]
+dev = ["pytest>=8", "ruff>=0.9", "mypy>=1.15,<2"]
 
 [project.scripts]
 vertical-agent = "vertical_harness.cli:main"

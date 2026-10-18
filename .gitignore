@@ -55,7 +55,6 @@ dmypy.json
 
 # Package managers & locks
 .uv/
-uv.lock
 
 # Environments & Virtual Environments
 .env

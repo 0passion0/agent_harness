@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass
+from copy import deepcopy
+from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path, PurePosixPath
 from typing import (
@@ -60,7 +61,7 @@ class WorkflowOutputState(TypedDict):
     structured_response: NotRequired[Any]
 
 
-class WorkflowInternalState(WorkflowInputState, WorkflowOutputState):
+class WorkflowInternalState(WorkflowOutputState):
     """定义工作流内部节点流转使用的数据（InternalState 基类，不直接暴露给外部调用方）。"""
 
     internal_context: NotRequired[dict[str, Any]]
@@ -181,7 +182,10 @@ class SkillAsset(StrictModel):
         :param skills_root: 虚拟技能根目录路径，默认为 '/skills'。
         :return: (虚拟路径字符串, UTF-8 编码字节内容) 元组。
         """
-        return (self.to_virtual_path(plugin_id, skills_root=skills_root), self.content.encode("utf-8"))
+        return (
+            self.to_virtual_path(plugin_id, skills_root=skills_root),
+            self.content.encode("utf-8"),
+        )
 
 
 class ToolContribution(StrictModel):
@@ -575,6 +579,15 @@ class BuildServices:
     workspace_root: Path
     # 可选的长期记忆及键值持久化存储 BaseStore 实例
     store: BaseStore | None = None
+    plugin_config: dict[str, dict[str, Any]] = field(default_factory=dict, repr=False)
+
+    def config_for(self, plugin_id: str) -> dict[str, Any]:
+        """Return an isolated configuration copy for plugin-local schema validation.
+
+        :param plugin_id: Enabled plugin ID.
+        :return: Its configuration, or an empty mapping.
+        """
+        return deepcopy(self.plugin_config.get(plugin_id, {}))
 
 
 @dataclass(frozen=True, slots=True)
@@ -587,6 +600,16 @@ class RunContext:
     user_id: str
     # 任务质量/预算层级：economy（经济型）或 quality（高品质型）
     task_tier: Literal["economy", "quality"] = "quality"
+
+    def __post_init__(self) -> None:
+        """Reject missing identities at the trusted host boundary."""
+        if any(
+            not isinstance(value, str) or not value.strip()
+            for value in (self.tenant_id, self.user_id)
+        ):
+            raise ValueError("RunContext requires nonempty trusted tenant_id and user_id")
+        if self.task_tier not in {"economy", "quality"}:
+            raise ValueError("task_tier must be economy or quality")
 
 
 @runtime_checkable

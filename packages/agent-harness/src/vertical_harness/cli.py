@@ -20,17 +20,14 @@ from pydantic import ValidationError
 from vertical_harness.config import HarnessSettings, TaskTier
 from vertical_harness.engine import (
     WorkflowLoggingHandler,
+    aget_checkpoint_history,
     aopen_agent,
     atime_travel_invoke,
-    build_agent,
-    get_checkpoint_history,
-    time_travel_invoke,
 )
 from vertical_harness.engine.memory import run_memory_worker
 from vertical_harness.logging import configure_logging, log_context
 from vertical_harness.observability import tracing_session
 from vertical_harness.plugins import BuildServices, RunContext, discover_plugins
-from vertical_harness.storage import open_checkpointer, open_store
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +47,8 @@ def _image_content(value: str) -> dict[str, str]:
     if not data or len(data) > max_bytes:
         raise argparse.ArgumentTypeError("Image must be nonempty and at most 20 MiB")
     return {
-        "type": "image", "base64": base64.b64encode(data).decode("ascii"),
+        "type": "image",
+        "base64": base64.b64encode(data).decode("ascii"),
         "mime_type": mime_type,
     }
 
@@ -63,16 +61,23 @@ def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Deep Agents plugin harness")
     parser.add_argument("prompt", nargs="?", help="Input prompt to send to the agent")
     parser.add_argument(
-        "--image", dest="images", action="append", default=[], type=_image_content,
-        metavar="PATH", help="Attach a local image (PNG/JPEG/GIF/WebP, <=20 MiB); repeat for multiple images",
+        "--image",
+        dest="images",
+        action="append",
+        default=[],
+        type=_image_content,
+        metavar="PATH",
+        help="Attach a local image (PNG/JPEG/GIF/WebP, <=20 MiB); repeat for multiple images",
     )
     memory_command = parser.add_mutually_exclusive_group()
     memory_command.add_argument(
-        "--memory-worker", action="store_true",
+        "--memory-worker",
+        action="store_true",
         help="Run the independent weekly memory consolidation worker (one per store)",
     )
     memory_command.add_argument(
-        "--consolidate-memory", action="store_true",
+        "--consolidate-memory",
+        action="store_true",
         help="Process due memory consolidations once, suitable for a system scheduler",
     )
     parser.add_argument(
@@ -91,7 +96,9 @@ def _build_parser() -> argparse.ArgumentParser:
         help="List Time Travel checkpoint history for --thread-id as JSON",
     )
     parser.add_argument("--thread-id", default=None, help="Persistent thread identifier")
-    parser.add_argument("--run-id", type=uuid.UUID, help="LangSmith run UUID for attaching user feedback")
+    parser.add_argument(
+        "--run-id", type=uuid.UUID, help="LangSmith run UUID for attaching user feedback"
+    )
     parser.add_argument(
         "--checkpoint-id",
         default=None,
@@ -145,7 +152,9 @@ def _print_workflows(settings: HarnessSettings) -> None:
 
     :param settings: 已加载的宿主配置实例。
     """
-    services = BuildServices(workspace_root=settings.resolved_workspace_root)
+    services = BuildServices(
+        workspace_root=settings.resolved_workspace_root, plugin_config=settings.plugin_config
+    )
     entries = []
     for plugin in discover_plugins(settings.enabled_plugins):
         contribution = plugin.build(services)
@@ -163,7 +172,9 @@ def _print_workflows(settings: HarnessSettings) -> None:
                     "depends_on": list(wf.depends_on),
                     "max_dispatches": wf.max_dispatches,
                     "idempotent": wf.idempotent,
-                    "internal_state": getattr(wf.internal_state, "__name__", str(wf.internal_state)),
+                    "internal_state": getattr(
+                        wf.internal_state, "__name__", str(wf.internal_state)
+                    ),
                     "input_schema": getattr(wf.input_schema, "__name__", str(wf.input_schema)),
                     "output_schema": getattr(wf.output_schema, "__name__", str(wf.output_schema)),
                 }
@@ -177,9 +188,13 @@ def _print_history(args: argparse.Namespace, settings: HarnessSettings) -> None:
     :param args: 解析后的命令行参数对象。
     :param settings: 已加载的宿主配置实例。
     """
-    with open_store(settings) as store, open_checkpointer(settings) as checkpointer:
-        agent = build_agent(settings, store=store, checkpointer=checkpointer, mcp_tools=())
-        history = get_checkpoint_history(agent, args.thread_id)
+
+    async def query():
+        # History needs the graph and plugin lifecycle, without connecting MCP servers.
+        async with aopen_agent(settings.model_copy(update={"mcp_servers": {}})) as agent:
+            return await aget_checkpoint_history(agent, args.thread_id)
+
+    history = asyncio.run(query())
     print(
         json.dumps(
             [item.model_dump() for item in history],
@@ -221,7 +236,8 @@ def _invoke_prompt(args: argparse.Namespace, settings: HarnessSettings) -> None:
     logger.info("agent_run_started", extra={"event_fields": {"task_tier": args.task_tier}})
     content = (
         ([{"type": "text", "text": args.prompt}] if args.prompt else []) + args.images
-        if args.images else args.prompt
+        if args.images
+        else args.prompt
     )
     payload = {"messages": [HumanMessage(content=content)]} if content else None
     travel_kwargs = {
@@ -236,21 +252,14 @@ def _invoke_prompt(args: argparse.Namespace, settings: HarnessSettings) -> None:
         "run_id": args.run_id,
     }
     invoke_kwargs = {"config": run_config, "context": run_context, "durability": durability}
-    if settings.mcp_servers and not settings.supervisor_only:
-        async def invoke_with_mcp():
-            async with aopen_agent(settings) as agent:
-                if is_time_travel:
-                    return await atime_travel_invoke(agent, thread_id, **travel_kwargs)
-                return await agent.ainvoke(payload, **invoke_kwargs)
 
-        result = asyncio.run(invoke_with_mcp())
-    else:
-        with open_store(settings) as store, open_checkpointer(settings) as checkpointer:
-            agent = build_agent(settings, store=store, checkpointer=checkpointer)
+    async def invoke_managed():
+        async with asyncio.timeout(settings.run_timeout_seconds), aopen_agent(settings) as agent:
             if is_time_travel:
-                result = time_travel_invoke(agent, thread_id, **travel_kwargs)
-            else:
-                result = agent.invoke(payload, **invoke_kwargs)
+                return await atime_travel_invoke(agent, thread_id, **travel_kwargs)
+            return await agent.ainvoke(payload, **invoke_kwargs)
+
+    result = asyncio.run(invoke_managed())
 
     interrupted = "__interrupt__" in result
     logger.log(
@@ -272,13 +281,21 @@ def main(argv: Sequence[str] | None = None) -> None:
     parser = _build_parser()
     args = parser.parse_args(argv)
     if args.images and (
-        args.list_plugins or args.list_workflows or args.history
-        or args.memory_worker or args.consolidate_memory
+        args.list_plugins
+        or args.list_workflows
+        or args.history
+        or args.memory_worker
+        or args.consolidate_memory
     ):
         parser.error("--image cannot be combined with listing, history or memory worker commands")
     if (args.memory_worker or args.consolidate_memory) and (
-        args.prompt or args.list_plugins or args.list_workflows or args.history
-        or args.checkpoint_id or args.fork_thread_id or args.update_state
+        args.prompt
+        or args.list_plugins
+        or args.list_workflows
+        or args.history
+        or args.checkpoint_id
+        or args.fork_thread_id
+        or args.update_state
     ):
         parser.error("Memory worker commands cannot be combined with agent commands")
     if args.history and not args.thread_id:

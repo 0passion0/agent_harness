@@ -10,6 +10,7 @@ from vertical_harness.engine.compose import (
     AgentComposer,
     aopen_agent,
     build_agent,
+    open_agent,
     register_supervisor_harness_profile,
 )
 from vertical_harness.engine.memory import (
@@ -25,7 +26,7 @@ from vertical_harness.engine.policy import (
     build_workflow_interrupt_configs,
 )
 from vertical_harness.engine.routing import init_configured_model, make_router
-from vertical_harness.engine.streaming import StreamEvent, astream_agent
+from vertical_harness.engine.streaming import StreamEvent, ainvoke_agent, astream_agent
 from vertical_harness.engine.time_travel import (
     DEFAULT_DURABILITY,
     CheckpointSummary,
@@ -59,6 +60,7 @@ __all__ = [
     "afork_checkpoint",
     "aget_checkpoint_history",
     "aget_checkpoint_snapshot",
+    "ainvoke_agent",
     "aopen_agent",
     "astream_agent",
     "atime_travel_invoke",
@@ -71,6 +73,7 @@ __all__ = [
     "init_configured_model",
     "make_checkpoint_config",
     "make_router",
+    "open_agent",
     "register_supervisor_harness_profile",
     "run_memory_worker",
     "time_travel_invoke",

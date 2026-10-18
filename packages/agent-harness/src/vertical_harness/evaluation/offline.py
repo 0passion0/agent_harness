@@ -128,6 +128,10 @@ async def evaluate_offline(
                     ],
                 }
             )
+        usage_rows = [
+            row["outputs"]["usage"] for row in rows
+            if isinstance(row["outputs"], dict) and isinstance(row["outputs"].get("usage"), dict)
+        ]
         report = {
             "target": target.name,
             "count": len(rows),
@@ -135,6 +139,10 @@ async def evaluate_offline(
             "failures": failures,
             "scores": {key: mean(values) for key, values in scores.items()},
             "rows": rows,
+            "usage": {
+                key: sum(usage.get(key, 0) for usage in usage_rows)
+                for key in ("model_calls", "input_tokens", "output_tokens", "total_tokens", "duration_ms")
+            } | {"complete": len(usage_rows) == len(cases) and all(usage["complete"] for usage in usage_rows)},
         }
         if upload:
             report["experiment_url"] = experiment.url
@@ -166,15 +174,23 @@ def compare_reports(baseline: dict, candidate: dict) -> dict:
                 current.get(item["key"]) is None or current[item["key"]] < item["score"]
             ):
                 regressions.append({"example_id": example_id, "key": item["key"]})
+    baseline_usage, candidate_usage = baseline.get("usage", {}), candidate.get("usage", {})
+    usage_deltas = (
+        {key: candidate_usage[key] - baseline_usage[key]
+         for key in ("model_calls", "input_tokens", "output_tokens", "total_tokens", "duration_ms")}
+        if baseline_usage.get("complete") and candidate_usage.get("complete") else None
+    )
     improved = (
         healthy
         and not regressions
         and bool(deltas)
         and all(delta >= 0 for delta in deltas.values())
-        and any(delta > 0 for delta in deltas.values())
+        and (any(delta > 0 for delta in deltas.values())
+             or (usage_deltas is not None and usage_deltas["total_tokens"] < 0))
     )
     return {
         "score_deltas": deltas,
+        "usage_deltas": usage_deltas,
         "recommendation": "review_candidate" if improved else "keep_baseline",
         "regressions": regressions,
         "production_changed": False,

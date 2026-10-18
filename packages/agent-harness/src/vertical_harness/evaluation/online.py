@@ -76,7 +76,11 @@ async def evaluate_online_once(
     for plugin in discover_plugins(settings.enabled_plugins):
         names.extend(
             workflow.name
-            for workflow in plugin.build(BuildServices(settings.resolved_workspace_root)).workflows
+            for workflow in plugin.build(
+                BuildServices(
+                    settings.resolved_workspace_root, plugin_config=settings.plugin_config
+                )
+            ).workflows
         )
     fingerprint = hashlib.sha256(
         json.dumps(

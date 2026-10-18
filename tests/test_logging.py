@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from contextlib import asynccontextmanager
 from logging.handlers import RotatingFileHandler
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -186,7 +187,11 @@ def test_plugin_defined_fields_do_not_override_reserved_fields(capsys):
 
 
 def test_cli_plugin_listing_stdout_stays_json(monkeypatch, capsys):
-    monkeypatch.setattr(cli, "HarnessSettings", lambda: settings(log_format="json"))
+    monkeypatch.setattr(
+        cli,
+        "HarnessSettings",
+        lambda: settings(log_format="json", enabled_plugins=["research.citations"]),
+    )
     cli.main(["--list-plugins"])
     output = capsys.readouterr()
     assert json.loads(output.out)[0]["plugin_id"] == "research.citations"
@@ -203,7 +208,7 @@ def test_cli_run_and_tool_share_context_without_logging_content(interrupt, monke
     config = settings(log_format="json", store_backend="memory")
     monkeypatch.setattr(cli, "HarnessSettings", lambda: config)
 
-    def invoke(*args, **kwargs):
+    async def invoke(*args, **kwargs):
         scan_numeric.invoke(
             {"manuscript_text": "private manuscript [1]", "bibliography": ["private source"]}
         )
@@ -212,7 +217,11 @@ def test_cli_run_and_tool_share_context_without_logging_content(interrupt, monke
             result["__interrupt__"] = ["approval"]
         return result
 
-    monkeypatch.setattr(cli, "build_agent", lambda *args, **kwargs: SimpleNamespace(invoke=invoke))
+    @asynccontextmanager
+    async def open_agent(*args, **kwargs):
+        yield SimpleNamespace(ainvoke=invoke)
+
+    monkeypatch.setattr(cli, "aopen_agent", open_agent)
     cli.main(["private prompt", "--tenant-id", "private tenant", "--user-id", "private user"])
     output = capsys.readouterr()
     assert output.out.startswith("answer\n")

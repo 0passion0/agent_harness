@@ -10,7 +10,12 @@ from dataclasses import replace
 from enum import StrEnum
 from typing import Any
 
-from langchain.agents.middleware import AgentMiddleware, InterruptOnConfig
+from langchain.agents.middleware import (
+    AgentMiddleware,
+    InterruptOnConfig,
+    ModelRequest,
+    ModelResponse,
+)
 from langchain.agents.middleware.types import ToolCallRequest
 from langchain_core.messages import AIMessage, AnyMessage, ToolMessage
 from langgraph.types import Command
@@ -100,15 +105,23 @@ def _inspect_history(
         if not isinstance(msg, ToolMessage) or msg.tool_call_id not in call_meta:
             continue
         subagent_type, description, tool_name = call_meta[msg.tool_call_id]
-        dispatch_counts[subagent_type] += 1
         content = msg.content if isinstance(msg.content, str) else str(msg.content)
+        policy_meta = (
+            (msg.artifact or {}).get("supervisor_policy", {})
+            if isinstance(msg.artifact, dict)
+            else {}
+        )
+        if policy_meta.get("dispatched") is False:
+            continue
+        if not policy_meta and content.startswith("[SupervisorPolicy]"):
+            continue
+        dispatch_counts[subagent_type] += 1
         is_error = getattr(msg, "status", None) == "error" or content.startswith(
             ("We cannot invoke subagent", "Failed to launch async subagent", "[SupervisorPolicy]")
         )
-        if not is_error:
+        if not is_error and tool_name == "task":
             completed_workflows.add(subagent_type)
-            if tool_name == "task":
-                idempotent_cache[_idempotency_key(subagent_type, description)] = content
+            idempotent_cache[_idempotency_key(subagent_type, description)] = content
 
     return dispatch_counts, completed_workflows, idempotent_cache
 
@@ -150,9 +163,7 @@ def build_workflow_interrupt_configs(
     :return: 工具名称（'task' 或 'start_async_task'）到 InterruptOnConfig 的映射。
     """
     workflow_map = _normalize_workflow_map(workflows)
-    approval_names = frozenset(
-        wf.name for wf in workflow_map.values() if wf.requires_approval
-    )
+    approval_names = frozenset(wf.name for wf in workflow_map.values() if wf.requires_approval)
     if not approval_names:
         return {}
 
@@ -205,6 +216,7 @@ class SupervisorPolicyMiddleware(AgentMiddleware[Any, RunContext, Any]):
         *,
         allowed_subagents: frozenset[str] | None = None,
         enforce_allowlist: bool = True,
+        blocked_tools: frozenset[str] = frozenset(),
     ) -> None:
         """初始化 Supervisor 确定性策略中间件。
 
@@ -220,6 +232,37 @@ class SupervisorPolicyMiddleware(AgentMiddleware[Any, RunContext, Any]):
             else frozenset(self._workflows)
         )
         self._enforce_allowlist = enforce_allowlist
+        self._blocked_tools = blocked_tools
+
+    def wrap_model_call(
+        self, request: ModelRequest, handler: Callable[..., ModelResponse]
+    ) -> ModelResponse:
+        """Hide direct capabilities forbidden by this agent's composition."""
+        return handler(
+            request.override(
+                tools=[
+                    t
+                    for t in request.tools
+                    if (t.get("name") if isinstance(t, dict) else t.name) not in self._blocked_tools
+                ]
+            )
+        )
+
+    async def awrap_model_call(
+        self,
+        request: ModelRequest,
+        handler: Callable[..., Awaitable[ModelResponse]],
+    ) -> ModelResponse:
+        """Apply the same capability filter to async model calls."""
+        return await handler(
+            request.override(
+                tools=[
+                    t
+                    for t in request.tools
+                    if (t.get("name") if isinstance(t, dict) else t.name) not in self._blocked_tools
+                ]
+            )
+        )
 
     def _pre_dispatch_check(
         self,
@@ -227,7 +270,32 @@ class SupervisorPolicyMiddleware(AgentMiddleware[Any, RunContext, Any]):
     ) -> ToolMessage | None:
         """在委派工作流前执行确定性策略检查；若拒绝或命中幂等缓存则直接返回 ToolMessage。"""
         tool_name = request.tool_call.get("name", "")
+        if tool_name in self._blocked_tools:
+            return ToolMessage(
+                content="[SupervisorPolicy] Direct tool execution is disabled.",
+                tool_call_id=request.tool_call["id"],
+                status="error",
+            )
         if tool_name in _MONITOR_TOOLS:
+            if tool_name == "update_async_task":
+                return ToolMessage(
+                    content="[SupervisorPolicy] Async updates require a new approved dispatch.",
+                    tool_call_id=request.tool_call["id"],
+                    status="error",
+                )
+            if tool_name != "list_async_tasks":
+                args = request.tool_call.get("args") or {}
+                task = (request.state.get("async_tasks") or {}).get(args.get("task_id"))
+                workflow = self._workflows.get(task.get("agent_name")) if task else None
+                tenant = getattr(getattr(request.runtime, "context", None), "tenant_id", None)
+                if workflow is None or (
+                    workflow.allowed_tenants is not None and tenant not in workflow.allowed_tenants
+                ):
+                    return ToolMessage(
+                        content="[SupervisorPolicy] Async task is unknown or unauthorized.",
+                        tool_call_id=request.tool_call["id"],
+                        status="error",
+                    )
             logger.debug(
                 "supervisor_workflow_monitored",
                 extra={
@@ -274,6 +342,18 @@ class SupervisorPolicyMiddleware(AgentMiddleware[Any, RunContext, Any]):
         workflow = self._workflows.get(subagent_type)
         if workflow is None:
             return None
+
+        if tool_name == "start_async_task" and (
+            workflow.depends_on
+            or workflow.idempotent
+            or workflow.result_schema is not None
+            or any(workflow.name in wf.depends_on for wf in self._workflows.values())
+        ):
+            return ToolMessage(
+                content="[SupervisorPolicy] Async dependency/idempotency/result contracts are not supported; use a compiled workflow.",
+                tool_call_id=tool_call_id,
+                status="error",
+            )
 
         # 1. 校验租户访问权限（RBAC）
         if workflow.allowed_tenants is not None:
@@ -327,7 +407,8 @@ class SupervisorPolicyMiddleware(AgentMiddleware[Any, RunContext, Any]):
         # 3. 校验幂等缓存（若已成功执行过完全一致的任务描述，直接复用验收结果，不计入额外重试消耗）
         if workflow.idempotent and tool_name == "task":
             idem_key = _idempotency_key(subagent_type, description)
-            if cached_output := idempotent_cache.get(idem_key):
+            if idem_key in idempotent_cache:
+                cached_output = idempotent_cache[idem_key]
                 logger.info(
                     "supervisor_policy_idempotent_hit",
                     extra={
@@ -337,10 +418,61 @@ class SupervisorPolicyMiddleware(AgentMiddleware[Any, RunContext, Any]):
                         }
                     },
                 )
-                return ToolMessage(content=cached_output, tool_call_id=tool_call_id)
+                return ToolMessage(
+                    content=cached_output,
+                    tool_call_id=tool_call_id,
+                    artifact={"supervisor_policy": {"dispatched": False}},
+                )
+
+        # Reserve earlier calls from the same model batch, even when they run in parallel.
+        answered = {m.tool_call_id for m in messages if isinstance(m, ToolMessage)}
+        batch = next(
+            (
+                m
+                for m in reversed(messages)
+                if isinstance(m, AIMessage)
+                and any(c.get("id") == tool_call_id for c in m.tool_calls)
+            ),
+            None,
+        )
+        if batch and sum(c.get("id") == tool_call_id for c in batch.tool_calls) != 1:
+            return ToolMessage(
+                content="[SupervisorPolicy] Tool call IDs must be unique within a batch.",
+                tool_call_id=tool_call_id,
+                status="error",
+            )
+        reserved = 0
+        for call in batch.tool_calls if batch else ():
+            if call.get("id") == tool_call_id:
+                break
+            prior = call.get("args") or {}
+            if (
+                call.get("name") not in _DISPATCH_TOOLS
+                or prior.get("subagent_type") != subagent_type
+            ):
+                continue
+            if (
+                workflow.idempotent
+                and tool_name == "task"
+                and _idempotency_key(subagent_type, str(prior.get("description", "")))
+                == _idempotency_key(subagent_type, description)
+            ):
+                return ToolMessage(
+                    content="[SupervisorPolicy] Duplicate task in the same batch; retry after the first result.",
+                    tool_call_id=tool_call_id,
+                    status="error",
+                )
+            if (
+                workflow.idempotent
+                and _idempotency_key(subagent_type, str(prior.get("description", "")))
+                in idempotent_cache
+            ):
+                continue
+            if call.get("id") not in answered:
+                reserved += 1
 
         # 4. 校验最大委派/重试次数上限（max_dispatches）
-        if dispatch_counts[subagent_type] >= workflow.max_dispatches:
+        if dispatch_counts[subagent_type] + reserved >= workflow.max_dispatches:
             logger.warning(
                 "supervisor_policy_rejected",
                 extra={
@@ -403,7 +535,7 @@ class SupervisorPolicyMiddleware(AgentMiddleware[Any, RunContext, Any]):
 
         tool_call_id = request.tool_call.get("id")
         tool_msg = _extract_tool_message(result, tool_call_id)
-        if tool_msg is None:
+        if tool_msg is None or tool_msg.status == "error":
             return result
 
         content = tool_msg.content if isinstance(tool_msg.content, str) else str(tool_msg.content)
@@ -429,7 +561,16 @@ class SupervisorPolicyMiddleware(AgentMiddleware[Any, RunContext, Any]):
                 status="error",
             )
             if isinstance(result, Command) and isinstance(result.update, dict):
-                return replace(result, update={**result.update, "messages": [error_msg]})
+                return replace(
+                    result,
+                    update={
+                        **result.update,
+                        "messages": [
+                            error_msg if m is tool_msg else m
+                            for m in result.update.get("messages", [])
+                        ],
+                    },
+                )
             return error_msg
 
         logger.debug(
@@ -451,9 +592,11 @@ class SupervisorPolicyMiddleware(AgentMiddleware[Any, RunContext, Any]):
         """同步拦截并监督工作流委派与结果验收。"""
         short_circuit = self._pre_dispatch_check(request)
         if short_circuit is not None:
-            return short_circuit
+            return short_circuit.model_copy(
+                update={"artifact": {"supervisor_policy": {"dispatched": False}}}
+            )
         result = handler(request)
-        return self._post_dispatch_validate(request, result)
+        return self._mark_dispatch(request, self._post_dispatch_validate(request, result))
 
     async def awrap_tool_call(
         self,
@@ -463,9 +606,34 @@ class SupervisorPolicyMiddleware(AgentMiddleware[Any, RunContext, Any]):
         """异步拦截并监督工作流委派与结果验收。"""
         short_circuit = self._pre_dispatch_check(request)
         if short_circuit is not None:
-            return short_circuit
+            return short_circuit.model_copy(
+                update={"artifact": {"supervisor_policy": {"dispatched": False}}}
+            )
         result = await handler(request)
-        return self._post_dispatch_validate(request, result)
+        return self._mark_dispatch(request, self._post_dispatch_validate(request, result))
+
+    def _mark_dispatch(
+        self, request: ToolCallRequest, result: ToolMessage | Command[Any]
+    ) -> ToolMessage | Command[Any]:
+        if request.tool_call.get("name") not in _DISPATCH_TOOLS:
+            return result
+        msg = _extract_tool_message(result, request.tool_call.get("id"))
+        if msg is None:
+            return result
+        artifact = dict(msg.artifact) if isinstance(msg.artifact, dict) else {}
+        artifact["supervisor_policy"] = {"dispatched": True}
+        marked = msg.model_copy(update={"artifact": artifact})
+        if isinstance(result, Command) and isinstance(result.update, dict):
+            return replace(
+                result,
+                update={
+                    **result.update,
+                    "messages": [
+                        marked if m is msg else m for m in result.update.get("messages", [])
+                    ],
+                },
+            )
+        return marked
 
 
 __all__ = [

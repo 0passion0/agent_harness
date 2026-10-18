@@ -2,6 +2,7 @@
 
 `vertical_harness.astream_agent()` 将一次 Agent 执行转换为 `StreamEvent` 异步迭代器。
 执行事件与传输分离：宿主进程可以把事件交给前端，也可以放进 JSON-RPC notification 的 `params`。
+`astream_agent` 与 `ainvoke_agent` 使用配置的整次调用 deadline，可传 `timeout_seconds` 覆盖；超时发出 run.failed 并传播 TimeoutError。直接调用原生图时由宿主自行管理总 deadline，详见[稳定化边界](STABILIZATION.md)。
 这里不实现 CLI、前端、JSON-RPC server 或进程通信协议，也不新增依赖。
 
 ```python
@@ -42,7 +43,7 @@ async def run(prompt, thread_id, send_notification):
 | `run.started` | 本次执行开始 |
 | `model.started` | 一次模型调用开始 |
 | `model.delta` | `text` 文本增量及 `message_id`；按 `operation_id` 聚合 |
-| `model.completed` | 本次模型调用的完整 `text` 及 `message_id`，用于校正增量或非流式模型回退 |
+| `model.completed` | 本次模型调用的完整 `text` 及 `message_id`，用于校正增量或非流式模型回退；模型上报时附带 `usage` 用量计数 |
 | `tool.started` | 工具开始；委派工具额外提供 `subagent_type` |
 | `tool.completed` / `tool.failed` | 工具完成 / 失败；异常只提供 `error_type`，可恢复错误不会把整次执行标为失败 |
 | `subagent.started` / `subagent.completed` | 本地子智能体开始 / 完成；`agent_name` 标识子智能体 |
@@ -53,6 +54,7 @@ async def run(prompt, thread_id, send_notification):
 | `run.failed` | 整次执行失败，只有 `error_type`，随后重新抛出原异常 |
 
 `model.completed.text` 和 `run.completed.output` 是完整文本，不能继续追加到增量末尾。
+用量只在 `model.completed.usage` 提供；不要累加增量 chunk 的计数。未提供 `usage` 表示模型未上报，不代表零消耗。
 模型文本仅包含文本内容块，内部 state、模型配置、工具参数/结果、reasoning 内容块不会自动输出。
 自定义进度与审批载荷是插件明确公开的数据，插件应只放前端需要的 JSON 值。
 插件可调用 `adispatch_custom_event("progress", {"step": "checked"})` 发布进度。

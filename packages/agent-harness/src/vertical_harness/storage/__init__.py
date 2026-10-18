@@ -13,7 +13,7 @@ from vertical_harness.storage.backends import (
     open_checkpointer,
     open_store,
 )
-from vertical_harness.storage.namespace import tenant_memory_namespace
+from vertical_harness.storage.namespace import copy_memory_namespace, tenant_memory_namespace
 
 __all__ = [
     "AsyncSqliteSaver",
@@ -23,6 +23,7 @@ __all__ = [
     "aopen_checkpointer",
     "aopen_store",
     "compose_backend",
+    "copy_memory_namespace",
     "create_checkpointer",
     "create_store",
     "open_checkpointer",

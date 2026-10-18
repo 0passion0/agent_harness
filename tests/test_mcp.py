@@ -27,6 +27,101 @@ from vertical_harness.engine import compose
 from vertical_harness.engine.mcp import aopen_mcp_tools
 
 
+@pytest.mark.parametrize("effect,defer,gating,expected", [
+    ("read", True, True, "skill"),
+    ("read", False, True, "eager"),
+    ("read", True, False, "eager"),
+    ("external", True, True, "eager"),
+    ("write", True, True, "eager"),
+])
+def test_mcp_disclosure_preserves_host_approval(tmp_path, fake_adapters, effect, defer, gating, expected):
+    config = settings(tmp_path, enable_skill_gating=gating, mcp_servers={
+        "local": {"transport": "stdio", "command": "python", "effect": effect, "defer_tools": defer},
+    })
+
+    async def run():
+        async with aopen_mcp_tools(config) as tools:
+            assert tools[0].exposure == expected
+            assert tools[0].requires_approval == (effect != "read")
+
+    asyncio.run(run())
+    assert fake_adapters == [("enter", 0), ("exit", 0)]
+
+
+@pytest.mark.parametrize("allowed", [[], ["missing"], ["echo"]])
+def test_mcp_allowlist_and_cleanup(tmp_path, fake_adapters, allowed):
+    config = settings(tmp_path, mcp_servers={
+        "local": {"transport": "stdio", "command": "python", "allowed_tools": allowed},
+    })
+
+    async def run():
+        async with aopen_mcp_tools(config) as tools:
+            assert [item.name for item in tools] == (["local_echo"] if allowed else [])
+
+    if allowed == ["missing"]:
+        with pytest.raises(ValueError, match="Unknown allowed MCP tools"):
+            asyncio.run(run())
+    else:
+        asyncio.run(run())
+    assert fake_adapters == ([] if not allowed else [("enter", 0), ("exit", 0)])
+
+
+def test_mcp_native_skill_disclosure_and_execution(tmp_path, fake_adapters, monkeypatch):
+    from pydantic import Field
+
+    from test_supervisor_workflows_and_time_travel import ToolCallingFakeModel
+    from vertical_harness.engine.mcp import mcp_skill_assets
+
+    class Model(ToolCallingFakeModel):
+        bound_names: list = Field(default_factory=list)
+
+        def bind_tools(self, tools, **kwargs):
+            self.bound_names.append([item["name"] if isinstance(item, dict) else item.name for item in tools])
+            return self
+
+    config = settings(tmp_path, enable_memory=False, mcp_servers={
+        "local": {"transport": "stdio", "command": "python", "effect": "read", "defer_tools": True},
+    })
+
+    async def run():
+        async with aopen_mcp_tools(config) as tools:
+            skill = mcp_skill_assets(config, tools)[0]
+            model = Model(responses=[
+                AIMessage(content="", tool_calls=[{
+                    "name": "read_file", "args": {"file_path": skill.to_virtual_path("harness")}, "id": "read-skill",
+                }]),
+                AIMessage(content="", tool_calls=[{
+                    "name": "local_echo", "args": {"value": "hello"}, "id": "echo",
+                }]),
+                AIMessage(content="done"),
+            ])
+            monkeypatch.setattr(compose, "init_configured_model", lambda *_: model)
+            agent = compose.build_agent(config, mcp_tools=tools)
+            result = await agent.ainvoke(
+                {"messages": [("user", "echo hello")]},
+                config={"configurable": {"thread_id": "deferred"}},
+            )
+            assert not result.get("skills_load_errors")
+            assert "local_echo" not in model.bound_names[0]
+            assert "local_echo" in model.bound_names[1]
+            output = next(message for message in result["messages"] if message.name == "local_echo")
+            assert output.content == "hello"
+            assert output.status == "success"
+            assert result["messages"][-1].text == "done"
+            # Rebuilding without the integration must not advertise stale skill files.
+            fresh = compose.build_agent(config.model_copy(update={"mcp_servers": {}}))
+            result = await fresh.ainvoke(
+                {"messages": [("user", "new task")]},
+                config={"configurable": {"thread_id": "new-catalog"}},
+            )
+            assert not result.get("skills_metadata")
+            assert "local_echo" not in model.bound_names[-1]
+            old_output = next(message for message in result["messages"] if message.name == "local_echo")
+            assert old_output.status == "error"
+
+    asyncio.run(run())
+
+
 def settings(tmp_path, **kwargs):
     kwargs.setdefault("store_backend", "memory")
     return HarnessSettings(

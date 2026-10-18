@@ -5,7 +5,7 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class IssueKind(StrEnum):
@@ -43,6 +43,15 @@ class ReferenceCheckInput(BaseModel):
     manuscript_text: ManuscriptStr
     # 按照正文出现顺序排列的参考文献条目列表，条目数限制 1 到 10,000
     bibliography: BibliographyList
+
+    @field_validator("manuscript_text")
+    @classmethod
+    def validate_numeric_citations(cls, value: str) -> str:
+        """Reject unsupported numeric identifiers before tool/workflow execution."""
+        from research_citation.checker.parser import extract_cited_indices
+
+        extract_cited_indices(value)
+        return value
 
 
 class ReferenceIssue(BaseModel):

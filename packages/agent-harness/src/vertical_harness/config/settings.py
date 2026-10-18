@@ -6,7 +6,7 @@ from enum import StrEnum
 from pathlib import Path, PurePosixPath
 from typing import Annotated, Any, Literal
 
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from vertical_harness.config.mcp import MCPServerConfig, MCPServerName
@@ -54,8 +54,9 @@ class HarnessSettings(BaseSettings):
     quality_model: NonEmptyStr | None = None
     # 智能体运行的本地工作区物理根路径，默认 './.agent-workspace'
     workspace_root: Path = Path("./.agent-workspace")
+    runtime_data_dir: Path | None = None
     # 长期记忆与状态存储后端类型：sqlite（默认持久化）或 memory（纯内存）
-    store_backend: Literal["sqlite", "memory"] = StoreBackendType.SQLITE
+    store_backend: Literal["sqlite", "memory"] = "sqlite"
     # 自定义 SQLite 数据库文件路径或 ':memory:'
     store_db_path: Path | Literal[":memory:"] | None = None
     # 自定义 LangGraph Checkpointer SQLite 数据库文件路径或 ':memory:'
@@ -70,14 +71,18 @@ class HarnessSettings(BaseSettings):
     memory_route: MemoryRouteStr = "/memories/"
     # 关闭后不挂载/召回长期记忆，也不采集偏好或后台整合输入；不删除历史数据。
     enable_memory: bool = True
+    # Large knowledge profiles become an index with a full read tool; 0 keeps inline recall.
+    memory_inline_max_chars: Annotated[int, Field(ge=0)] = 4_000
     enable_user_preferences: bool = False
     enable_memory_consolidation: bool = False
     # 独立 worker 按每个用户的持久化到期时间运行，默认每 7 天一次。
     memory_consolidation_interval_days: Annotated[int, Field(ge=1, le=365)] = 7
+    memory_event_retention_days: Annotated[int, Field(ge=1, le=3650)] = 90
     # 可使用较小的工具调用模型；默认复用主模型及其连接配置。
     memory_model: NonEmptyStr | None = None
     # 宿主显式启用的插件 ID 白名单列表
-    enabled_plugins: list[str] = Field(default_factory=lambda: ["research.citations"])
+    enabled_plugins: list[str] = Field(default_factory=list)
+    plugin_config: dict[str, dict[str, Any]] = Field(default_factory=dict, repr=False)
     # MCP 服务名到连接配置的映射，VA_MCP_SERVERS 使用 JSON 对象。
     mcp_servers: dict[MCPServerName, MCPServerConfig] = Field(default_factory=dict)
     # 是否启用规划中间件（TodoListMiddleware）
@@ -86,6 +91,8 @@ class HarnessSettings(BaseSettings):
     enable_skill_gating: bool = True
     # 单次运行允许的最大模型调用次数，防止死循环失控
     max_model_calls: ModelCallLimit = 30
+    workflow_timeout_seconds: Annotated[float, Field(gt=0, allow_inf_nan=False)] = 300
+    run_timeout_seconds: Annotated[float, Field(gt=0, allow_inf_nan=False)] = 900
     # 应用日志等级、输出格式与可选滚动文件；stdout 专用于业务结果
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
     log_format: Literal["text", "json"] = "text"
@@ -108,7 +115,8 @@ class HarnessSettings(BaseSettings):
         :return: 解析后的 SQLite 数据库绝对 Path 对象，或内存数据库字面量 ':memory:'。
         """
         if self.store_db_path is None:
-            return self.resolved_workspace_root / "store.sqlite"
+            self._check_legacy_database("store.sqlite", "VA_STORE_DB_PATH")
+            return self.resolved_runtime_data_dir / "store.sqlite"
         if str(self.store_db_path) == ":memory:":
             return ":memory:"
         return Path(self.store_db_path).expanduser().resolve()
@@ -122,7 +130,8 @@ class HarnessSettings(BaseSettings):
         if self.checkpoint_db_path is None:
             if self.store_backend == StoreBackendType.MEMORY:
                 return ":memory:"
-            return self.resolved_workspace_root / "checkpoints.sqlite"
+            self._check_legacy_database("checkpoints.sqlite", "VA_CHECKPOINT_DB_PATH")
+            return self.resolved_runtime_data_dir / "checkpoints.sqlite"
         if str(self.checkpoint_db_path) == ":memory:":
             return ":memory:"
         return Path(self.checkpoint_db_path).expanduser().resolve()
@@ -135,6 +144,28 @@ class HarnessSettings(BaseSettings):
         """
         posix_route = PurePosixPath("/", self.memory_route.strip("/"))
         return f"{posix_route}/"
+
+    @property
+    def resolved_runtime_data_dir(self) -> Path:
+        """Keep host databases outside the model-editable workspace by default."""
+        if self.runtime_data_dir is not None:
+            return self.runtime_data_dir.expanduser().resolve()
+        root = self.resolved_workspace_root
+        return root.with_name(f"{root.name}.runtime")
+
+    def _check_legacy_database(self, filename: str, env_name: str) -> None:
+        if self.runtime_data_dir is None and (self.resolved_workspace_root / filename).exists():
+            raise ValueError(
+                f"Legacy {filename} exists in workspace; back it up and migrate, or explicitly set {env_name}. No data was moved."
+            )
+
+    @model_validator(mode="after")
+    def _validate_configuration(self) -> HarnessSettings:
+        if bool(self.economy_model) != bool(self.quality_model):
+            raise ValueError("Both VA_ECONOMY_MODEL and VA_QUALITY_MODEL must be set")
+        if unknown := self.plugin_config.keys() - set(self.enabled_plugins):
+            raise ValueError(f"Configuration for disabled plugins: {sorted(unknown)}")
+        return self
 
     @property
     def model_init_kwargs(self) -> dict[str, Any]:
