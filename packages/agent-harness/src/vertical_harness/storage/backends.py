@@ -11,6 +11,10 @@ from typing import TYPE_CHECKING, Any
 
 from deepagents.backends import CompositeBackend, FilesystemBackend, StoreBackend
 from deepagents.backends.protocol import BackendProtocol
+from langgraph.checkpoint.base import BaseCheckpointSaver
+from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.checkpoint.sqlite import SqliteSaver
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.store.base import BaseStore
 from langgraph.store.memory import InMemoryStore
 from langgraph.store.sqlite import AsyncSqliteStore, SqliteStore
@@ -33,6 +37,19 @@ def _prepare_conn_string(settings: HarnessSettings) -> str:
     :return: SQLite 连接字符串或数据库物理文件路径字符串。
     """
     target = settings.resolved_store_target
+    if isinstance(target, Path):
+        target.parent.mkdir(parents=True, exist_ok=True)
+        return str(target)
+    return target
+
+
+def _prepare_checkpoint_conn_string(settings: HarnessSettings) -> str:
+    """确保基于文件的 Checkpointer SQLite 数据库父目录存在，并返回连接字符串。
+
+    :param settings: 经校验的宿主配置对象。
+    :return: Checkpointer SQLite 连接字符串或数据库物理文件路径字符串。
+    """
+    target = settings.resolved_checkpoint_target
     if isinstance(target, Path):
         target.parent.mkdir(parents=True, exist_ok=True)
         return str(target)
@@ -109,6 +126,81 @@ async def aopen_store(settings: HarnessSettings) -> AsyncIterator[BaseStore]:
         logger.debug("async_store_context_exited", extra={"event_fields": {"backend": backend}})
 
 
+def create_checkpointer(settings: HarnessSettings) -> BaseCheckpointSaver[Any]:
+    """根据已验证的配置创建立即可用的 LangGraph 检查点保存器（支持 Time Travel 与 Fork）。
+
+    :param settings: 经校验的宿主配置对象。
+    :return: 已执行 setup() 的 BaseCheckpointSaver 实例（InMemorySaver 或 SqliteSaver）。
+    """
+    target = settings.resolved_checkpoint_target
+    if settings.store_backend == StoreBackendType.MEMORY or target == ":memory:":
+        logger.debug("checkpointer_created", extra={"event_fields": {"backend": "memory"}})
+        return InMemorySaver()
+    logger.debug("checkpointer_opening", extra={"event_fields": {"backend": "sqlite"}})
+    conn = sqlite3.connect(
+        _prepare_checkpoint_conn_string(settings),
+        check_same_thread=False,
+    )
+    try:
+        checkpointer = SqliteSaver(conn)
+        checkpointer.setup()
+    except Exception:
+        conn.close()
+        raise
+    logger.info("checkpointer_ready", extra={"event_fields": {"backend": "sqlite"}})
+    return checkpointer
+
+
+@contextmanager
+def open_checkpointer(settings: HarnessSettings) -> Iterator[BaseCheckpointSaver[Any]]:
+    """基于上下文管理器管理原生 SqliteSaver 检查点的同步生命周期。
+
+    :param settings: 经校验的宿主配置对象。
+    :return: 产生已完成 setup() 的 BaseCheckpointSaver 实例迭代器。
+    """
+    target = settings.resolved_checkpoint_target
+    backend = "memory" if (settings.store_backend == StoreBackendType.MEMORY or target == ":memory:") else "sqlite"
+    logger.debug("checkpointer_opening", extra={"event_fields": {"backend": backend}})
+    try:
+        if backend == "memory":
+            logger.debug("checkpointer_ready", extra={"event_fields": {"backend": backend}})
+            yield InMemorySaver()
+        else:
+            with SqliteSaver.from_conn_string(_prepare_checkpoint_conn_string(settings)) as saver:
+                saver.setup()
+                logger.info("checkpointer_ready", extra={"event_fields": {"backend": backend}})
+                yield saver
+    finally:
+        logger.debug("checkpointer_context_exited", extra={"event_fields": {"backend": backend}})
+
+
+@asynccontextmanager
+async def aopen_checkpointer(settings: HarnessSettings) -> AsyncIterator[BaseCheckpointSaver[Any]]:
+    """基于异步上下文管理器管理原生 AsyncSqliteSaver 检查点的异步生命周期。
+
+    :param settings: 经校验的宿主配置对象。
+    :return: 产生已完成异步 setup() 的 BaseCheckpointSaver 实例异步迭代器。
+    """
+    target = settings.resolved_checkpoint_target
+    backend = "memory" if (settings.store_backend == StoreBackendType.MEMORY or target == ":memory:") else "sqlite"
+    logger.debug("async_checkpointer_opening", extra={"event_fields": {"backend": backend}})
+    try:
+        if backend == "memory":
+            logger.debug("async_checkpointer_ready", extra={"event_fields": {"backend": backend}})
+            yield InMemorySaver()
+        else:
+            async with AsyncSqliteSaver.from_conn_string(
+                _prepare_checkpoint_conn_string(settings)
+            ) as saver:
+                await saver.setup()
+                logger.info("async_checkpointer_ready", extra={"event_fields": {"backend": backend}})
+                yield saver
+    finally:
+        logger.debug(
+            "async_checkpointer_context_exited", extra={"event_fields": {"backend": backend}}
+        )
+
+
 def compose_backend(
     workspace_root: Path,
     store: BaseStore | None = None,
@@ -142,10 +234,15 @@ def compose_backend(
 
 
 __all__ = [
+    "AsyncSqliteSaver",
     "AsyncSqliteStore",
+    "SqliteSaver",
     "SqliteStore",
+    "aopen_checkpointer",
     "aopen_store",
     "compose_backend",
+    "create_checkpointer",
     "create_store",
+    "open_checkpointer",
     "open_store",
 ]

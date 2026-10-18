@@ -6,8 +6,12 @@ import logging
 from collections import Counter
 from collections.abc import Sequence
 from importlib.metadata import EntryPoint, entry_points
+from pathlib import Path
+from typing import Any
 
-from vertical_harness.plugins.contracts import DomainPlugin, PluginManifest
+from langchain_core.runnables import Runnable
+
+from vertical_harness.plugins.contracts import BuildServices, DomainPlugin, PluginManifest
 
 # 定义插件在 Python entry points 中注册的分组名称
 PLUGIN_GROUP = "vertical_agent.plugins"
@@ -109,7 +113,39 @@ def discover_plugins(allowlist: Sequence[str]) -> list[DomainPlugin]:
     return plugins
 
 
+def discover_workflow_graphs(
+    allowlist: Sequence[str],
+    services: BuildServices | None = None,
+) -> dict[str, Runnable[Any, Any]]:
+    """从已启用插件中收集所有预编译 LangGraph 工作流图，组成 Graph Registry。
+
+    适用于构建本地 `CompiledSubAgent` 图表或导出给 Agent Protocol / `langgraph.json` 部署。
+
+    :param allowlist: 允许加载的插件标识符白名单序列。
+    :param services: 可选的构建服务实例；未提供时使用当前工作目录作为默认工作区。
+    :return: `graph_id`（未设置时回退为 `workflow.name`）到可运行图对象的映射字典。
+    :raises ValueError: 当不同工作流注册了重复的图标识符时抛出。
+    """
+    active_services = services or BuildServices(workspace_root=Path("./.agent-workspace").resolve())
+    registry: dict[str, Runnable[Any, Any]] = {}
+    for plugin in discover_plugins(allowlist):
+        contribution = plugin.build(active_services)
+        for workflow in contribution.workflows:
+            if workflow.runnable is None:
+                continue
+            graph_key = workflow.graph_id or workflow.name
+            if graph_key in registry:
+                raise ValueError(f"Duplicate workflow graph identifier: {graph_key}")
+            registry[graph_key] = workflow.runnable
+    logger.debug(
+        "workflow_graph_registry_built",
+        extra={"event_fields": {"workflow_count": len(registry)}},
+    )
+    return registry
+
+
 __all__ = [
     "PLUGIN_GROUP",
     "discover_plugins",
+    "discover_workflow_graphs",
 ]

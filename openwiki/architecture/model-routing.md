@@ -5,7 +5,7 @@ description: 阐述基于 LangChain wrap_model_call 与 RunContext.task_tier 的
 tags: [model-routing, langchain, architecture, dynamic-dispatch]
 verified:
   - by: openwiki/0.7.2
-    at: 2026-10-18T07:44:10.514Z
+    at: 2026-10-18T12:40:07.975Z
 sources:
   - id: openwiki-source-20e6f612e4230e00fcfd13ac
     resource: repo://packages/agent-harness/src/vertical_harness/config/settings.py

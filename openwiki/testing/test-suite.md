@@ -8,10 +8,10 @@ sources:
     resource: repo://tests/test_schema.py
   - id: openwiki-source-09d2a8f36f3ecb7ab9487ab2
     resource: repo://tests/test_store.py
-generated: { by: "antigravity", at: "2026-10-18T07:44:10.514Z" }
+generated: { by: "antigravity", at: "2026-10-18T11:09:29.262Z" }
 verified:
   - by: openwiki/0.7.2
-    at: 2026-10-18T07:44:10.514Z
+    at: 2026-10-18T12:40:07.975Z
 ---
 
 # 测试架构与质量保证
@@ -26,8 +26,10 @@ verified:
 tests/
 ├── conftest.py                # 全局 pytest fixtures 与环境清理
 ├── test_logging.py            # 应用结构化日志、格式化脱敏、并发上下文与轮转测试
+├── test_mcp.py                # MCP 服务配置、stdio/HTTP 传输、Tool Annotations 与生命周期测试
 ├── test_schema.py             # 数据契约、解析器与 Toolkit 集成、安全防御与配置测试
 ├── test_store.py              # 原生 SQLite 存储生命周期、异步操作与复合后端隔离测试
+├── test_supervisor_workflows_and_time_travel.py # Supervisor 工作流委派、三层状态契约、监督策略与 Time Travel Fork
 └── test_workflow_logging.py   # 基于本地假模型的完整 Deep Agents 工作流回调执行树测试
 ```
 
@@ -47,7 +49,7 @@ pytest -q
 ### 2.2 解析器、Toolkit 与 `AgentComposer` 集成 (`test_citation_parser_and_toolkit_integration`)
 - **纯函数解析与评估验证**：断言 `extract_cited_indices("Refs [1, 3-5] and [2].")` 输出 `[1, 2, 3, 4, 5]`，且 `evaluate_references` 在引用完全匹配时返回 `CheckStatus.PASSED`。
 - **`BaseToolkit` 批量包装与 HITL 中断验证**：验证 `ToolContribution.from_toolkit(ResearchCitationToolkit(), effect=SideEffect.WRITE, exposure=Exposure.EAGER)` 自动将 `requires_approval` 置为 `True`，并生成 `{"allowed_decisions": ["approve", "reject"]}` 中断配置。
-- **`AgentComposer` 插件注册验证**：验证 `ResearchCitationPlugin` 满足 `@runtime_checkable` 的 `DomainPlugin` 协议，且注册到 `AgentComposer` 后成功将门控工具归入 `gated_tools`，并将技能文件挂载至 `/skills/research-citations-numeric-citation-audit/SKILL.md`。
+- **`AgentComposer` 插件注册验证**：验证 `ResearchCitationPlugin` 满足 `@runtime_checkable` 的 `DomainPlugin` 协议，且注册到 `AgentComposer` 后成功挂载工作流 `citation_audit`（`composer.workflows`）、将门控工具归入 `gated_tools`，并将技能文件挂载至 `/skills/research-citations-numeric-citation-audit/SKILL.md`。
 
 ### 2.3 防目录遍历与标识符校验 (`test_plugin_contract`)
 - **恶意插件 ID 拦截**：断言包含路径遍历字符的插件标识符（如 `../../evil`）无法通过 `PluginManifest` 校验。
@@ -74,7 +76,41 @@ pytest -q
   - 长期记忆文件（如 `/memories/AGENTS.md`）通过 `CompositeBackend` 被路由重定向至 `SqliteStore`，**磁盘上绝不会创建 `memories/` 物理文件夹**。
   - 命名空间清洗验证：针对包含点号的租户 ID `lab.a` 与用户 ID `researcher.7`，断言其在存储中被自动清洗为 `lab_a` 与 `researcher_7`，避免破坏 LangGraph 命名空间分隔。
 
-## 4. 质量保证与 CI 扩展建议
+## 4. Supervisor 工作流与 Time Travel 回溯测试 (`test_supervisor_workflows_and_time_travel.py`)
+
+在 [tests/test_supervisor_workflows_and_time_travel.py](../../tests/test_supervisor_workflows_and_time_travel.py) 中，对 Supervisor 委派机制、三层状态隔离、监督治理策略与检查点分叉进行了全链路回归覆盖：
+
+### 4.1 三层状态模式隔离与参数提取测试
+- **三层模式强制约束 (`test_workflow_contribution_requires_explicit_schemas`)**：验证 `WorkflowContribution` 实例化时若缺少 `internal_state`、`input_schema` 或 `output_schema` 必须抛出 `ValidationError`。
+- **消息提取与纯文本提取 (`test_citation_workflow_standalone_message_extraction`)**：验证工作流入口节点支持直接从 `HumanMessage` 纯文本或 Markdown ` ```json ` 代码块提取入参并执行 Pydantic 严格校验。
+
+### 4.2 确定性监督策略治理 (`SupervisorPolicyMiddleware`)
+- **白名单与租户 RBAC 拦截 (`test_supervisor_policy_blocks_unauthorized_plugin`)**：验证当主智能体试图调用未注册的工作流或无权限租户时，中间件直接拦截并返回友好错误。
+- **依赖关系顺序校验 (`test_supervisor_policy_enforces_workflow_dependencies`)**：验证声明了 `depends_on` 的工作流在前置任务未成功执行前被阻断委派。
+- **调度上限防御 (`test_supervisor_policy_enforces_max_dispatches`)**：验证超过 `max_dispatches` 重试阈值后立即熔断，防止主智能体与工作流陷入无限死循环。
+- **结果幂等复用与结构验收 (`test_supervisor_policy_idempotent_result_reuse`)**：验证相同输入载荷的工作流调度直接复用已验收的输出，避免重复计算。
+
+### 4.3 同步落盘与 Time Travel Fork 测试
+- **跨进程会话恢复与历史追踪 (`test_sqlite_checkpointer_durability_and_history`)**：通过 `open_checkpointer` 验证 SQLite 检查点每步同步写入，并由 `get_checkpoint_history` 完整还原快照时间线。
+- **状态注入与跨线程分叉 (`test_time_travel_fork_to_new_thread`)**：验证 `fork_checkpoint` 支持从指定 `checkpoint_id` 原地回放或分叉至 `--fork-thread-id`，并验证分叉后新旧线程状态彼此独立。
+
+## 5. MCP 服务适配与 Tool Annotations 测试 (`test_mcp.py`)
+
+在 [tests/test_mcp.py](../../tests/test_mcp.py) 中，全面覆盖了 MCP 连接配置、传输层适配、工具发现命名空间与 Tool Annotations 信任边界：
+
+### 5.1 配置校验与传输层测试
+- **Pydantic 校验与凭证保护**：测试 `MCPStdioServer`（本地子进程命令、不经过 shell、`env` 环境变量使用 `SecretStr` 脱敏）与 `MCPHttpServer`（Streamable HTTP URL、自定义请求头）。
+- **stdio 与 HTTP 真实生命周期 (`test_real_stdio_and_streamable_http`)**：基于 FastMCP 启动测试服务，验证 `aopen_mcp_tools` 自动建立连接并生成带服务名前缀的工具（如 `local_echo`、`remote_echo`）。
+
+### 5.2 Tool Annotations 顾问元数据与审批拦截
+- **注解安全读取 (`test_mcp_annotations_are_advisory_metadata`)**：验证通过 `ToolContribution.mcp_annotations` 从底层 `metadata["mcp"]["tool"]["annotations"]` 安全提取 `title`、`read_only_hint` 等 snake_case 顾问提示。
+- **不可信提示标注 (`untrusted hints`)**：在生成的 `to_interrupt_config()` 的 `description` 中明确包含服务端注解 JSON，并显著标注其为“不可信提示”（untrusted hints）。
+- **审批安全不降级**：验证服务端提供的 `read_only_hint=True` 不会破坏宿主声明的副作用策略，凡配置为 `effect="external"` 或 `"write"` 的 MCP 工具仍必须触发 `approve`/`reject` 审批。
+
+### 5.3 连接容错与异常清理
+- **部分失败时连接全量释放 (`test_partial_discovery_failure_closes_all_connections`)**：当配置多个 MCP 服务且其中一个连接失败时，断言 `AsyncExitStack` 确保其他已打开的连接与子进程被立即清理，避免僵尸进程遗留。
+
+## 6. 质量保证与 CI 扩展建议
 
 根据 [docs/ARCHITECTURE.md](../../docs/ARCHITECTURE.md)，在迈向生产级部署时，质量保证体系应进一步扩展：
 1. **LangSmith 链路追踪与评测**：接入 LangSmith Trace，对 Agent 运行延迟、成本和模型调用树进行可观测性监控。
@@ -83,5 +119,5 @@ pytest -q
 ## 相关页面
 
 - [插件机制与贡献契约](../architecture/plugin-system.md)：了解插件在白名单与清单校验上的契约约束。
-- [状态隔离与分层存储](../architecture/state-and-storage.md)：了解 `SqliteStore` 与 `CompositeBackend` 的具体实现。
+- [状态隔离与分层存储](../architecture/state-and-storage.md)：了解 `SqliteStore`、`SqliteSaver` 与 Time Travel Fork。
 - [数字引用审计端到端流程](../workflows/citation-audit.md)：查看被测端到端流程。

@@ -6,6 +6,12 @@ import pytest
 
 
 @pytest.fixture(autouse=True)
+def disable_external_tracing(monkeypatch):
+    monkeypatch.setenv("LANGSMITH_TRACING", "false")
+    monkeypatch.setenv("LANGCHAIN_TRACING_V2", "false")
+
+
+@pytest.fixture(autouse=True)
 def restore_project_logging():
     loggers = [logging.getLogger()]
     snapshots = [(logger, logger.handlers[:], logger.level, logger.propagate) for logger in loggers]

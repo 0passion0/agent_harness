@@ -1,13 +1,13 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:21ee0d5853f67105ac537f1753d13fa86011cb37abf3a15ca418b98ca3ed0a62",
+  "pageVersion": "sha256:3207bbb264f0bc574c0d5b52de5fd1d798b103ec86a582266f607adbae1e4960",
   "claims": [
     {
       "id": "claim_6467ab64523a43faaf57ff219e85441d",
       "statement": "make_router 通过 settings.has_dynamic_routing 检查 VA_ECONOMY_MODEL 与 VA_QUALITY_MODEL，若两者均未配置则返回 None，若仅配置其一则抛出 ValueError，保证配置成对生效。",
       "evidence": [
         {
-          "resource": "repo://packages/agent-harness/src/vertical_harness/config/settings.py#L118-L128",
+          "resource": "repo://packages/agent-harness/src/vertical_harness/config/settings.py#L152-L162",
           "version": "repo-lines-v1:sha256:fcd5a6c863471212f36ddce387981117efe4791065219a6b55c82040b17062cb:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRmZjA4ZThhYzE5MDYxNzkzNDkwNjQ3MWU4OGZlYjE0NTQ5ODkzZjI2YjZhZDI3MzM2M2I1MmQ3YTlhYjliMWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFmNjRjZjMyOTdhODRlOGYzNDBjNGU2MTc4ZDdlMGFmODY2YTY2YzE1NDBlODE2NmNjOTg2OTI5ZWE3MDViMjUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk1YTJjYjUxMThmZjNiYTg1MTBkMWIzMThhOTA0NWZhY2QwYjIxOTNjOTNmYzlkNjVhZDZlZjFlZTVmNGY3NjciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNiMjM2N2JkMGRmMGE2MmRmYzNkMTIxOTkxYjI5OGZlNGU5YzNkMzI2NzUyZTY5ODU1OTQzYjZjZjRiMjQ4M2QifQ"
         },
         {
@@ -31,7 +31,7 @@
       "statement": "init_configured_model 封装了 LangChain init_chat_model，通过 HarnessSettings.model_init_kwargs 安全解包 api_key 的 SecretStr 并透传非空 base_url。",
       "evidence": [
         {
-          "resource": "repo://packages/agent-harness/src/vertical_harness/config/settings.py#L106-L115",
+          "resource": "repo://packages/agent-harness/src/vertical_harness/config/settings.py#L140-L149",
           "version": "repo-lines-v1:sha256:dfd6e4ed4ca004fe41abb9f197ffa6bd8ff5a7b33bc4e8721b541000adaeb613:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFmNWVmOTRlZmEzYjY4OWE0ZDZmNjc2ZTZjMTE1OTA5MWQ2YWQ0N2Y3ODZiZjVhMjE5NzhjZDI5NWYzODk1YjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEyNjE4YTlhZDJmYTIwMWMyMzgzY2FlZGI2OWQ3ZWFlZjU4Y2QxZjNjNDUyNGE1MmUxMTk5OTU1NmVhYmRlMzkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImYwOWM0YWI3YTg2NDcxNTRjNzQ1ZDhiYWM1Yzk5OTc5YWMxMDg3YmZkZTRiOWNmNTU4OGE2NTVmZmI4Y2U5ZWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjVlNWY5NGE2YjQxZjlhN2UxNzk0MjA3ZDMxMTcwZjk5NjI3YzUxYWQxMzRmYTgxNTg2ZWE4MTk1ZTAzMDI4MTgifQ"
         },
         {
@@ -43,6 +43,6 @@
   ],
   "verification": {
     "by": "openwiki/0.7.2",
-    "at": "2026-10-18T07:44:10.514Z"
+    "at": "2026-10-18T12:40:07.975Z"
   }
 }

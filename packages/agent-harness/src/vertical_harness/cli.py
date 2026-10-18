@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import logging
 import uuid
@@ -14,10 +15,19 @@ from langchain_core.runnables import RunnableConfig
 from pydantic import ValidationError
 
 from vertical_harness.config import HarnessSettings, TaskTier
-from vertical_harness.engine import WorkflowLoggingHandler, build_agent
+from vertical_harness.engine import (
+    WorkflowLoggingHandler,
+    aopen_agent,
+    atime_travel_invoke,
+    build_agent,
+    get_checkpoint_history,
+    time_travel_invoke,
+)
+from vertical_harness.engine.memory import run_memory_worker
 from vertical_harness.logging import configure_logging, log_context
-from vertical_harness.plugins import RunContext, discover_plugins
-from vertical_harness.storage import open_store
+from vertical_harness.observability import tracing_session
+from vertical_harness.plugins import BuildServices, RunContext, discover_plugins
+from vertical_harness.storage import open_checkpointer, open_store
 
 logger = logging.getLogger(__name__)
 
@@ -29,12 +39,58 @@ def _build_parser() -> argparse.ArgumentParser:
     """
     parser = argparse.ArgumentParser(description="Deep Agents plugin harness")
     parser.add_argument("prompt", nargs="?", help="Input prompt to send to the agent")
+    memory_command = parser.add_mutually_exclusive_group()
+    memory_command.add_argument(
+        "--memory-worker", action="store_true",
+        help="Run the independent weekly memory consolidation worker (one per store)",
+    )
+    memory_command.add_argument(
+        "--consolidate-memory", action="store_true",
+        help="Process due memory consolidations once, suitable for a system scheduler",
+    )
     parser.add_argument(
         "--list-plugins",
         action="store_true",
         help="List all enabled domain plugins and their manifests as JSON",
     )
+    parser.add_argument(
+        "--list-workflows",
+        action="store_true",
+        help="List all registered LangGraph workflow plugins and their schemas as JSON",
+    )
+    parser.add_argument(
+        "--history",
+        action="store_true",
+        help="List Time Travel checkpoint history for --thread-id as JSON",
+    )
     parser.add_argument("--thread-id", default=None, help="Persistent thread identifier")
+    parser.add_argument("--run-id", type=uuid.UUID, help="LangSmith run UUID for attaching user feedback")
+    parser.add_argument(
+        "--checkpoint-id",
+        default=None,
+        help="Historical checkpoint identifier for Time Travel replay or fork",
+    )
+    parser.add_argument(
+        "--fork-thread-id",
+        default=None,
+        help="Target thread identifier when forking from a checkpoint (Time Travel Fork)",
+    )
+    parser.add_argument(
+        "--update-state",
+        default=None,
+        help="JSON object string of state updates to apply at the checkpoint fork point",
+    )
+    parser.add_argument(
+        "--as-node",
+        default=None,
+        help="Optional graph node name to attribute --update-state to",
+    )
+    parser.add_argument(
+        "--durability",
+        choices=["sync", "async", "exit"],
+        default=None,
+        help="LangGraph checkpoint durability mode (default: sync)",
+    )
     parser.add_argument("--tenant-id", default="demo", help="Tenant isolation identifier")
     parser.add_argument("--user-id", default="demo", help="User isolation identifier")
     parser.add_argument(
@@ -57,31 +113,113 @@ def _print_plugins(settings: HarnessSettings) -> None:
     print(json.dumps(manifests, ensure_ascii=False, indent=2))
 
 
+def _print_workflows(settings: HarnessSettings) -> None:
+    """发现并打印所有已启用插件导出的 LangGraph 工作流元数据与三层状态契约（JSON 格式）。
+
+    :param settings: 已加载的宿主配置实例。
+    """
+    services = BuildServices(workspace_root=settings.resolved_workspace_root)
+    entries = []
+    for plugin in discover_plugins(settings.enabled_plugins):
+        contribution = plugin.build(services)
+        for wf in contribution.workflows:
+            entries.append(
+                {
+                    "plugin_id": plugin.manifest.plugin_id,
+                    "name": wf.name,
+                    "description": wf.description,
+                    "mode": wf.resolve_mode(settings.workflow_mode).value,
+                    "graph_id": wf.graph_id,
+                    "context_mode": wf.context_mode,
+                    "durability": wf.durability,
+                    "effect": wf.effect.value,
+                    "depends_on": list(wf.depends_on),
+                    "max_dispatches": wf.max_dispatches,
+                    "idempotent": wf.idempotent,
+                    "internal_state": getattr(wf.internal_state, "__name__", str(wf.internal_state)),
+                    "input_schema": getattr(wf.input_schema, "__name__", str(wf.input_schema)),
+                    "output_schema": getattr(wf.output_schema, "__name__", str(wf.output_schema)),
+                }
+            )
+    print(json.dumps(entries, ensure_ascii=False, indent=2))
+
+
+def _print_history(args: argparse.Namespace, settings: HarnessSettings) -> None:
+    """查询并打印指定线程的 Time Travel 检查点历史摘要（JSON 格式）。
+
+    :param args: 解析后的命令行参数对象。
+    :param settings: 已加载的宿主配置实例。
+    """
+    with open_store(settings) as store, open_checkpointer(settings) as checkpointer:
+        agent = build_agent(settings, store=store, checkpointer=checkpointer, mcp_tools=())
+        history = get_checkpoint_history(agent, args.thread_id)
+    print(
+        json.dumps(
+            [item.model_dump() for item in history],
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
+
+
 def _invoke_prompt(args: argparse.Namespace, settings: HarnessSettings) -> None:
-    """打开持久化存储，组装 Deep Agent 并使用 LangChain 原生消息与配置执行单轮调用。
+    """打开持久化存储与检查点，组装 Deep Agent 并执行常规调用或 Time Travel / Fork 调用。
 
     :param args: 解析后的命令行参数对象。
     :param settings: 已加载的宿主配置实例。
     """
     thread_id = args.thread_id or str(uuid.uuid4())
+    durability = args.durability or settings.durability
+    callbacks = [WorkflowLoggingHandler()]
     run_config = RunnableConfig(
+        run_id=args.run_id,
         configurable={"thread_id": thread_id},
-        callbacks=[WorkflowLoggingHandler()],
+        callbacks=callbacks,
     )
     run_context = RunContext(
         tenant_id=args.tenant_id,
         user_id=args.user_id,
         task_tier=args.task_tier,
     )
+    update_values = json.loads(args.update_state) if args.update_state is not None else None
+    if update_values is not None and not isinstance(update_values, dict):
+        raise ValueError("--update-state must be a JSON object")
+
+    is_time_travel = bool(
+        args.checkpoint_id is not None
+        or args.fork_thread_id is not None
+        or update_values is not None
+    )
 
     logger.info("agent_run_started", extra={"event_fields": {"task_tier": args.task_tier}})
-    with open_store(settings) as store:
-        agent = build_agent(settings, store=store)
-        result = agent.invoke(
-            {"messages": [HumanMessage(content=args.prompt)]},
-            config=run_config,
-            context=run_context,
-        )
+    travel_kwargs = {
+        "checkpoint_id": args.checkpoint_id,
+        "prompt": args.prompt,
+        "values": update_values,
+        "as_node": args.as_node,
+        "fork_thread_id": args.fork_thread_id,
+        "context": run_context,
+        "callbacks": callbacks,
+        "durability": durability,
+        "run_id": args.run_id,
+    }
+    invoke_kwargs = {"config": run_config, "context": run_context, "durability": durability}
+    payload = {"messages": [HumanMessage(content=args.prompt)]} if args.prompt else None
+    if settings.mcp_servers and not settings.supervisor_only:
+        async def invoke_with_mcp():
+            async with aopen_agent(settings) as agent:
+                if is_time_travel:
+                    return await atime_travel_invoke(agent, thread_id, **travel_kwargs)
+                return await agent.ainvoke(payload, **invoke_kwargs)
+
+        result = asyncio.run(invoke_with_mcp())
+    else:
+        with open_store(settings) as store, open_checkpointer(settings) as checkpointer:
+            agent = build_agent(settings, store=store, checkpointer=checkpointer)
+            if is_time_travel:
+                result = time_travel_invoke(agent, thread_id, **travel_kwargs)
+            else:
+                result = agent.invoke(payload, **invoke_kwargs)
 
     interrupted = "__interrupt__" in result
     logger.log(
@@ -94,15 +232,33 @@ def _invoke_prompt(args: argparse.Namespace, settings: HarnessSettings) -> None:
 
 
 def main(argv: Sequence[str] | None = None) -> None:
-    """列出已启用的插件或使用稳定的线程标识符调用智能体。
+    """列出已启用的插件/工作流、查询检查点历史，或使用稳定的线程标识符调用智能体。
 
     :param argv: 可选的命令行参数序列，默认读取 sys.argv。
     :return: None
-    :raises SystemExit: 当未指定输入 prompt 且未传入 --list-plugins 时退出程序。
+    :raises SystemExit: 当参数缺失或冲突时退出程序。
     """
     parser = _build_parser()
     args = parser.parse_args(argv)
-    if not args.list_plugins and not args.prompt:
+    if (args.memory_worker or args.consolidate_memory) and (
+        args.prompt or args.list_plugins or args.list_workflows or args.history
+        or args.checkpoint_id or args.fork_thread_id or args.update_state
+    ):
+        parser.error("Memory worker commands cannot be combined with agent commands")
+    if args.history and not args.thread_id:
+        parser.error("--history requires --thread-id")
+    if (args.fork_thread_id or args.checkpoint_id or args.update_state) and not args.thread_id:
+        parser.error("Time Travel / Fork options require --thread-id")
+    is_time_travel = bool(args.checkpoint_id or args.fork_thread_id or args.update_state)
+    if (
+        not args.list_plugins
+        and not args.list_workflows
+        and not args.history
+        and not is_time_travel
+        and not args.memory_worker
+        and not args.consolidate_memory
+        and not args.prompt
+    ):
         parser.error("Please specify a prompt")
 
     try:
@@ -115,12 +271,19 @@ def main(argv: Sequence[str] | None = None) -> None:
     except (ValueError, OSError):
         parser.exit(2, "Invalid harness or logging configuration; check VA_* settings.\n")
 
-    with log_context(str(uuid.uuid4())):
+    args.run_id = args.run_id or uuid.uuid4()
+    with log_context(str(args.run_id)), tracing_session():
         started = perf_counter()
         logger.info("command_started")
         try:
-            if args.list_plugins:
+            if args.memory_worker or args.consolidate_memory:
+                run_memory_worker(settings, once=args.consolidate_memory)
+            elif args.list_plugins:
                 _print_plugins(settings)
+            elif args.list_workflows:
+                _print_workflows(settings)
+            elif args.history:
+                _print_history(args, settings)
             else:
                 _invoke_prompt(args, settings)
         except KeyboardInterrupt:

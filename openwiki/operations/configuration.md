@@ -6,10 +6,10 @@ tags: [operations, configuration, pydantic-settings, environment-variables, depl
 sources:
   - id: openwiki-source-20e6f612e4230e00fcfd13ac
     resource: repo://packages/agent-harness/src/vertical_harness/config/settings.py
-generated: { by: "antigravity", at: "2026-10-18T07:44:10.514Z" }
+generated: { by: "antigravity", at: "2026-10-18T11:09:29.262Z" }
 verified:
   - by: openwiki/0.7.2
-    at: 2026-10-18T07:44:10.514Z
+    at: 2026-10-18T12:40:07.975Z
 ---
 
 # 环境变量配置与运维部署
@@ -48,8 +48,13 @@ class HarnessSettings(BaseSettings):
 | `VA_WORKSPACE_ROOT` | `Path` (`./.agent-workspace`) | Agent 本地文件系统工作区物理根路径 |
 | `VA_STORE_BACKEND` | `Literal["sqlite", "memory"]` (`sqlite`) | 状态存储后端类型（默认 `StoreBackendType.SQLITE`） |
 | `VA_STORE_DB_PATH` | `Path` / `":memory:"` (可选) | 自定义 SQLite 数据库文件绝对或相对路径 |
+| `VA_CHECKPOINT_DB_PATH` | `Path` / `":memory:"` (可选) | 自定义 LangGraph Checkpointer 检查点 SQLite 数据库路径 |
+| `VA_DURABILITY` | `Literal["sync", "async", "exit"]` (`sync`) | 检查点持久化同步级别，默认 `sync` 确保每步同步落盘以支持 Time Travel / Fork |
+| `VA_WORKFLOW_MODE` | `Literal["compiled", "async"]` (`compiled`) | 工作流插件接入模式：`compiled`（本地预编译图）或 `async`（Agent Protocol `graph_id`） |
+| `VA_SUPERVISOR_ONLY` | `bool` (`false`) | 是否启用纯监督者模式（仅委派工作流，屏蔽直接业务工具与 general-purpose 子智能体） |
 | `VA_MEMORY_ROUTE` | `MemoryRouteStr` (`/memories/`) | 长期记忆在虚拟文件系统中的路由前缀（正则 `^/[a-zA-Z0-9_\-]+/$`） |
 | `VA_ENABLED_PLUGINS` | JSON 字符串 (`'["research.citations"]'`) | 启用的插件白名单列表 |
+| `VA_MCP_SERVERS` | JSON 字符串 (可选) | MCP 服务名到连接参数映射（支持 `stdio` 与 `streamable_http` 传输） |
 | `VA_ENABLE_PLANNING` | `bool` (`true`) | 是否启用 `TodoListMiddleware` 规划任务清单 |
 | `VA_ENABLE_SKILL_GATING`| `bool` (`true`) | 是否启用技能门控（未激活技能时隐藏工具） |
 | `VA_MAX_MODEL_CALLS` | `ModelCallLimit` (`30`, 范围 1-500) | 单次执行最大模型调用次数，防止死循环失控 |
@@ -64,10 +69,13 @@ class HarnessSettings(BaseSettings):
 `HarnessSettings` 提供了多个规范化计算属性：
 
 - **`resolved_workspace_root`**：展开用户目录并解析为工作区绝对物理路径 `self.workspace_root.expanduser().resolve()`。
-- **`resolved_store_target`**：自动推断 SQLite 物理落盘位置：
+- **`resolved_store_target`**：自动推断 Long-term Store SQLite 物理落盘位置：
   - **默认工作区挂载**：若 `store_db_path is None`，默认返回 `self.resolved_workspace_root / "store.sqlite"`。
   - **纯内存数据库**：若配置值为 `":memory:"`，直接返回字符串字面量 `":memory:"`。
   - **显式指定文件路径**：其余情况展开并解析为绝对路径 `Path(self.store_db_path).expanduser().resolve()`。
+- **`resolved_checkpoint_target`**：自动推断 Checkpointer 检查点 SQLite 物理落盘位置：
+  - **默认工作区挂载**：若 `checkpoint_db_path is None`，且 `store_backend != "memory"`，默认返回 `self.resolved_workspace_root / "checkpoints.sqlite"`；若存储为内存模式则回退为 `":memory:"`。
+  - **显式配置**：解析为绝对路径或 `":memory:"`。
 - **`normalized_memory_route`**：通过 `PurePosixPath` 将 `memory_route` 规范化为前后均带单斜杠的 POSIX 虚拟目录格式（如 `"/memories/"`）。
 
 ## 4. 生产运维与安全注意事项

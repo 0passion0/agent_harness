@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:5b2f6a1dac3660449589df5ad950682826355f1896f3d8c50b0ee5a5c9b79b91",
+  "pageVersion": "sha256:354466bbecabbf266675306c5e0465949030c9f682c8a6f31a5ad6fae644e279",
   "claims": [
     {
       "id": "claim_8ac7dbdeedbd454f958bb888752dadc6",
@@ -14,11 +14,11 @@
     },
     {
       "id": "claim_3d4029b8e68c47f8b9698b73353f899f",
-      "statement": "cli.py 的 _invoke_prompt 在调用 agent.invoke 时使用 open_store 打开持久化存储，并注入包含 tenant_id、user_id 和 task_tier 的 RunContext 运行时上下文。",
+      "statement": "cli.py 的 _invoke_prompt 在调用 agent.invoke 时通过 open_store 与 open_checkpointer 打开持久化存储与检查点（配置 MCP 时使用 aopen_agent），并注入包含 tenant_id、user_id 和 task_tier 的 RunContext 运行时上下文。",
       "evidence": [
         {
-          "resource": "repo://packages/agent-harness/src/vertical_harness/cli.py#L60-L94",
-          "version": "repo-lines-v1:sha256:3aa5169010b156087b7875cdebb650515e8bd6e52823791276ba2237ea19b091:eyJzZWxlY3RlZExpbmVDb3VudCI6MzUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIyNTBmMWIwZjRkMzA0ZTk1YmExYWNiMjY3NDkwOWU2ZDU1Yzk1MjUzNjU1NzMyNTYwMmZmZjczMDE5MjRiOGYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQ4ZTgyMzExNTAzMzBmYmU0ZTc0M2M2YTgxMWY5Yjk0ZTNmMTYyNjJiNDYyMTI4NjlmOGJkYzA5YzFhMTY4ZDMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImI1ZDdiOTAxZGYwYTk5ZTk3YTdkZWNmN2NkMGU3MjViYWQ5YWEwMjkzYzU1MmRmMWQxZDU1Mjk3YTIwMTYwNzQifQ"
+          "resource": "repo://packages/agent-harness/src/vertical_harness/cli.py#L165-L232",
+          "version": "repo-lines-v1:sha256:c070e309e2c2087a608f7b98317b6f21e3a5f20eefef7bbc71e8a64a658b3657:eyJzZWxlY3RlZExpbmVDb3VudCI6NjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhhMjYyM2IyNWVjMjZmZjIxOTA5YjY2NTE4ZDM5MDQ5OWFhN2I4MDBkYTdhMzgxZWNiM2QzODliOTM5YTgwNzEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdlYjcwMjU3NTkzZGEwNmY2ODJhM2RkZGE1NGE5ZDI2MGQ0ZmM1MTRmNjQ1MjM3ZjVjYTc0YjA4ZjhkYTYxYTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhiOTc0ZGE0MDg2MzJhNGFhN2UyYWU4MGI4NjAzOTFhM2RjZDgyMTFjNzllY2FkN2NhOGU5NTEyOGIwMDE4MzIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijk2NjU1ZDNkNjVlZTk2YTNiMjRmNzdkOTJmNWJlYmYxMzZjM2E3YjJmZmM4NGFlZGY3NGJhZjJiNDZmOWMzNzcifQ"
         }
       ]
     },
@@ -35,6 +35,6 @@
   ],
   "verification": {
     "by": "openwiki/0.7.2",
-    "at": "2026-10-18T07:44:10.514Z"
+    "at": "2026-10-18T12:40:07.975Z"
   }
 }

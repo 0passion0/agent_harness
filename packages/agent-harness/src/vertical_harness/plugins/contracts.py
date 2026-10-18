@@ -2,27 +2,68 @@
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path, PurePosixPath
-from typing import Annotated, Any, Literal, Protocol, TypeAlias, runtime_checkable
+from typing import (
+    Annotated,
+    Any,
+    Literal,
+    NotRequired,
+    Protocol,
+    Self,
+    TypeAlias,
+    TypedDict,
+    runtime_checkable,
+)
 
-from deepagents import CompiledSubAgent
+from deepagents import AsyncSubAgent, CompiledSubAgent
 from langchain.agents.middleware import AgentMiddleware, InterruptOnConfig
+from langchain_core.messages import AnyMessage
+from langchain_core.runnables import Runnable, RunnableBinding
 from langchain_core.tools import BaseTool, BaseToolkit
+from langgraph.graph.message import add_messages
+from langgraph.graph.state import CompiledStateGraph
 from langgraph.store.base import BaseStore
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from langgraph.types import Durability
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 # 技能路径各分段合法字符正则：必须包含至少一个字母或数字，且仅允许字母、数字、点、下划线、破折号
 _SAFE_SKILL_SEGMENT = re.compile(r"^(?=.*[A-Za-z0-9])[A-Za-z0-9._-]+$")
+# 保留的内置子智能体名称，插件或工作流不得覆盖
+_RESERVED_SUBAGENT_NAMES = frozenset({"general-purpose"})
 
 # 插件全局唯一标识符类型约束
 PluginIdStr = Annotated[str, Field(pattern=r"^[a-z][a-z0-9_.-]+$")]
+# 工作流或子智能体标识符类型约束
+WorkflowNameStr = Annotated[str, Field(pattern=r"^[a-z][a-z0-9_.-]*$")]
 # 语义化版本号（SemVer）类型约束
 SemVerStr = Annotated[str, Field(pattern=r"^\d+\.\d+\.\d+$")]
+# 子智能体上下文传递模式：isolated（仅传递任务描述）或 fork（继承父对话上下文快照）
+SubAgentContextMode: TypeAlias = Literal["isolated", "fork"]
 # 子智能体规范联合类型（兼容 Deep Agents SubAgent/AsyncSubAgent 字典规范及预编译 CompiledSubAgent）
-SubAgentSpec: TypeAlias = dict[str, Any] | CompiledSubAgent
+SubAgentSpec: TypeAlias = dict[str, Any] | CompiledSubAgent | AsyncSubAgent
+
+
+class WorkflowInputState(TypedDict):
+    """定义工作流调用方需要提供的数据（input_schema 基类，兼容 Deep Agents messages 协议）。"""
+
+    messages: Annotated[list[AnyMessage], add_messages]
+
+
+class WorkflowOutputState(TypedDict):
+    """定义工作流最终返回给调用方/主智能体的数据（output_schema 基类）。"""
+
+    messages: Annotated[list[AnyMessage], add_messages]
+    structured_response: NotRequired[Any]
+
+
+class WorkflowInternalState(WorkflowInputState, WorkflowOutputState):
+    """定义工作流内部节点流转使用的数据（InternalState 基类，不直接暴露给外部调用方）。"""
+
+    internal_context: NotRequired[dict[str, Any]]
 
 
 class StrictModel(BaseModel):
@@ -58,6 +99,15 @@ class Exposure(StrEnum):
     EAGER = "eager"
     # 仅当对应技能（Skill）激活时才对大模型可见
     SKILL = "skill"
+
+
+class WorkflowMode(StrEnum):
+    """LangGraph 工作流插件接入 Deep Agents Supervisor 的运行模式枚举。"""
+
+    # 本地单进程直接挂载预编译 LangGraph（CompiledSubAgent，通过 task 同步/异步等待结果）
+    COMPILED = "compiled"
+    # 通过 Agent Protocol / graph_id 接入远程或本地 ASGI 异步任务（AsyncSubAgent）
+    ASYNC = "async"
 
 
 class PluginManifest(StrictModel):
@@ -160,12 +210,29 @@ class ToolContribution(StrictModel):
         """
         return self.effect.requires_approval
 
+    @property
+    def mcp_annotations(self) -> dict[str, Any] | None:
+        """读取 MCPAdapter 保留的服务端注解（snake_case），不将提示作为授权依据。"""
+        value: Any = self.tool.metadata
+        for key in ("mcp", "tool", "annotations"):
+            if not isinstance(value, dict):
+                return None
+            value = value.get(key)
+        return value if isinstance(value, dict) else None
+
     def to_interrupt_config(self) -> InterruptOnConfig:
         """构造 LangChain `HumanInTheLoopMiddleware` 原生兼容的审批中断配置字典。
 
         :return: 允许 approve 与 reject 决策的 InterruptOnConfig 配置。
         """
-        return InterruptOnConfig(allowed_decisions=["approve", "reject"])
+        config = InterruptOnConfig(allowed_decisions=["approve", "reject"])
+        if annotations := self.mcp_annotations:
+            config["description"] = (
+                f"MCP tool execution requires approval\nTool: {self.name}\n"
+                "Server-provided annotations (untrusted hints): "
+                f"{json.dumps(annotations, ensure_ascii=False)}"
+            )
+        return config
 
     @classmethod
     def from_toolkit(
@@ -185,16 +252,307 @@ class ToolContribution(StrictModel):
         return [cls(tool=t, effect=effect, exposure=exposure) for t in toolkit.get_tools()]
 
 
+def _schema_has_messages_key(schema: type[Any]) -> bool:
+    """检查给定的 TypedDict / BaseModel / 类型注解是否包含 Deep Agents 要求的 `messages` 键。"""
+    annotations = getattr(schema, "__annotations__", None)
+    if isinstance(annotations, dict) and "messages" in annotations:
+        return True
+    model_fields = getattr(schema, "model_fields", None)
+    if isinstance(model_fields, dict) and "messages" in model_fields:
+        return True
+    return any(
+        isinstance(getattr(base, "__annotations__", None), dict)
+        and "messages" in base.__annotations__
+        for base in getattr(schema, "__mro__", ())
+    )
+
+
+class WorkflowContribution(StrictModel):
+    """LangGraph 工作流插件契约：原生适配 Deep Agents `CompiledSubAgent` 与 `AsyncSubAgent`。
+
+    每个工作流插件必须明确声明三层数据契约：
+    - `internal_state` (`InternalState`)：定义工作流内部使用的数据，禁止外部调用方或 LLM 直接写入；
+    - `input_schema`：定义调用方需要提供的数据（兼容 `messages` 协议）；
+    - `output_schema`：定义工作流最终返回的数据（兼容 `messages` 与 `structured_response`）。
+    """
+
+    # 工作流子任务唯一名称（对应 task / start_async_task 的 subagent_type）
+    name: WorkflowNameStr
+    # 供主智能体（Supervisor）规划与委派时参考的工作流能力说明
+    description: Annotated[str, Field(min_length=4)]
+    # InternalState：定义工作流内部节点流转使用的数据类型（不可为 None）
+    internal_state: type[Any] | None = None
+    # input_schema：定义调用方需要提供的数据类型（不可为 None）
+    input_schema: type[Any] | None = None
+    # output_schema：定义工作流最终返回的数据类型（不可为 None）
+    output_schema: type[Any] | None = None
+    # 本地预编译的 LangGraph 状态图或 Runnable（用于 CompiledSubAgent 模式）
+    runnable: Runnable[Any, Any] | None = None
+    # Agent Protocol 服务中注册的图标识符（用于 AsyncSubAgent 模式及 langgraph.json 导出）
+    graph_id: Annotated[str, Field(min_length=1)] | None = None
+    # 可选的 Agent Protocol 远端地址；省略时在 AsyncSubAgent 下使用本地 ASGI 通道
+    url: str | None = None
+    # 可选的 Agent Protocol 远端认证或追踪请求头
+    headers: dict[str, str] | None = None
+    # 显式指定的接入模式；为 None 时若提供 runnable 默认采用 compiled，否则采用 async
+    mode: WorkflowMode | None = None
+    # 子智能体上下文模式：isolated（默认仅接收任务描述）或 fork（继承父对话上下文快照）
+    context_mode: SubAgentContextMode = "isolated"
+    # LangGraph 检查点持久化同步策略，默认强制开启 durability="sync" 以保障 Time Travel
+    durability: Durability = "sync"
+    # 工作流整体副作用等级（WRITE / EXTERNAL 将在委派前触发 HITL 审批中断）
+    effect: SideEffect = SideEffect.READ
+    # 前置依赖的工作流名称元组（由 SupervisorPolicyMiddleware 强制校验执行先后顺序）
+    depends_on: tuple[str, ...] = ()
+    # 单次会话允许的最大委派次数（防止 Supervisor 无限重试同一工作流）
+    max_dispatches: Annotated[int, Field(ge=1, le=50)] = 5
+    # 是否对完全相同的任务描述启用幂等结果复用
+    idempotent: bool = False
+    # 允许委派该工作流的租户 ID 白名单（None 表示对所有租户开放）
+    allowed_tenants: frozenset[str] | None = None
+    # 可选的工作流结构化输出 Pydantic 校验模型（用于 Supervisor Validate 阶段确定性验收）
+    result_schema: type[BaseModel] | None = None
+
+    @model_validator(mode="after")
+    def _validate_workflow_spec(self) -> Self:
+        """校验工作流插件声明的完整性、三层状态契约（InternalState/input_schema/output_schema）与模式一致性。
+
+        :return: 校验通过的当前 WorkflowContribution 实例。
+        :raises ValueError: 当名称保留、缺少 runnable/graph_id、缺少三层状态模式或模式配置矛盾时抛出。
+        """
+        if self.name in _RESERVED_SUBAGENT_NAMES:
+            raise ValueError(f"Reserved workflow subagent name: {self.name}")
+        if self.runnable is None and self.graph_id is None:
+            raise ValueError(
+                f"Workflow '{self.name}' must provide at least one of 'runnable' or 'graph_id'"
+            )
+        if self.mode == WorkflowMode.COMPILED and self.runnable is None:
+            raise ValueError(f"Workflow '{self.name}' in 'compiled' mode requires 'runnable'")
+        if self.mode == WorkflowMode.ASYNC and self.graph_id is None:
+            raise ValueError(f"Workflow '{self.name}' in 'async' mode requires 'graph_id'")
+        if (self.url is not None or self.headers is not None) and self.graph_id is None:
+            raise ValueError(
+                f"Workflow '{self.name}' cannot set 'url' or 'headers' without 'graph_id'"
+            )
+        if self.name in self.depends_on:
+            raise ValueError(f"Workflow '{self.name}' cannot depend on itself")
+
+        # 若传入了 CompiledStateGraph 且未显式填写状态 schema，可从图构建器提取并严格核验
+        if isinstance(self.runnable, CompiledStateGraph):
+            builder = self.runnable.builder
+            if self.internal_state is None:
+                self.internal_state = builder.state_schema
+            elif builder.state_schema is not self.internal_state:
+                raise ValueError(
+                    f"Workflow '{self.name}' internal_state does not match StateGraph state_schema"
+                )
+            if self.input_schema is None:
+                self.input_schema = builder.input_schema
+            elif builder.input_schema is not self.input_schema:
+                raise ValueError(
+                    f"Workflow '{self.name}' input_schema does not match StateGraph input_schema"
+                )
+            if self.output_schema is None:
+                self.output_schema = builder.output_schema
+            elif builder.output_schema is not self.output_schema:
+                raise ValueError(
+                    f"Workflow '{self.name}' output_schema does not match StateGraph output_schema"
+                )
+
+        if self.internal_state is None or self.input_schema is None or self.output_schema is None:
+            raise ValueError(
+                f"Workflow '{self.name}' must define 'internal_state', 'input_schema', and 'output_schema'"
+            )
+        if self.internal_state is self.input_schema or self.internal_state is self.output_schema:
+            raise ValueError(
+                f"Workflow '{self.name}' must define distinct 'internal_state', 'input_schema', and 'output_schema'"
+            )
+
+        if not _schema_has_messages_key(self.input_schema):
+            raise ValueError(
+                f"Workflow '{self.name}' input_schema must include a 'messages' key for Deep Agents delegation"
+            )
+        if not _schema_has_messages_key(self.output_schema):
+            raise ValueError(
+                f"Workflow '{self.name}' output_schema must include a 'messages' key for Deep Agents delegation"
+            )
+        return self
+
+    @property
+    def effective_mode(self) -> WorkflowMode:
+        """返回当前工作流默认生效的接入模式。
+
+        :return: WorkflowMode.COMPILED 或 WorkflowMode.ASYNC。
+        """
+        if self.mode is not None:
+            return self.mode
+        return WorkflowMode.COMPILED if self.runnable is not None else WorkflowMode.ASYNC
+
+    @property
+    def requires_approval(self) -> bool:
+        """判断委派该工作流是否需要人工审批（Human-in-the-Loop）。
+
+        :return: 若副作用为 WRITE 或 EXTERNAL 则返回 True。
+        """
+        return self.effect.requires_approval
+
+    def resolve_mode(self, preferred_mode: WorkflowMode | str | None = None) -> WorkflowMode:
+        """结合宿主偏好解析最终接入模式（若插件同时提供 runnable 与 graph_id 可按宿主策略切换）。
+
+        :param preferred_mode: 宿主偏好的工作流模式（'compiled' 或 'async'）。
+        :return: 最终解析出的 WorkflowMode。
+        """
+        if self.mode is not None:
+            return self.mode
+        if preferred_mode == WorkflowMode.ASYNC and self.graph_id is not None:
+            return WorkflowMode.ASYNC
+        if preferred_mode == WorkflowMode.COMPILED and self.runnable is not None:
+            return WorkflowMode.COMPILED
+        return self.effective_mode
+
+    def to_subagent_spec(
+        self,
+        *,
+        preferred_mode: WorkflowMode | str | None = None,
+        durability_override: Durability | None = None,
+        enable_checkpointer: bool = True,
+    ) -> CompiledSubAgent | AsyncSubAgent:
+        """转换为 Deep Agents 原生支持的 `CompiledSubAgent` 或 `AsyncSubAgent` 规范字典。
+
+        :param preferred_mode: 宿主全局偏好的接入模式（仅当插件未强制锁死 mode 且具备对应字段时生效）。
+        :param durability_override: 可选覆盖的检查点同步策略（默认使用工作流自身的 durability="sync"）。
+        :param enable_checkpointer: 是否为本地 CompiledStateGraph 自动启用父检查点继承与 durability 绑定。
+        :return: 符合 Deep Agents `create_deep_agent(subagents=...)` 契约的子智能体规范。
+        """
+        target_mode = self.resolve_mode(preferred_mode)
+        if target_mode == WorkflowMode.ASYNC:
+            assert self.graph_id is not None
+            async_spec: AsyncSubAgent = {
+                "name": self.name,
+                "description": self.description,
+                "graph_id": self.graph_id,
+                "mode": self.context_mode,
+            }
+            if self.url is not None:
+                async_spec["url"] = self.url
+            if self.headers is not None:
+                async_spec["headers"] = dict(self.headers)
+            return async_spec
+
+        assert self.runnable is not None
+        target_runnable: Runnable[Any, Any] = self.runnable
+        effective_durability = durability_override or self.durability
+        if enable_checkpointer and isinstance(target_runnable, CompiledStateGraph):
+            if target_runnable.checkpointer is None:
+                target_runnable = target_runnable.copy(update={"checkpointer": True})
+            if target_runnable.checkpointer is not False:
+                target_runnable = RunnableBinding(
+                    bound=target_runnable,
+                    kwargs={"durability": effective_durability},
+                )
+        compiled_spec: CompiledSubAgent = {
+            "name": self.name,
+            "description": self.description,
+            "runnable": target_runnable,
+            "mode": self.context_mode,
+        }
+        return compiled_spec
+
+    @classmethod
+    def from_compiled_graph(
+        cls,
+        *,
+        name: str,
+        description: str,
+        runnable: Runnable[Any, Any],
+        internal_state: type[Any] | None = None,
+        input_schema: type[Any] | None = None,
+        output_schema: type[Any] | None = None,
+        graph_id: str | None = None,
+        context_mode: SubAgentContextMode = "isolated",
+        durability: Durability = "sync",
+        effect: SideEffect = SideEffect.READ,
+        depends_on: tuple[str, ...] = (),
+        max_dispatches: int = 5,
+        idempotent: bool = False,
+        allowed_tenants: frozenset[str] | None = None,
+        result_schema: type[BaseModel] | None = None,
+    ) -> WorkflowContribution:
+        """从预编译 LangGraph 状态图构造 `CompiledSubAgent` 工作流插件贡献。"""
+        return cls(
+            name=name,
+            description=description,
+            internal_state=internal_state,
+            input_schema=input_schema,
+            output_schema=output_schema,
+            runnable=runnable,
+            graph_id=graph_id,
+            mode=WorkflowMode.COMPILED if graph_id is None else None,
+            context_mode=context_mode,
+            durability=durability,
+            effect=effect,
+            depends_on=depends_on,
+            max_dispatches=max_dispatches,
+            idempotent=idempotent,
+            allowed_tenants=allowed_tenants,
+            result_schema=result_schema,
+        )
+
+    @classmethod
+    def from_async_graph(
+        cls,
+        *,
+        name: str,
+        description: str,
+        graph_id: str,
+        internal_state: type[Any] = WorkflowInternalState,
+        input_schema: type[Any] = WorkflowInputState,
+        output_schema: type[Any] = WorkflowOutputState,
+        url: str | None = None,
+        headers: dict[str, str] | None = None,
+        runnable: Runnable[Any, Any] | None = None,
+        context_mode: SubAgentContextMode = "isolated",
+        effect: SideEffect = SideEffect.READ,
+        depends_on: tuple[str, ...] = (),
+        max_dispatches: int = 5,
+        idempotent: bool = False,
+        allowed_tenants: frozenset[str] | None = None,
+        result_schema: type[BaseModel] | None = None,
+    ) -> WorkflowContribution:
+        """从 Agent Protocol `graph_id` 构造 `AsyncSubAgent` 异步工作流插件贡献。"""
+        return cls(
+            name=name,
+            description=description,
+            internal_state=internal_state,
+            input_schema=input_schema,
+            output_schema=output_schema,
+            graph_id=graph_id,
+            url=url,
+            headers=headers,
+            runnable=runnable,
+            mode=WorkflowMode.ASYNC,
+            context_mode=context_mode,
+            effect=effect,
+            depends_on=depends_on,
+            max_dispatches=max_dispatches,
+            idempotent=idempotent,
+            allowed_tenants=allowed_tenants,
+            result_schema=result_schema,
+        )
+
+
 class PluginContribution(StrictModel):
     """插件向宿主框架贡献的所有原生组件集合。"""
 
-    # 插件贡献的原生工具列表
+    # 插件贡献的 LangGraph 确定性工作流子任务列表（推荐主接入方式）
+    workflows: list[WorkflowContribution] = Field(default_factory=list)
+    # 插件贡献的原生工具列表（兼容轻量工具与技能门控工具）
     tools: list[ToolContribution] = Field(default_factory=list)
     # 插件贡献的技能资产文件列表
     skills: list[SkillAsset] = Field(default_factory=list)
     # 插件贡献的 LangChain / Deep Agents 中间件列表
     middleware: list[AgentMiddleware[Any, Any, Any]] = Field(default_factory=list)
-    # 插件贡献的子智能体定义或预编译子智能体列表
+    # 插件贡献的原始子智能体定义或预编译子智能体列表
     subagents: list[SubAgentSpec] = Field(default_factory=list)
     # 插件追加至主智能体的专用系统指令说明
     instructions: str = ""
@@ -242,7 +600,7 @@ class DomainPlugin(Protocol):
         """创建该插件向 Deep Agents / LangChain 提供的原生贡献。
 
         :param services: 宿主在构建期注入的服务实例集合。
-        :return: 包含工具、技能、中间件、子智能体与系统指令的插件贡献声明对象。
+        :return: 包含工作流、工具、技能、中间件、子智能体与系统指令的插件贡献声明对象。
         """
         ...
 
@@ -259,6 +617,13 @@ __all__ = [
     "SideEffect",
     "SkillAsset",
     "StrictModel",
+    "SubAgentContextMode",
     "SubAgentSpec",
     "ToolContribution",
+    "WorkflowContribution",
+    "WorkflowInputState",
+    "WorkflowInternalState",
+    "WorkflowMode",
+    "WorkflowNameStr",
+    "WorkflowOutputState",
 ]

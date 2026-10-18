@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:46cb488e02a52e42eb9b953a92d8d3347d3dee715e00f90a7c49f413dda8389b",
+  "pageVersion": "sha256:f5e4a101b19506155882c61f82f4089b73b184a991d0a20b8a16a4917d84f45f",
   "claims": [
     {
       "id": "claim_23a03da13b1b4c58b070571a35c8ed53",
@@ -14,11 +14,11 @@
     },
     {
       "id": "claim_322e2feeac6b403fa399de8e010aa4db",
-      "statement": "cli.py 的 _build_parser 函数定义命令行 --list-plugins、--thread-id、--tenant-id、--user-id 以及 --task-tier 选项，默认 task-tier 为 TaskTier.QUALITY.value (quality)。",
+      "statement": "cli.py 的 _build_parser 函数定义命令行 --list-plugins、--list-workflows、--history、--thread-id、--checkpoint-id、--fork-thread-id、--update-state、--as-node、--durability、--tenant-id、--user-id 以及 --task-tier 选项，默认 task-tier 为 TaskTier.QUALITY.value (quality)。",
       "evidence": [
         {
-          "resource": "repo://packages/agent-harness/src/vertical_harness/cli.py#L25-L46",
-          "version": "repo-lines-v1:sha256:82e2122ff109f1522015dba0f749e352adefc3b6a050962e5722416355dc31d9:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJmNWNkMWIwMmEyODM4NWM5MmM2YTg5ZTE4YTk1MjY4NjNhYjY3ZDE4ODE5MTI4YmFjZDI5ZmIxYTlhNTA2YWYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUwODUyMzNiZDA1OTNiNmE3OTNlMWNhMjY3ODM0YTA0YTRjYjUxNzJhZmM4N2E0MTZhMTdlYWQ3M2MwNTI0YjMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhiMGI5M2Q2OWVhZWM0ZDIwODEyMWFkMTEyODAwZWMxYzg1YWI2MDdlOWViZTM5MWU0YmI4NzIxYmM3ZTFmYTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjhmM2ZkZTc5MDdkMmE5M2JhOTlhZGRkY2U1ODI1NjI1MzQ1YTZkOTNkNjczY2M2MjRmZWM1MDM0NTZkMTIyODgifQ"
+          "resource": "repo://packages/agent-harness/src/vertical_harness/cli.py#L32-L99",
+          "version": "repo-lines-v1:sha256:3d39ab17d56cc8bd93bbf5e28795a6abe8a9da8b4564b559f17fc112bc244310:eyJzZWxlY3RlZExpbmVDb3VudCI6NjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE3ZDZiMGIyNTE1OTA1MDY5YzYzNzdkN2RhMDM5ZTc3ZGVkYzdhMWYyYjk2ZTdmMGNhMDg3MDRjNmVlY2ZkMGMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU5MjU4Y2Q4ZWRhYjY1MGE2OTYwMjEyMzlkZGQxZTI0YmNjMzBhZmU1ZWY2YTRlOWQzYTY5NTE1OGJmMjc1NDkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjcyOGRhYTliMjhhMGVmODU4OGQyMzBiNDgxODljZGVmYWYxODljMjU2MTE4NjA4MTk1ODY3MmE1Zjc0Njg5MDQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFjMjU1YjE3ZTBiZjAyZjU3ZmM4ZmVlNTdjODRjYTJlNGRiYzJkY2EyMjg0NTk2ZTdiNmZlZGQxMjNmM2I0ZDMifQ"
         }
       ]
     },
@@ -27,14 +27,14 @@
       "statement": "packages/agent-harness/pyproject.toml 声明命令行脚本入口 vertical-agent 指向 vertical_harness.cli:main。",
       "evidence": [
         {
-          "resource": "repo://packages/agent-harness/pyproject.toml#L24-L26",
-          "version": "repo-lines-v1:sha256:83960cd2ea2bf2b60615370232b2fe64f03fa1349f90bbd31f3fc432f54a0816:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNGVhYjRlYzYzZGU1MTdkYTRjZDhlNWM4MzA3ZmIyYzc3MzdkMzkxOTBhYjY5ZjMyYTVlOWVmODFlYTQ0MTZkZSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDFiYTQ3MTljODBiNmZlOTExYjA5MWE3YzA1MTI0YjY0ZWVlY2U5NjRlMDljMDU4ZWY4Zjk4MDVkYWNhNTQ2YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNTA0MDFkNzNkZjc0ZTFmZTg1ZGE0ZDYyMjM3ZjM0Yjg5ZDcyNWM4OGYwMzUyYzhjYWZjMDg3NTAwZDRkYzFlNSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjIsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMzU5MzhmZTFiNWM0NGJlZGNlN2M0ZTQ3OTQ5NTIyMDZlNmM5MTRmNTI5MjZjMzYyNjIzYzA2MDQ0MmY1YWUxZCJ9"
+          "resource": "repo://packages/agent-harness/pyproject.toml#L27-L30",
+          "version": "repo-lines-v1:sha256:0e36826b929b60d9de4273cbcf284abf4f61b106b9320eb41ef2ccd5ea5d6a38:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNGVhYjRlYzYzZGU1MTdkYTRjZDhlNWM4MzA3ZmIyYzc3MzdkMzkxOTBhYjY5ZjMyYTVlOWVmODFlYTQ0MTZkZSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDFiYTQ3MTljODBiNmZlOTExYjA5MWE3YzA1MTI0YjY0ZWVlY2U5NjRlMDljMDU4ZWY4Zjk4MDVkYWNhNTQ2YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNTA0MDFkNzNkZjc0ZTFmZTg1ZGE0ZDYyMjM3ZjM0Yjg5ZDcyNWM4OGYwMzUyYzhjYWZjMDg3NTAwZDRkYzFlNSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZGU0MjRjYzFmY2Y3OTNlMjk3N2IzNTNjYTY1MTRkZDAyYmJlOGZkNWZlY2E2MmJiMGVjMWMxM2QyNzEzM2RhZCJ9"
         }
       ]
     }
   ],
   "verification": {
     "by": "openwiki/0.7.2",
-    "at": "2026-10-18T07:44:10.514Z"
+    "at": "2026-10-18T12:40:07.975Z"
   }
 }

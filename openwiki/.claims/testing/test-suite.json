@@ -1,13 +1,13 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:90a2e2880da58363f473dd53cf6cfadce52c0ee7d58f305f268985be6ec0deb4",
+  "pageVersion": "sha256:4bd39505ae825e4377d8b0f9acc4e8c56d462395a34d9b39739947edf557a339",
   "claims": [
     {
       "id": "claim_e34da381faf64b72b9e21774098450dc",
       "statement": "test_schema.py 针对恶意插件 ID 与包含相对跳转符 .. 的技能路径执行校验拦截测试，确保目录遍历攻击被 Pydantic 模型阻断。",
       "evidence": [
         {
-          "resource": "repo://tests/test_schema.py#L90-L103",
+          "resource": "repo://tests/test_schema.py#L92-L105",
           "version": "repo-lines-v1:sha256:0a5fb597c5565b59efb7f4fbdc8115269f70a114ef9126488e59d10d95946efb:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZmYmM3OGUzMDQ3OWIwZmQyMjY4NDM4MTEwZjAzNThkNGRjZDE1ZDAwMWFjMTQ1MTdiYzc2OTllMGI3MWFjNjgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA0Y2M1YzI3MDA1YTNjZWE3YWMxNTc3MTY2YTE0NzA2MDkwNTVkN2ZkOTc1ZDQ1NTI0Mzk3NTAxZjMyYjJmZmIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNlZDY1NzZhM2MzZTZhMzJkNzdmNTNlOTJmMDMyMTMyZmVlYWE4NDM4ZTRiNzUyMzIwOGNhZThkODNiNTg2YjgifQ"
         }
       ]
@@ -37,14 +37,14 @@
       "statement": "test_citation_parser_and_toolkit_integration 验证 extract_cited_indices、evaluate_references、ResearchCitationToolkit 批量包装与 AgentComposer 插件注册行为。",
       "evidence": [
         {
-          "resource": "repo://tests/test_schema.py#L64-L87",
-          "version": "repo-lines-v1:sha256:89f2b0eb164cf006691eb79d832dbc73935ade04910cc9a49e1e523a9643709d:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJiYTU0ZWZhYmE4Nzg3NTMxNmU4NTY5MmQyNzM1MDc4ODE5MGE0Y2ZjN2RhNzY3NzljMzU2MmNhODBmMmQ0MzMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYwNGRhYTg3MmY4MDA4NTkxNTM2NGQxZWZmMjdkNjZmMjJlZWEyMzIwYjc0M2FjOGM1ZjM0YzVhZTQ3YmM4OTAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRmYmQwMDkzMTRiYzI3MDg0MTY3MzRhMDJhZTVmZjM5YTFlNDhhMDUwYmU5MWY0M2IyZmFhOTIwMDJjNjJiZmMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjZhM2JmOWMyMjBjZWY3ZWY1NDBhODE2NjIzOGMyOTU2NDI4N2FkZmFlYTMyMWQxODVmZDZhZTQ3OTI4M2FjNmIifQ"
+          "resource": "repo://tests/test_schema.py#L64-L90",
+          "version": "repo-lines-v1:sha256:ccdc38e6727bd1c2bdc876f613448b266a56f2d61dabd4a083db69c68bb7bc83:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJiYTU0ZWZhYmE4Nzg3NTMxNmU4NTY5MmQyNzM1MDc4ODE5MGE0Y2ZjN2RhNzY3NzljMzU2MmNhODBmMmQ0MzMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRmYmQwMDkzMTRiYzI3MDg0MTY3MzRhMDJhZTVmZjM5YTFlNDhhMDUwYmU5MWY0M2IyZmFhOTIwMDJjNjJiZmMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjlkZWVlZDQ4M2M1N2U0ODc2ODQxNzI4MTVjNmJjNGY5ZDdhODE4NTNiM2YwOThmNzU4NTVhNjZjNjUyMzMzYjAifQ"
         }
       ]
     }
   ],
   "verification": {
     "by": "openwiki/0.7.2",
-    "at": "2026-10-18T07:44:10.514Z"
+    "at": "2026-10-18T12:40:07.975Z"
   }
 }

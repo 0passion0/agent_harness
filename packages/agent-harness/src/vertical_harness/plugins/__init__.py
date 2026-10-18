@@ -12,10 +12,21 @@ from vertical_harness.plugins.contracts import (
     SideEffect,
     SkillAsset,
     StrictModel,
+    SubAgentContextMode,
     SubAgentSpec,
     ToolContribution,
+    WorkflowContribution,
+    WorkflowInputState,
+    WorkflowInternalState,
+    WorkflowMode,
+    WorkflowNameStr,
+    WorkflowOutputState,
 )
-from vertical_harness.plugins.discovery import PLUGIN_GROUP, discover_plugins
+from vertical_harness.plugins.discovery import (
+    PLUGIN_GROUP,
+    discover_plugins,
+    discover_workflow_graphs,
+)
 
 __all__ = [
     "PLUGIN_GROUP",
@@ -30,7 +41,15 @@ __all__ = [
     "SideEffect",
     "SkillAsset",
     "StrictModel",
+    "SubAgentContextMode",
     "SubAgentSpec",
     "ToolContribution",
+    "WorkflowContribution",
+    "WorkflowInputState",
+    "WorkflowInternalState",
+    "WorkflowMode",
+    "WorkflowNameStr",
+    "WorkflowOutputState",
     "discover_plugins",
+    "discover_workflow_graphs",
 ]

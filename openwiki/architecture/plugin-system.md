@@ -10,10 +10,10 @@ sources:
     resource: repo://packages/agent-harness/src/vertical_harness/plugins/contracts.py
   - id: openwiki-source-22fd106252c69a22894fb255
     resource: repo://packages/agent-harness/src/vertical_harness/plugins/discovery.py
-generated: { by: "antigravity", at: "2026-10-18T06:56:09.371Z" }
+generated: { by: "antigravity", at: "2026-10-18T10:47:09.347Z" }
 verified:
   - by: openwiki/0.7.2
-    at: 2026-10-18T07:44:10.514Z
+    at: 2026-10-18T12:40:07.975Z
 ---
 
 # 插件机制与贡献契约
@@ -57,9 +57,10 @@ return [_instantiate_and_verify(identifier, matches[identifier]) for identifier 
 | 契约类 | 核心属性与辅助方法 | 设计目的 |
 |---|---|---|
 | `PluginManifest` | `plugin_id` (`PluginIdStr`), `api_version=1`, `version` (`SemVerStr`), `description` (>=8 字符), `normalized_prefix` | 插件元数据与接口版本自洽声明 |
+| `WorkflowContribution` | `name`, `internal_state`, `input_schema`, `output_schema`, `runnable`, `graph_id`, `mode`, `to_subagent_spec()` | 声明确定性 LangGraph 工作流、三层数据契约与接入模式 |
 | `SkillAsset` | `relative_path`, `content`, `to_virtual_path()`, `to_upload_payload()` | 随包静态打包的 Markdown 技能文件与虚拟路径映射 |
 | `ToolContribution` | `tool: BaseTool`, `effect: SideEffect` (`READ` / `WRITE` / `EXTERNAL`), `exposure: Exposure` (`EAGER` / `SKILL`), `from_toolkit()` | 声明工具副作用、可见时机及 `BaseToolkit` 批量导出 |
-| `PluginContribution` | `tools`, `skills`, `middleware`, `subagents`, `instructions`, `format_system_instruction()` | 插件 `build()` 方法的标准返回载荷 |
+| `PluginContribution` | `workflows`, `tools`, `skills`, `middleware`, `subagents`, `instructions`, `format_system_instruction()` | 插件 `build()` 方法的标准返回载荷 |
 
 ### 2.2 防目录遍历、安全路径校验与虚拟路径隔离
 
@@ -67,7 +68,15 @@ return [_instantiate_and_verify(identifier, matches[identifier]) for identifier 
 - **严格校验 (`validate_relative_path`)**：严禁反斜杠 `\`、严禁任何绝对路径、严禁包含 `.` 或 `..` 分段（防止利用恶意相对路径读取或覆盖宿主系统敏感文件），并强制要求路径深度至少为两级（如 `numeric-citation-audit/SKILL.md`）且各分段符合 `_SAFE_SKILL_SEGMENT` 正则。
 - **命名空间隔离 (`to_virtual_path` / `to_upload_payload`)**：自动将插件 ID 中的 `.` 替换为 `-`，拼接生成虚拟路径 `/skills/{plugin-id}-{skill-dir}/...` 及 UTF-8 编码字节流，直接供 Deep Agents Backend `upload_files` 使用。
 
-### 2.3 LangChain `BaseToolkit` 批量适配 (`ToolContribution.from_toolkit`)
+### 2.3 工作流三层数据契约与双模式接入 (`WorkflowContribution`)
+
+为支持确定性 LangGraph 业务工作流原生接入 Deep Agents Supervisor，`WorkflowContribution` 强制声明并隔离三层状态：
+- **内部状态 (`internal_state`)**：内部流转使用（如校验缓存与评估结果），外部调用方或 LLM 禁止直接写入，亦不对外泄露。
+- **输入状态 (`input_schema`)**：继承 `WorkflowInputState`，规范入参并兼容 `messages` 协议。
+- **输出状态 (`output_schema`)**：继承 `WorkflowOutputState`，规范最终返回的 `messages` 与 `structured_response`。
+- **接入模式与发现**：支持 `from_compiled_graph`（单进程挂载预编译图并绑定 `durability="sync"`）与 `from_async_graph`（对接 Agent Protocol 异步 `graph_id`）。同时宿主提供 `discover_workflow_graphs` 工具函数统一索引已启用插件的预编译工作流。
+
+### 2.4 LangChain `BaseToolkit` 批量适配 (`ToolContribution.from_toolkit`)
 
 为方便集成遵循 LangChain 标准 `BaseToolkit` 规范的工具包，`ToolContribution.from_toolkit(toolkit, effect=..., exposure=...)` 类方法支持一键提取 `toolkit.get_tools()` 中的全部工具并批量封装为具有统一副作用与暴露策略的 `ToolContribution` 列表。
 

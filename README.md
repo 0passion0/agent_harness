@@ -16,6 +16,73 @@ pytest -q
 
 也可使用 uv workspace：`uv sync --all-packages` 后 `uv run --package vertical-agent-harness vertical-agent --list-plugins`。
 
+## 记忆、用户偏好与每周后台整合
+
+已有 LangGraph 检查点保存同一线程的短期状态，SQLite Store 和 `/memories/` 文件路由保存跨线程记忆。本次基于 [LangMem](https://langchain-ai.github.io/langmem/reference/memory/) 补充结构化用户偏好、自动召回与 Background Memory Consolidation。自动处理默认关闭：
+
+```dotenv
+VA_ENABLE_MEMORY=true
+VA_ENABLE_USER_PREFERENCES=true
+VA_ENABLE_MEMORY_CONSOLIDATION=true
+VA_MEMORY_CONSOLIDATION_INTERVAL_DAYS=7
+# 可选：用更经济的、支持工具调用的模型完成提取和整合。
+# VA_MEMORY_MODEL=deepseek:deepseek-flash
+```
+
+| 配置 | 默认值 | 行为 |
+|---|---|---|
+| `VA_ENABLE_MEMORY` | `true` | 长期记忆总开关；关闭时不挂载记忆路由、不加载记忆、不采集或学习；不删除已有数据，检查点仍独立工作 |
+| `VA_ENABLE_USER_PREFERENCES` | `false` | 从用户明确表达中提取稳定偏好，在本次回答前更新并跨线程召回；这是自动偏好开关，手写记忆文件仍由长期记忆开关控制 |
+| `VA_ENABLE_MEMORY_CONSOLIDATION` | `false` | 将用户输入加入待处理队列，供独立后台进程按周整合 |
+| `VA_MEMORY_CONSOLIDATION_INTERVAL_DAYS` | `7` | 每个用户首次采集后等待的天数，以及完成一次整合后的间隔，范围 1–365 |
+| `VA_MEMORY_MODEL` | 主模型 | 偏好和整合模型，复用 `VA_API_KEY` / `VA_BASE_URL` |
+
+独立启动后台 worker；它与对话进程读取相同的配置及 SQLite 文件，不连接 MCP、不运行领域插件：
+
+```bash
+vertical-agent --memory-worker
+```
+
+进程每分钟检查持久化到期时间，**实际整合默认每 7 天一次**，没有新内容时不调用模型。应由服务管理器保持 worker 运行；仅设置开关不会启动后台进程。也可让系统计划任务定期执行 `vertical-agent --consolidate-memory`，它只处理已经到期的用户，失败返回非零退出码；例如每小时检查一次，整合周期仍为每周。后台进程未运行期间不会执行任务，重启后补处理已到期队列。
+
+自动记忆使用可信 `RunContext.tenant_id` + `user_id` 的 SHA-256 命名空间，不接受模型提供身份；同一用户换 `thread_id` 仍可召回。调用方必须为不同租户/用户分配不同的检查点线程，`thread_id` 不是身份鉴权。偏好最多 20 条、每条 300 字符；长期事实最多 30 条、每条 500 字符，召回不增加模型调用或 embedding 成本。LangMem 的结构化补丁更新已有单一档案，保留有效条目、去重，并以用户的新明确更正替换旧内容。新自动记忆不迁移已有 `/memories/` 文件。
+
+整合仅采集用户文本；模型回答和工具文档不会自动成为长期事实。输入按 8,000 字符分片、每批最多 50 片和 32,000 字符，按采集顺序处理；每个成功批次通过 Store 的 `batch` 同时保存摘要和消费队列。模型失败保留输入和到期时间，下次继续未完成批次；偏好提取失败记录日志并在后续调用重试，不阻断正常回答。处理成功后只保留摘要及哈希去重回执，队列原文删除；尚未处理的用户原文会保存在数据库中，并在处理时发送给配置的模型。记忆是可过期的参考资料，不能覆盖当前用户请求、证据或授予工具执行权限。
+
+部署约束：独立 worker 需要共享的持久化 SQLite，拒绝 `memory` / `:memory:`；同一数据库运行一个 worker，同一用户的偏好更新由宿主串行调用。多副本并发写入需要另行加入分布式租约或事务冲突控制。长期 Store 不随 Time Travel 回滚；重放相同消息通过哈希回执去重。
+
+作为库使用可通过 `vertical_harness.engine.memory.consolidate_memories(settings, store)` 执行一次到期检查；同步 `build_agent` 与异步 `aopen_agent` 均自动接入启用的偏好和召回，无需改调用载荷。
+
+## MCP 服务
+
+支持 stdio 子进程和 Streamable HTTP，通过 `.env` / `VA_MCP_SERVERS` 配置服务名到连接参数的 JSON 对象：
+
+```dotenv
+VA_MCP_SERVERS='{"local":{"transport":"stdio","command":"python","args":["/absolute/path/server.py"],"cwd":"/absolute/path","env":{"API_KEY":"replace_me"}},"remote":{"transport":"streamable_http","url":"http://localhost:8000/mcp","headers":{"Authorization":"Bearer replace_me"}}}'
+```
+
+`http` 是 `streamable_http` 的别名，不支持旧 SSE 传输。stdio 的 `command` 与 `args` 直接传给子进程，不经过 shell；所需凭据通过 `env` 显式传递。HTTP 服务须提前启动，支持 `headers` 请求头。每个服务可设置 `timeout`（默认 30 秒，作用于初始化和工具请求）及 `effect`（默认 `external`）。仅对宿主确认只读的服务设置 `"effect":"read"` 以免审批；不信任服务器提供的只读提示作为授权。
+
+CLI 正常执行与 Time Travel / Fork 会自动走异步路径，整次调用持有 MCP 会话，结束、异常或取消时关闭连接与子进程。工具以 `<服务名>_<工具名>` 注册，重名报错，默认通过现有 HITL 执行 `approve/reject` 审批。审批恢复仍由宿主审批 UI 使用 `Command(resume=...)` 完成。`VA_SUPERVISOR_ONLY=true` 时不连接 MCP，也不向主智能体注册 MCP 工具；列表与历史查询不连接 MCP。
+
+支持 MCP Tool Annotations：`title`、`readOnlyHint`、`destructiveHint`、`idempotentHint`、`openWorldHint`。原生适配器将注解保留在 `tool.metadata["mcp"]["tool"]["annotations"]`，Python 字段名使用 snake_case（如 `read_only_hint`）；`ToolContribution.mcp_annotations` 可直接读取，未提供时返回 `None`，未声明的提示保持缺省，不补造值。审批请求的 `description` 展示服务端注解并标明它们是不可信提示，调用名称与参数仍分别位于 `name` / `args`。注解不覆盖宿主 `effect`，不自动免审、重试或去重；`readOnlyHint=true` 仍不能跳过 `external` / `write` 审批。有关提示的语义与信任边界，参见 [MCP 规范](https://modelcontextprotocol.io/specification/2025-06-18/schema#toolannotations)。
+
+作为库使用时，以 `aopen_agent` 管理连接及缺省异步存储，并在上下文内调用 `ainvoke` / `astream`：
+
+```python
+from vertical_harness import HarnessSettings, RunContext, aopen_agent
+
+async def run():
+    async with aopen_agent(HarnessSettings()) as agent:
+        return await agent.ainvoke(
+            {"messages": [{"role": "user", "content": "使用已配置的 MCP 工具查询"}]},
+            config={"configurable": {"thread_id": "mcp-demo"}},
+            context=RunContext(tenant_id="demo", user_id="demo"),
+        )
+```
+
+已有不使用 MCP 的同步 `build_agent` / `invoke` 调用不变。配置 MCP 后直接调用 `build_agent` 会提示改用 `aopen_agent`，避免静默漏载工具。调用方显式提供的 store / checkpointer 仍由调用方管理生命周期。MCP 工具适配使用 LangChain 原生 `MCPAdapter`（beta），依赖随 `langchain[mcp]` 安装，API 边界参见 [官方文档](https://docs.langchain.com/oss/python/langchain/mcp)。
+
 ## 日志
 
 CLI 启动时统一配置 Python 标准库 `logging`，默认输出 INFO 级别文本到 stderr；stdout 保留插件 JSON 或运行结果。支持 UTF-8 滚动文件，所有配置均从 `HarnessSettings` / `VA_*` 环境变量及 `.env` 加载：
@@ -65,7 +132,7 @@ with log_context(str(uuid4())):
 
 异步调用使用相同配置传给 `agent.ainvoke()`。滚动文件适用于单进程；多个进程应输出 stderr，由部署环境统一收集与轮转。
 
-## 插件零改主流程
+## 插件零改主流程（Supervisor + LangGraph Workflow Plugins）
 
 插件必须在自己的 `pyproject.toml` 声明：
 
@@ -74,26 +141,67 @@ with log_context(str(uuid4())):
 "research.citations" = "research_citation.plugin:ResearchCitationPlugin"
 ```
 
-主包仅通过 `importlib.metadata.entry_points` 扫描显式启用的插件。插件提供 Pydantic 校验的 `PluginManifest` / `PluginContribution`；主包组合原生工具、SkillsMiddleware、Subagents、LangChain Middleware 和 HITL。安装插件后重启服务加载；**不是热加载**。新插件使用新的 distribution name 和 entry point，不需要修改主流程源码。
+主包仅通过 `importlib.metadata.entry_points` 扫描显式启用的插件。每个工作流插件通过 `WorkflowContribution` 原生接入 Deep Agents 的 `CompiledSubAgent`（单进程预编译图）或 `AsyncSubAgent`（Agent Protocol `graph_id`），并强制声明三层隔离的数据模式：
+
+- `InternalState` (`internal_state`)：定义工作流内部节点使用的数据（外部调用方或 LLM 不可直接写入，亦不对外泄露）；
+- `input_schema`：定义调用方/主智能体需要提供的数据（兼容 `messages` 协议）；
+- `output_schema`：定义工作流最终返回给主智能体的数据（包含 `messages` 与 `structured_response`）。
+
+宿主 `SupervisorPolicyMiddleware` 提供确定性监督治理（工作流白名单、租户 RBAC、`depends_on` 依赖顺序、`max_dispatches` 重试上限、`idempotent` 幂等复用、`result_schema` 验收与 `InterruptOnConfig(when=...)` 按需审批）。
+
+## Time Travel 与 Time Travel Fork（`durability="sync"`）
+
+默认启用 `durability="sync"` 并支持 SQLite 持久化检查点（默认路径 `<workspace_root>/.checkpoints/checkpoints.sqlite`，可通过 `VA_CHECKPOINT_DB_PATH` 配置）：
+
+```bash
+# 列出已注册的插件工作流（含模式、三层状态与监督策略）
+vertical-agent --list-workflows
+
+# 查看指定线程的检查点历史
+vertical-agent --thread-id demo-thread --history
+
+# 从指定历史检查点回放或注入新状态分叉到新线程（Time Travel Fork）
+vertical-agent --thread-id demo-thread \
+  --checkpoint-id <checkpoint_id> \
+  --fork-thread-id demo-thread-fork \
+  --update-state '{"messages": [{"role": "user", "content": "使用修正后的参考文献重新核查"}]}'
+```
 
 ## 核心技术选择
 
-- Agent 运行：`deepagents.create_deep_agent()`；无自制 Agent Loop。
-- Skills：`SKILL.md` 及 `SkillsMiddleware`；演示插件采用 `metadata.include_tools` 按需暴露工具，要求 `deepagents>=0.7.22`。
+- Agent 运行：`deepagents.create_deep_agent()` + `CompiledSubAgent` / `AsyncSubAgent` 工作流委派；无自制 Agent Loop。
+- Skills：`SKILL.md` 及 `SkillsMiddleware`；演示插件同时提供确定性 LangGraph 工作流 `citation_audit` 与 `metadata.include_tools` 技能工具。
 - 工作空间：开发使用 `FilesystemBackend(virtual_mode=True)`；并非安全 OS sandbox。
-- Durability：默认 `InMemorySaver` 仅供演示。生产必须注入持久化 Checkpointer（Postgres）和 Store，按租户隔离。
+- Durability：默认 `durability="sync"` 配合 SQLite Checkpointer（`SqliteSaver` / `AsyncSqliteSaver`），支持跨进程恢复、Time Travel 回放与 Time Travel Fork；生产环境可替换为 Postgres Checkpointer。
 - 评测：LangSmith 官方 Trace/Dataset/Evaluator；业务规则继续用确定性 Pydantic/pytest 检查。
-- 权限：带写操作的工具必须 `approve/reject`，真正越权保护仍须工具后端逐次执行 RBAC/ABAC。插件本身是受信任的 Python 代码。
+- 权限：高风险工具与 `WRITE`/`EXTERNAL` 工作流必须 `approve/reject`，真正越权保护仍须后端逐次执行 RBAC/ABAC。插件本身是受信任的 Python 代码。
 
 ## 边界与不足
 
-1. 此仓库是**参考实现**而非已投产系统；当前没有提供生产数据库迁移、队列、认证、审计服务、异步 MCP 生命周期、外部文件解析或 Web API。
-2. 当前 CLI 单次运行创建 `InMemorySaver`，退出后不能跨进程恢复；需要服务型进程 + 持久化 Checkpointer。
+1. 此仓库是**参考实现**而非已投产系统；当前没有提供生产数据库迁移、队列、认证、审计服务、外部文件解析或 Web API。MCP 目前接入工具发现与调用，未提供 OAuth 登录流程、资源/提示词导入或连接池。
+2. 本地开发默认使用 SQLite Checkpointer 存储检查点，多实例高并发生产部署需切换至 Postgres Checkpointer。
 3. 默认 `context_schema` 使用 Python dataclass 以匹配 LangGraph runtime，外层环境配置与插件契约使用 Pydantic v2。
-4. 示例引文工具只检查数字引用与文末文献表的索引对应关系，不做真实性或证据支持验证。
+4. 示例引文工作流/工具只检查数字引用与文末文献表的索引对应关系，不做真实性或证据支持验证。
 5. 安装与完整 Agent 运行需相应官方包及 LLM 凭据；框架 API 可能演进，部署时应锁定并测试依赖版本。
 
 详细设计参见 `docs/ARCHITECTURE.md`。
+
+前端实时集成可直接消费 `vertical_harness.astream_agent()` 的模型增量、工具状态和 Subagent 进度事件。
+接口与传输分离，可由后续本地进程通过 JSON-RPC notifications 转发；契约与调用示例见 [Streaming 接口](docs/STREAMING.md)。
+
+## LangSmith Tracing、评测与反馈回归
+
+框架原先依赖 SDK 隐式 tracing；现在通过 `observability.tracing_session` 显式读取 `.env` 中的 `LANGSMITH_*`，CLI 和 `aopen_agent` 管理上传及连接生命周期。示例默认关闭；将 `LANGSMITH_TRACING=true` 并设置有效密钥后，普通对话会上传输入、输出和工具轨迹。同步库调用用 `with tracing_session(): agent.invoke(...)`。`--run-id <UUID>` 与日志中的 run ID 对应，可用于反馈关联；Time Travel/Fork 同样支持。
+
+独立入口 `vertical-eval` 提供主智能体/插件离线评测、LangMem 候选提示词、在线抽样评测、用户反馈与 Regression Dataset。模型统一使用 `VA_MODEL`、`VA_EVAL_MODEL`、`VA_OPTIMIZER_MODEL`，共用 `VA_API_KEY` / `VA_BASE_URL`；未指定评审模型时回退到 `VA_MODEL`，优化模型依次回退到评审模型、主模型。
+
+完整配置、样本格式、运行命令和模块边界见 [评测使用说明](docs/EVALUATION.md)。可直接执行的无模型示例：
+
+```bash
+vertical-eval run --target workflow:citation_audit --data examples/evaluation/citations.jsonl --no-judge --report .agent-workspace/citation-evaluation.json
+```
+
+在线评测与反馈自动入库默认关闭，开启后运行独立 `vertical-eval online` worker。用户明确修正的答案才会进入回归参考集；评分、评论保留为来源信息。离线优化必须提供不重叠的训练/验证集，生成候选后比较同一验证快照，只保存候选和报告，不替换生产配置。
 
 ### 可选动态路由
 

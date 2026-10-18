@@ -1,18 +1,18 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:cdbf20eae415d99443af6a187fa338220415ed7e8ee42c0f07fc9541ffe11762",
+  "pageVersion": "sha256:75eb639f0d632a089395e69b992ea3e519f474294916da5ea6efbaecea1e1a18",
   "claims": [
     {
       "id": "claim_e82e23efb81e4d41afe603dc31f2cc26",
       "statement": "AgentComposer._register_tool 在组装插件工具时，强制具有本地写操作 (WRITE) 或外部副作用 (EXTERNAL) 的工具必须直接暴露 (Exposure.EAGER)，并在 interrupts 中配置 approve/reject 审批拦截。",
       "evidence": [
         {
-          "resource": "repo://packages/agent-harness/src/vertical_harness/engine/compose.py#L131-L160",
-          "version": "repo-lines-v1:sha256:cf94655ff501fd05acaed3383f5265c948b2a4c848f29d8eeab6c610dbb7e35b:eyJzZWxlY3RlZExpbmVDb3VudCI6MzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJiZjExZWQ3MTNhYzUxOTdjY2U0MjM4ZGIyZDc4Mjg4YzM1NzBjNDVlMzNjYTcxNmNkOTA4OGQ2MDMzYThkNjEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQwOTNkY2UwMmZhM2U1YzBiOGMxYzg2YWM2N2U4NzYzZTNhMjQ5YWFhZDAxZjlhOGVkZTJkNjcyNzE1MGJkNzgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImYyNGRlOGRiYzU4YmIyMmRjNDIzNjhlODY3MWMyNmJhOWQ1NGVhZmEzZWE5OWJkYzM2N2ZlZmFiOTJhMzE2OTEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImU2NmY1OGQ5Nzg2OWQ5MDk0N2RkMDkxMmY1YmYwNDI5NjI1NTgwNjBmZjY1OWU5MzA0ZjkzMjgxMjdlMDQ0OGQifQ"
+          "resource": "repo://packages/agent-harness/src/vertical_harness/engine/compose.py#L242-L274",
+          "version": "repo-lines-v1:sha256:957b0233ae1919a19d6613817136d0f2dee670e3961c4178f4446a1b385d4ca7:eyJzZWxlY3RlZExpbmVDb3VudCI6MzMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJiZjExZWQ3MTNhYzUxOTdjY2U0MjM4ZGIyZDc4Mjg4YzM1NzBjNDVlMzNjYTcxNmNkOTA4OGQ2MDMzYThkNjEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImYyNGRlOGRiYzU4YmIyMmRjNDIzNjhlODY3MWMyNmJhOWQ1NGVhZmEzZWE5OWJkYzM2N2ZlZmFiOTJhMzE2OTEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdhZThjN2Q3MjFjNzhlNmY5NGNjN2VmYzZiYjhjODc5YmFkYjBiNmYwYjc3NjFmZDlmM2UyZjI3MmZmMzg3MGQifQ"
         },
         {
-          "resource": "repo://packages/agent-harness/src/vertical_harness/plugins/contracts.py#L155-L168",
-          "version": "repo-lines-v1:sha256:b6a995fd3a8bdd81cdd09e0d4e31d6bc431df6a0f682d0d2b8ece37d56bf11eb:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYzZDAwY2YyNzA5NjRkNDRhMTNkZmFjODc1MmIwOWZjYzQzNWIwZjE5YjMxNmFiY2Y4MWE3YWE2NGJiMTIyZDYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIwZDk5NTU5NzAyZDBlNTAxOWI3NjMzNjg5ZDdkZWZlNDZhMzFmMjg0MTJjM2I0ZmY1YzQ2NjE0YjU3YTZiNzMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjdjZjY5N2E1MDkwNmZiMjUzYjIzYTYxZWVjZjVhM2Q1MTBkYzc4ZTQwZjcyMDUxZGI4ZWRiYmJmNjI5NGRkNjAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRhOTUxOGUyM2JjZWIwOTZjZTVhM2Y2MGFmMzZlOTI3NmUwMTkxN2I5MTAzM2NlMTA0YTU4MWQwMmUxYTM0NjYifQ"
+          "resource": "repo://packages/agent-harness/src/vertical_harness/plugins/contracts.py#L204-L217",
+          "version": "repo-lines-v1:sha256:e74b88b334c9990303287387ffea13f961884f954b6f32d1c2dc31891337127f:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRlYzM2OTUyZWJjNDAwYjljOTdhOTJlNDQ1YzNjZjUwZDY5ODllZTgzNDcyNzBhNDU4ZDcxMjkxMTUwZTNmZDEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImRjZTA4MDc4MmU0ZDFiNDA3OThkZjlhMTE4YmU3MjlkNTAwZWZjZGYzZWY0ZmI5NDI3NDYxZDg5YTllMDkxMDQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU3NGVmZjYwYjVhNDdjNDY2OWY4MjA1YjkzZTc3MDhmNzAxMzExYWNhYzk2YzQ0ZTRjNjYzZTc1YzlhYmY1YTgifQ"
         }
       ]
     },
@@ -21,11 +21,11 @@
       "statement": "build_agent 通过 DEFAULT_FILESYSTEM_PERMISSIONS 常量与 FilesystemPermission 强制沙箱安全策略，禁止对 /skills/** 路径的写操作，以及对所有 .env 配置文件的读写操作。",
       "evidence": [
         {
-          "resource": "repo://packages/agent-harness/src/vertical_harness/engine/compose.py#L295-L296",
-          "version": "repo-lines-v1:sha256:89d03b3445ba83f5a34565e7f13fa2ce0e449a60f6d5e23f273b7c8a971c7037:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNWQ3NmQxMWZjNjk3MGUxYWMxM2YxMzgwZGQ5NWVmYTE0NmQxODdjMDViYmViNDZmMzJjYTYwMjgxY2JhNjVhOSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNjlmYjA2NjY3NGQ4YzYxMGM2ZjM2M2JiZmYwMDE1YTZjNTdiODA2MzlkOTEwMmI5MTE1ZWVjODE1ODdiMDQzZSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNjI2OWZkNWJkYTQ5OTQ4ZTFiMTZhOGUxNGU0ZjllY2ExMWMwZDE5MTk2YjZiNGJhZDY3YjMxNmJkZjg4ZjY3YiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZDQyMDlhMjQzMGRjNjAyNjg4OTlmZjU1NWJhOGViMDZhNzQzOTg3NDM0ODU3ZTkxMjIxNzNiOTc5MTZkYjM2MiJ9"
+          "resource": "repo://packages/agent-harness/src/vertical_harness/engine/compose.py#L455-L456",
+          "version": "repo-lines-v1:sha256:16243ea28e136ce022915453327d361712585abc570d7e69e72c74ec516c1fba:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNjY0NDVmOTAwNDYxYzFhYjJlMWFiODhkNGFlYzU4MWYzNDAzNTdmMTE0ZTM4NDk0MzBkNTFiZDNlNjhhMWI3NCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNjlmYjA2NjY3NGQ4YzYxMGM2ZjM2M2JiZmYwMDE1YTZjNTdiODA2MzlkOTEwMmI5MTE1ZWVjODE1ODdiMDQzZSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNjI2OWZkNWJkYTQ5OTQ4ZTFiMTZhOGUxNGU0ZjllY2ExMWMwZDE5MTk2YjZiNGJhZDY3YjMxNmJkZjg4ZjY3YiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZDQyMDlhMjQzMGRjNjAyNjg4OTlmZjU1NWJhOGViMDZhNzQzOTg3NDM0ODU3ZTkxMjIxNzNiOTc5MTZkYjM2MiJ9"
         },
         {
-          "resource": "repo://packages/agent-harness/src/vertical_harness/engine/compose.py#L54-L61",
+          "resource": "repo://packages/agent-harness/src/vertical_harness/engine/compose.py#L88-L95",
           "version": "repo-lines-v1:sha256:b7cba4b662907aef67d9f2da06b1be26be0717896920dfa9094c9eb6786a7ffa:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOTc4NTczZjIxNjVhZmNlOTM0ZmNjNDVjYjc0NjUxNTc1YmMyMTgxNWZhMzJlOWEwMGJjN2U2ZjQ3NDhlMmRmMCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZmFmYmEwNTI3YzM5NTNjNGI2ZTBlNWI1NzM5YmE4MzYxMmY4MDUzYmNkYzk0NjY3MzAxOTNjZDFkNTkwYjQwOCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiODdkZmZiZjEzYWQ3NWM1MzY1M2NjZGRhOTY3ODkxNDc3NmU1NmYyYzllNjFiMWFmZDVjYjg0YmU5ZDFhYTczOCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiY2E5MjEwZGFmMWI4NDA5MWQ2OTFlZGI3MjUyMzk3MGExY2FhMjFhZTM2Zjk4OTkzZTcwZjc3NjQxNDM3ZGNiOCJ9"
         }
       ]
@@ -35,32 +35,32 @@
       "statement": "AgentComposer._register_subagent 在处理插件子智能体时，禁止使用系统保留名称 general-purpose (RESERVED_SUBAGENT_NAMES) 或重复的子智能体名称，否则抛出 ValueError。",
       "evidence": [
         {
-          "resource": "repo://packages/agent-harness/src/vertical_harness/engine/compose.py#L163-L173",
+          "resource": "repo://packages/agent-harness/src/vertical_harness/engine/compose.py#L276-L286",
           "version": "repo-lines-v1:sha256:690709fbc2cecfc984d128d66f4faa5c61b7267516313c2f5d40132d2f39b784:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE0OTE1ZjQ3NWMwMTUyMzM0M2ViNGU4MjY3OWIwNzc3OWMzYWJiYWJiOWVkYWNhOTZkNzdmYjI0YzExOTdjNjciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVhNTQyNTg4MzE4ZDVjZWJlMjAyY2JkNGMzYTBmYjMzMWQ0YzI5NTE1NTRhYzdiOWU5MTY4MmM2ZDQ3YjZlYTAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE2MWFkNmI2YzM3ZjU1NTFlMTlmNDViNmU5OGM0ZjUyZGVlZTk0MjEwM2QwY2Q1NjUwMTdiZTdjNjRiYzA3YjIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImI2NDU3OTc2ZGI0YjM3MGRmMzA3YmI5N2RjZDIzODk0NTk0MGRjZDNkMWRkNWE0OTMwNWFlZTUzNDQ2NTYzNzkifQ"
         },
         {
-          "resource": "repo://packages/agent-harness/src/vertical_harness/engine/compose.py#L50-L51",
+          "resource": "repo://packages/agent-harness/src/vertical_harness/engine/compose.py#L77-L78",
           "version": "repo-lines-v1:sha256:ae94bbda5cbc07b120607da8b668661d308d6a398c6a7d135dd2d97407d68600:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiM2QzMGE1ZjAyZGI5ODg5OTk4N2M4ZWJhMmY3MzllMTFhZjM3ZDhjNzc5MWJiZDAzY2E3NTFkZTU3M2IxYTMyYiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMjRkNjg2NDFlNjBiY2JkZGUyN2Y0NmNkYzA1ZTJkMzRjZGIzM2MzZmViYjE2ZWUxMDllNjhmODMxNTk5YTFjOCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZDE1MDViYWI3MzUzZjU3Njg1ZjQwMjA4OGM1ZmJhMzNkNDhjY2YyNDBhNTE2MzAxMmFhMTNkM2RjNGRmMjYzMyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMjE1YWYzMTBlMDQ0ZDZkZGY3M2IyMzA5OWQzMmMxZmNkNGE0MzNhMjNiY2M3ZWI2ZjIyYjgxZmIzZWRkNzU0NSJ9"
         }
       ]
     },
     {
       "id": "claim_50e74930d77e4364ba270a89f217e54d",
-      "statement": "vertical_harness 划分为 config、plugins、storage、engine 四个正交子包，其中 engine.compose.AgentComposer 负责聚合插件工具、子智能体、技能资产并编排中间件栈。",
+      "statement": "vertical_harness 划分为 config、plugins、storage、engine 四个正交子包，其中 engine.compose.AgentComposer 负责聚合插件工作流、工具、子智能体、技能资产并编排中间件栈与监督策略。",
       "evidence": [
         {
-          "resource": "repo://packages/agent-harness/src/vertical_harness/__init__.py#L1-L45",
-          "version": "repo-lines-v1:sha256:04e1449f0d3e7d2dd39b1ab3334935e2b921840388260d25f79a5c05b67c574f:eyJzZWxlY3RlZExpbmVDb3VudCI6NDUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE5NDM0YmYyZWNiOTA4N2VjYzg4NWY0OGM4NWRhZTJiNGZmMmE1YjAzOGIyNDAyZmNjNDk1MzY0MTUxNTE5M2MiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIxOGJiZmQ4YjRhZWJmZjhlZjdjYmQ3ZGNjYzg1MmY4YTc4OGYxNDJjZmM3Y2RkN2JkNDVmOWUwMTI0ZTYzNjkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImEzNDk0MTcyMmMxYmU1OWFkNWM4OTE2ZWQ4NzVmMDFhYzg4YmIxZTgyYWNlNjQ5ZjVmYzIxNTc3N2RmNzM0NDMifQ"
+          "resource": "repo://packages/agent-harness/src/vertical_harness/__init__.py#L1-L87",
+          "version": "repo-lines-v1:sha256:81794cc44d2e9b121c9ba08fe1706241da4cc1268626c518cf5464f93a7f5bc4:eyJzZWxlY3RlZExpbmVDb3VudCI6ODcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE5NDM0YmYyZWNiOTA4N2VjYzg4NWY0OGM4NWRhZTJiNGZmMmE1YjAzOGIyNDAyZmNjNDk1MzY0MTUxNTE5M2MiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZhZmJhMDUyN2MzOTUzYzRiNmUwZTViNTczOWJhODM2MTJmODA1M2JjZGM5NDY2NzMwMTkzY2QxZDU5MGI0MDgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImYxMzJlYjFjNTU0NjY2YTNiYzQ2ZWM1MGFlZGE1MzZlOTAxM2U4YTA0ZGU1ZjA5YTVhNzgyZDVjNzBmZTI2ZDEifQ"
         },
         {
-          "resource": "repo://packages/agent-harness/src/vertical_harness/engine/compose.py#L65-L238",
-          "version": "repo-lines-v1:sha256:3b0d340fd905c169ea7246f08640cb8d052d234fed8a587710badcf9162e4d9a:eyJzZWxlY3RlZExpbmVDb3VudCI6MTc0LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiJiMGI3NzljYzQ3MGIzMWUzMjc2MDUzNjA2NGNjZWM3MzhjMTA5NTQ3NjMyZmRhNWIwNDlhODA4OTZjOWVlMDkxIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiIwMWJhNDcxOWM4MGI2ZmU5MTFiMDkxYTdjMDUxMjRiNjRlZWVjZTk2NGUwOWMwNThlZjhmOTgwNWRhY2E1NDZiIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiJjYTkyMTBkYWYxYjg0MDkxZDY5MWVkYjcyNTIzOTcwYTFjYWEyMWFlMzZmOTg5OTNlNzBmNzc2NDE0MzdkY2I4IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiI5YzI2NjBlZDI3NjcyYmEzZmVkYWRhYjVmMTQzOGZkZTFlZmE5N2VmMzQ0ZGY2MzlhNjQ5MmMwMWU4YTNmM2Q1In0"
+          "resource": "repo://packages/agent-harness/src/vertical_harness/engine/compose.py#L128-L367",
+          "version": "repo-lines-v1:sha256:78d63aed8d0503a040dce835a374b8e47f8c9624b0d794fabbe29b8c2990f020:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQwLCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiI0ODFhYWQ5NGY3NGY5NDRmMjJiMGJmMWU1OWU0MTk4MDZhOWM5M2FmNGEwYWZhMTg2MGY4MWExYjRkOTFiOWNmIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiJiOTgyYzQ0NTM5ODYwZGMxNDZiM2M2ZWQzNTZiNjQ1YTMzNzlhMTllZmVhYmUzOGZmM2RlN2NlYjlmMTY0NTVkIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI2MDUwYTkwMTU4YjAzYjVjOTBiYWY3ZDlhNDkxODc4YTRmOGM0YTVmOGIzYmEyMGJjYTM3YmM4NjJiNTIzZjllIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiI5NmRlYzc5ZTBjYWZhNGQ1YTIyNTgyMjU1ZjhlYjRkZjFmZDE0MTM4OWI2ZjJmMmMzYmQ3NmM2ZjAyYTI0N2JlIn0"
         }
       ]
     }
   ],
   "verification": {
     "by": "openwiki/0.7.2",
-    "at": "2026-10-18T07:44:10.514Z"
+    "at": "2026-10-18T12:40:07.975Z"
   }
 }

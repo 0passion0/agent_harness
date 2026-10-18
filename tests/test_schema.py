@@ -83,6 +83,8 @@ def test_citation_parser_and_toolkit_integration(tmp_path: Path):
     settings = HarnessSettings(_env_file=None, model="deepseek:deepseek-chat", workspace_root=tmp_path)
     composer = AgentComposer(settings=settings)
     composer.register_plugin(plugin, BuildServices(workspace_root=tmp_path))
+    assert len(composer.workflows) == 1
+    assert "citation_audit" in composer.workflows
     assert len(composer.gated_tools) == 1
     assert composer.uploads[0][0] == "/skills/research-citations-numeric-citation-audit/SKILL.md"
 
@@ -147,6 +149,9 @@ def test_settings_require_explicit_model(monkeypatch, capsys):
     monkeypatch.setenv("VA_MODEL", "deepseek:deepseek-flash")
     cli_main(["--list-plugins"])
     assert "research.citations" in capsys.readouterr().out
+
+    cli_main(["--list-workflows"])
+    assert "citation_audit" in capsys.readouterr().out
 
 
 

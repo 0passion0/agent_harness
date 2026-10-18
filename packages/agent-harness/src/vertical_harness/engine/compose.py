@@ -3,12 +3,19 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable
+from collections.abc import AsyncIterator, Iterable
+from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass, field
 from time import perf_counter
 from typing import Any
 
-from deepagents import FilesystemPermission, create_deep_agent
+from deepagents import (
+    FilesystemPermission,
+    GeneralPurposeSubagentProfile,
+    HarnessProfile,
+    create_deep_agent,
+    register_harness_profile,
+)
 from deepagents.backends.protocol import BackendProtocol
 from deepagents.middleware import SkillsMiddleware
 from langchain.agents.middleware import (
@@ -24,7 +31,14 @@ from langgraph.graph.state import CompiledStateGraph
 from langgraph.store.base import BaseStore
 
 from vertical_harness.config.settings import HarnessSettings
+from vertical_harness.engine.mcp import aopen_mcp_tools
+from vertical_harness.engine.memory import UserMemoryMiddleware
+from vertical_harness.engine.policy import (
+    SupervisorPolicyMiddleware,
+    build_workflow_interrupt_configs,
+)
 from vertical_harness.engine.routing import init_configured_model, make_router
+from vertical_harness.observability import tracing_session
 from vertical_harness.plugins.contracts import (
     BuildServices,
     DomainPlugin,
@@ -33,9 +47,15 @@ from vertical_harness.plugins.contracts import (
     SkillAsset,
     SubAgentSpec,
     ToolContribution,
+    WorkflowContribution,
 )
 from vertical_harness.plugins.discovery import discover_plugins
-from vertical_harness.storage.backends import compose_backend, create_store
+from vertical_harness.storage.backends import (
+    aopen_checkpointer,
+    aopen_store,
+    compose_backend,
+    create_store,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -47,8 +67,22 @@ BASE_PROMPT = (
     "Do not claim that an action was completed unless a tool confirms it."
 )
 
+# 工作流监督智能体系统提示词：强调任务委派、进度跟踪与结果验收边界
+SUPERVISOR_PROMPT = (
+    "You are a workflow supervisor agent. Delegate domain workflows only to registered "
+    "workflow subagents, monitor task progress, and validate structured outputs before "
+    "finalizing. Do not fabricate workflow execution results."
+)
+
 # 保留的内置子智能体名称，插件不得覆盖
 RESERVED_SUBAGENT_NAMES = frozenset({"general-purpose"})
+
+# 纯监督者模式下可按需排除的内置文件系统与命令执行工具集合
+SUPERVISOR_EXCLUDED_FS_TOOLS: frozenset[str] = frozenset(
+    {"ls", "read_file", "write_file", "edit_file", "glob", "grep", "execute"}
+)
+
+_RESERVED_TOOL_NAMES = SUPERVISOR_EXCLUDED_FS_TOOLS | {"delete", "task", "write_todos"}
 
 # 默认虚拟文件系统安全权限策略：只读保护 /skills/ 目录，禁止读写任何 .env 敏感配置文件
 DEFAULT_FILESYSTEM_PERMISSIONS: tuple[FilesystemPermission, ...] = (
@@ -61,11 +95,42 @@ DEFAULT_FILESYSTEM_PERMISSIONS: tuple[FilesystemPermission, ...] = (
 )
 
 
+def register_supervisor_harness_profile(
+    provider_or_model: str,
+    *,
+    exclude_filesystem_tools: bool = True,
+    disable_general_purpose_subagent: bool = True,
+) -> HarnessProfile:
+    """为指定模型或提供商注册纯监督者模式的 Deep Agents `HarnessProfile`。
+
+    用于限制主智能体直接操作底层文件系统或派生通用子智能体，强制其仅通过已注册的
+    LangGraph 工作流插件（CompiledSubAgent / AsyncSubAgent）完成任务调度。
+
+    :param provider_or_model: 提供商前缀（如 'openai'、'deepseek'）或完整模型标识。
+    :param exclude_filesystem_tools: 是否屏蔽内置 ls/read_file/write_file/execute 等工具。
+    :param disable_general_purpose_subagent: 是否禁用默认自动注入的 general-purpose 子智能体。
+    :return: 已注册的 HarnessProfile 实例。
+    """
+    profile = HarnessProfile(
+        excluded_tools=SUPERVISOR_EXCLUDED_FS_TOOLS if exclude_filesystem_tools else frozenset(),
+        general_purpose_subagent=GeneralPurposeSubagentProfile(
+            enabled=not disable_general_purpose_subagent
+        ),
+    )
+    register_harness_profile(provider_or_model, profile)
+    logger.debug(
+        "supervisor_harness_profile_registered",
+        extra={"event_fields": {"target": provider_or_model}},
+    )
+    return profile
+
+
 @dataclass(slots=True)
 class AgentComposer:
-    """插件贡献聚合器：负责校验工具、子智能体、技能与中间件并组装 Deep Agent。"""
+    """插件贡献聚合器：负责校验工作流、工具、子智能体、技能与监督策略中间件并组装 Deep Agent。"""
 
     settings: HarnessSettings
+    workflows: dict[str, WorkflowContribution] = field(default_factory=dict)
     eager_tools: list[BaseTool] = field(default_factory=list)
     gated_tools: list[BaseTool] = field(default_factory=list)
     plugin_middleware: list[AgentMiddleware[Any, Any, Any]] = field(default_factory=list)
@@ -73,6 +138,7 @@ class AgentComposer:
     interrupts: dict[str, bool | InterruptOnConfig] = field(default_factory=dict)
     uploads: list[tuple[str, bytes]] = field(default_factory=list)
     instructions: list[str] = field(default_factory=lambda: [BASE_PROMPT])
+    prompt_overrides: dict[str, str] = field(default_factory=dict)
     _tool_names: set[str] = field(default_factory=set)
     _subagent_names: set[str] = field(default_factory=set)
     _skill_paths: set[str] = field(default_factory=set)
@@ -102,11 +168,20 @@ class AgentComposer:
         )
         contributed = plugin.build(services)
 
+        if manifest.plugin_id in self.prompt_overrides:
+            contributed = contributed.model_copy(
+                update={"instructions": self.prompt_overrides[manifest.plugin_id]}
+            )
+
         if instruction := contributed.format_system_instruction(manifest.plugin_id):
             self.instructions.append(instruction)
 
-        for tool_item in contributed.tools:
-            self._register_tool(tool_item)
+        for workflow in contributed.workflows:
+            self._register_workflow(manifest.plugin_id, workflow)
+
+        if not self.settings.supervisor_only:
+            for tool_item in contributed.tools:
+                self._register_tool(tool_item)
 
         self.plugin_middleware.extend(contributed.middleware)
 
@@ -121,9 +196,45 @@ class AgentComposer:
             extra={
                 "event_fields": {
                     "plugin_id": manifest.plugin_id,
-                    "tool_count": len(contributed.tools),
+                    "workflow_count": len(contributed.workflows),
+                    "tool_count": 0 if self.settings.supervisor_only else len(contributed.tools),
                     "skill_count": len(contributed.skills),
-                    "subagent_count": len(contributed.subagents),
+                    "subagent_count": len(contributed.subagents) + len(contributed.workflows),
+                }
+            },
+        )
+
+    def _register_workflow(self, plugin_id: str, workflow: WorkflowContribution) -> None:
+        """注册插件贡献的 LangGraph 工作流并转换为原生 CompiledSubAgent 或 AsyncSubAgent。
+
+        :param plugin_id: 所属插件唯一标识符。
+        :param workflow: 经契约校验的 WorkflowContribution 实例。
+        :raises ValueError: 当工作流名称重复或使用了保留名称时抛出。
+        """
+        name = workflow.name
+        if name in self.workflows or name in self._subagent_names or name in RESERVED_SUBAGENT_NAMES:
+            raise ValueError(f"Duplicate/reserved subagent name: {name}")
+        resolved_mode = workflow.resolve_mode(self.settings.workflow_mode)
+        spec = workflow.to_subagent_spec(
+            preferred_mode=self.settings.workflow_mode,
+            durability_override=self.settings.durability,
+        )
+        self.workflows[name] = workflow
+        self._register_subagent(spec)
+        self.interrupts.update(
+            build_workflow_interrupt_configs(
+                self.workflows,
+                preferred_mode=self.settings.workflow_mode,
+            )
+        )
+        logger.debug(
+            "workflow_registered",
+            extra={
+                "event_fields": {
+                    "plugin_id": plugin_id,
+                    "workflow_name": name,
+                    "mode": resolved_mode.value,
+                    "requires_approval": workflow.requires_approval,
                 }
             },
         )
@@ -136,6 +247,8 @@ class AgentComposer:
         """
         name = item.name
         logger.debug("tool_registration_started", extra={"event_fields": {"tool_name": name}})
+        if name in _RESERVED_TOOL_NAMES:
+            raise ValueError(f"Reserved tool name: {name}")
         if name in self._tool_names:
             raise ValueError(f"Duplicate tool name: {name}")
         self._tool_names.add(name)
@@ -217,6 +330,20 @@ class AgentComposer:
         if (router := make_router(self.settings)) is not None:
             stack.append(router)
 
+        if self.workflows or self.settings.supervisor_only:
+            allowed_names = (
+                frozenset(self._subagent_names)
+                if self.settings.supervisor_only
+                else (frozenset(self._subagent_names) | RESERVED_SUBAGENT_NAMES)
+            )
+            stack.append(
+                SupervisorPolicyMiddleware(
+                    workflows=self.workflows,
+                    allowed_subagents=allowed_names,
+                    enforce_allowlist=True,
+                )
+            )
+
         stack.extend(self.plugin_middleware)
 
         if self.gated_tools:
@@ -230,11 +357,14 @@ class AgentComposer:
 
     @property
     def system_prompt(self) -> str:
-        """合并基础系统提示词与所有插件指令。
+        """合并基础系统提示词、监督者规范提示词与所有插件指令。
 
         :return: 完整系统提示词字符串。
         """
-        return "\n".join(self.instructions)
+        prompt_parts = list(self.instructions)
+        if (self.workflows or self.settings.supervisor_only) and SUPERVISOR_PROMPT not in prompt_parts:
+            prompt_parts.insert(1, SUPERVISOR_PROMPT)
+        return "\n".join(prompt_parts)
 
 
 def build_agent(
@@ -242,15 +372,20 @@ def build_agent(
     *,
     checkpointer: BaseCheckpointSaver[Any] | bool | None = None,
     store: BaseStore | None = None,
+    mcp_tools: Iterable[ToolContribution] | None = None,
+    prompt_overrides: dict[str, str] | None = None,
 ) -> CompiledStateGraph[Any, RunContext, Any, Any]:
-    """从独立分发的领域插件组装原生框架对象并构建 Deep Agent。
+    """从独立分发的领域插件组装原生框架对象并构建 Deep Agent Supervisor。
 
     :param settings: 经校验的宿主配置对象。
     :param checkpointer: 可选的外部管理持久化检查点保存器（未指定时使用内存检查点 InMemorySaver）。
     :param store: 可选的 LangGraph 长期存储实例（未指定时根据配置自动创建 SQLite 或内存存储）。
+    :param mcp_tools: 由异步宿主管理生命周期的 MCP 工具；通常使用 aopen_agent 自动加载。
     :return: 编译完成的 Deep Agent LangGraph 状态图可运行对象。
     :raises ValueError: 当工具名称、子智能体名称冲突，或技能路径重复、副作用工具暴露模式非法时抛出。
     """
+    if settings.mcp_servers and not settings.supervisor_only and mcp_tools is None:
+        raise ValueError("Configured MCP servers require async with aopen_agent(settings)")
     started = perf_counter()
     logger.info("agent_build_started")
     root = settings.resolved_workspace_root
@@ -258,11 +393,24 @@ def build_agent(
     logger.debug("workspace_prepared")
 
     active_store = store if store is not None else create_store(settings)
-    backend = compose_backend(root, active_store, memory_route=settings.memory_route)
+    backend = compose_backend(
+        root, active_store if settings.enable_memory else None,
+        memory_route=settings.memory_route,
+    )
     services = BuildServices(workspace_root=root, store=active_store)
 
-    composer = AgentComposer(settings=settings)
+    overrides = prompt_overrides or {}
+    unknown = set(overrides) - {"main", *settings.enabled_plugins}
+    if unknown or any(not value.strip() for value in overrides.values()):
+        raise ValueError("Prompt overrides require enabled plugin IDs or 'main', and nonempty text")
+    composer = AgentComposer(
+        settings=settings, instructions=[overrides.get("main", BASE_PROMPT)],
+        prompt_overrides=overrides,
+    )
     composer.register_plugins(discover_plugins(settings.enabled_plugins), services)
+    if not settings.supervisor_only:
+        for item in mcp_tools or ():
+            composer._register_tool(item)
 
     if composer.uploads:
         logger.debug(
@@ -282,9 +430,21 @@ def build_agent(
         )
 
     middleware = composer.build_middleware_stack(backend)
+    if settings.enable_memory:
+        middleware.append(UserMemoryMiddleware(settings, active_store))
+
+    permissions = list(DEFAULT_FILESYSTEM_PERMISSIONS)
+    if not settings.enable_memory:
+        permissions.append(
+            FilesystemPermission(
+                operations=["read", "write"],
+                paths=[f"{settings.normalized_memory_route}**"], mode="deny",
+            )
+        )
 
     logger.debug("agent_compilation_started")
     agent = create_deep_agent(
+        name="vertical-agent",
         model=init_configured_model(settings),
         tools=composer.eager_tools,
         system_prompt=composer.system_prompt,
@@ -292,7 +452,7 @@ def build_agent(
         skills=["/skills/"] if composer.uploads and not composer.gated_tools else None,
         subagents=composer.subagents,
         middleware=middleware,
-        permissions=list(DEFAULT_FILESYSTEM_PERMISSIONS),
+        permissions=permissions,
         interrupt_on=composer.interrupts or None,
         context_schema=RunContext,
         checkpointer=checkpointer if checkpointer is not None else InMemorySaver(),
@@ -302,6 +462,7 @@ def build_agent(
         "agent_build_completed",
         extra={
             "event_fields": {
+                "workflow_count": len(composer.workflows),
                 "tool_count": len(composer.eager_tools) + len(composer.gated_tools),
                 "subagent_count": len(composer.subagents),
                 "duration_ms": round((perf_counter() - started) * 1000, 2),
@@ -311,10 +472,40 @@ def build_agent(
     return agent
 
 
+@asynccontextmanager
+async def aopen_agent(
+    settings: HarnessSettings,
+    *,
+    checkpointer: BaseCheckpointSaver[Any] | bool | None = None,
+    store: BaseStore | None = None,
+    prompt_overrides: dict[str, str] | None = None,
+) -> AsyncIterator[CompiledStateGraph[Any, RunContext, Any, Any]]:
+    """管理 MCP 会话与缺省异步存储；在上下文内通过 ainvoke/astream 使用智能体。
+
+    调用方提供的 store/checkpointer 仍由调用方关闭。MCP 连接在构建异常、运行异常、
+    取消或正常退出时均释放；不得在另一个任务中退出此上下文。
+    """
+    async with AsyncExitStack() as stack:
+        stack.enter_context(tracing_session())
+        if store is None:
+            store = await stack.enter_async_context(aopen_store(settings))
+        if checkpointer is None:
+            checkpointer = await stack.enter_async_context(aopen_checkpointer(settings))
+        tools = await stack.enter_async_context(aopen_mcp_tools(settings))
+        yield build_agent(
+            settings, store=store, checkpointer=checkpointer, mcp_tools=tools,
+            prompt_overrides=prompt_overrides,
+        )
+
+
 __all__ = [
     "BASE_PROMPT",
     "DEFAULT_FILESYSTEM_PERMISSIONS",
     "RESERVED_SUBAGENT_NAMES",
+    "SUPERVISOR_EXCLUDED_FS_TOOLS",
+    "SUPERVISOR_PROMPT",
     "AgentComposer",
+    "aopen_agent",
     "build_agent",
+    "register_supervisor_harness_profile",
 ]

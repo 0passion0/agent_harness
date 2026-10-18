@@ -9,6 +9,8 @@ from typing import Annotated, Any, Literal
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from vertical_harness.config.mcp import MCPServerConfig, MCPServerName
+
 
 class StoreBackendType(StrEnum):
     """长期记忆与状态存储后端类型枚举。"""
@@ -56,10 +58,28 @@ class HarnessSettings(BaseSettings):
     store_backend: Literal["sqlite", "memory"] = StoreBackendType.SQLITE
     # 自定义 SQLite 数据库文件路径或 ':memory:'
     store_db_path: Path | Literal[":memory:"] | None = None
+    # 自定义 LangGraph Checkpointer SQLite 数据库文件路径或 ':memory:'
+    checkpoint_db_path: Path | Literal[":memory:"] | None = None
+    # LangGraph 检查点持久化同步级别：默认强制开启 'sync' 以保证每步检查点同步落盘（支持 Time Travel / Fork）
+    durability: Literal["sync", "async", "exit"] = "sync"
+    # LangGraph 工作流插件默认接入模式：'compiled'（本地预编译图）或 'async'（Agent Protocol graph_id）
+    workflow_mode: Literal["compiled", "async"] = "compiled"
+    # 是否启用纯监督者模式（Supervisor 仅委派已注册工作流，禁用默认 general-purpose 子智能体与直接业务工具）
+    supervisor_only: bool = False
     # 长期记忆在虚拟文件系统中的路由路径前缀，默认 '/memories/'
     memory_route: MemoryRouteStr = "/memories/"
+    # 关闭后不挂载/召回长期记忆，也不采集偏好或后台整合输入；不删除历史数据。
+    enable_memory: bool = True
+    enable_user_preferences: bool = False
+    enable_memory_consolidation: bool = False
+    # 独立 worker 按每个用户的持久化到期时间运行，默认每 7 天一次。
+    memory_consolidation_interval_days: Annotated[int, Field(ge=1, le=365)] = 7
+    # 可使用较小的工具调用模型；默认复用主模型及其连接配置。
+    memory_model: NonEmptyStr | None = None
     # 宿主显式启用的插件 ID 白名单列表
     enabled_plugins: list[str] = Field(default_factory=lambda: ["research.citations"])
+    # MCP 服务名到连接配置的映射，VA_MCP_SERVERS 使用 JSON 对象。
+    mcp_servers: dict[MCPServerName, MCPServerConfig] = Field(default_factory=dict)
     # 是否启用规划中间件（TodoListMiddleware）
     enable_planning: bool = True
     # 是否启用技能门控（未激活技能时隐藏对应工具）
@@ -92,6 +112,20 @@ class HarnessSettings(BaseSettings):
         if str(self.store_db_path) == ":memory:":
             return ":memory:"
         return Path(self.store_db_path).expanduser().resolve()
+
+    @property
+    def resolved_checkpoint_target(self) -> Path | Literal[":memory:"]:
+        """解析 LangGraph Checkpointer SQLite 数据库在磁盘上的目标路径或内存数据库标识符。
+
+        :return: 解析后的检查点 SQLite 数据库绝对 Path 对象，或内存数据库字面量 ':memory:'。
+        """
+        if self.checkpoint_db_path is None:
+            if self.store_backend == StoreBackendType.MEMORY:
+                return ":memory:"
+            return self.resolved_workspace_root / "checkpoints.sqlite"
+        if str(self.checkpoint_db_path) == ":memory:":
+            return ":memory:"
+        return Path(self.checkpoint_db_path).expanduser().resolve()
 
     @property
     def normalized_memory_route(self) -> str:

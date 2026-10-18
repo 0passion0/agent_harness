@@ -8,10 +8,10 @@ sources:
     resource: repo://packages/agent-harness/src/vertical_harness/cli.py
   - id: openwiki-source-21ddae62bfa0ad804a7ed2b8
     resource: repo://packages/research-citation/src/research_citation/skills/numeric-citation-audit/SKILL.md
-generated: { by: "antigravity", at: "2026-10-18T04:37:34.297Z" }
+generated: { by: "antigravity", at: "2026-10-18T10:47:09.347Z" }
 verified:
   - by: openwiki/0.7.2
-    at: 2026-10-18T07:44:10.514Z
+    at: 2026-10-18T12:40:07.975Z
 ---
 
 # 数字引用审计端到端流程
@@ -47,18 +47,24 @@ sequenceDiagram
 
 ## 2. 各阶段关键机制分解
 
-### 2.1 启动与运行时上下文注入 (`cli.py`)
+### 2.1 启动、存储与检查点持久化 (`cli.py`)
 在 [packages/agent-harness/src/vertical_harness/cli.py](../../packages/agent-harness/src/vertical_harness/cli.py) 的 `main` 与 `_invoke_prompt` 函数中：
-- 用户输入通过 `_build_parser()` 解析后的命令行参数传入。
+- 用户输入通过 `_build_parser()` 解析后的命令行参数传入，支持 `--list-plugins`、`--list-workflows` 与 `--history` 快速查看元数据。
 - `_invoke_prompt` 构造包含 `thread_id` 的 `RunnableConfig` 以及包含 `tenant_id`、`user_id` 和 `task_tier` 的 `RunContext`。
-- 系统使用 `open_store(settings)` 打开持久化存储，调用 `build_agent(settings, store=store)`，并在执行 `agent.invoke` 时注入 `config=run_config` 与 `context=run_context`，保证多租户和模型路由策略的上下文对齐。
+- 系统使用 `open_store(settings)` 与 `open_checkpointer(settings)` 打开持久化存储与 SQLite 检查点，调用 `build_agent(settings, store=store, checkpointer=checkpointer)`。
+- 若指定了 `--checkpoint-id`、`--fork-thread-id` 或 `--update-state`，路由至 `time_travel_invoke` 执行 Time Travel 回溯或状态分叉；否则执行常规 `agent.invoke` 并绑定 `durability="sync"`，保证每一步中间状态严格落盘。
 
-### 2.2 提示词引导与技能激活
+### 2.2 双接入路径：Supervisor 确定性工作流委派 vs 渐进式技能门控
+系统支持两种维度的引用核查接入：
+- **确定性工作流委派 (`citation_audit`)**：主智能体 Supervisor 遵循 `SUPERVISOR_PROMPT` 规范，将结构化手稿与参考文献直接委派给 `CompiledSubAgent` 工作流 `citation_audit`。经 `SupervisorPolicyMiddleware` 执行租户 RBAC、依赖校验与重试熔断，由工作流内部确定性完成三层状态隔离校验与比对，零额外 LLM 开销。
+- **对话式渐进技能门控 (`numeric-citation-audit`)**：适用于直接对话场景，通过 `SkillsMiddleware` 激活技能文档后按需暴露工具。
+
+### 2.3 提示词引导与技能激活
 - 插件在 [plugin.py](../../packages/research-citation/src/research_citation/plugin.py) 的 `PluginContribution` 中注入了系统指令：`"Use numeric-citation-audit skill for bracket-numbered references. Report only verified inconsistencies."`。
 - 大模型根据系统提示词引导，识别出需要处理方括号数字引用。
 - `SkillsMiddleware` 拦截并感知到虚拟 `/skills/research-citations-numeric-citation-audit/SKILL.md` 下的技能文档（源自 [packages/research-citation/src/research_citation/skills/numeric-citation-audit/SKILL.md](../../packages/research-citation/src/research_citation/skills/numeric-citation-audit/SKILL.md)）。
 
-### 2.3 门控工具按需暴露 (`include_tools`)
+### 2.4 门控工具按需暴露 (`include_tools`)
 - 在 `numeric-citation-audit/SKILL.md` 的 YAML frontmatter 中明确声明了：
   ```yaml
   metadata:
@@ -66,7 +72,7 @@ sequenceDiagram
   ```
 - `SkillsMiddleware` 读取该元数据后，将由 `ResearchCitationToolkit` 导出且初始隐藏的 `research_citations_scan_numeric` 工具动态注入至当前轮次大模型的工具可见列表中，实现了工具的**渐进式暴露**，避免无用工具干扰模型注意力。
 
-### 2.4 确定性算法核查与输出边界 (`checker/`)
+### 2.5 确定性算法核查与输出边界 (`checker/`)
 - 大模型调用 [checker/tools.py](../../packages/research-citation/src/research_citation/checker/tools.py) 中的 `scan_numeric`，传入拆解后的正文纯文本与参考文献列表。
 - 工具内部调用 `evaluate_references` 与 `extract_cited_indices` 执行严格的正则表达式解析与集合边界比对：
   - 提取正文中所有引用的数字标号（如 `[1]` 与 `[3]`）。
@@ -74,11 +80,12 @@ sequenceDiagram
   - 针对列表中存在但在正文中未被引用的条目标记 `uncited`（如索引 2 未被引用）。
 - 工具返回 `ReferenceCheckResult` JSON 序列化字符串，附带明确的作用域声明：`verified_scope = "Numeric reference indexes only; not evidence or semantic validity"`。
 
-### 2.5 最终报告生成
+### 2.6 最终报告生成与 Time Travel 分叉
 根据 `SKILL.md` 中规定的操作流程（SOP）：
 1. 明确区分已确认的引用标号错误与论文语义层面的真实性。
 2. 仅列出问题索引与可操作的修改清单，**严禁凭空断言学术造假或违规**。
 3. 若输入为作者-年份引用（Author-Date），主动说明本数字核查工具不适用。
+4. 审计结论同步写入检查点；若需要修正手稿或参考文献，可直接通过 CLI `--checkpoint-id` 原地恢复或 `--fork-thread-id` 分叉重新核查。
 
 ## 相关页面
 

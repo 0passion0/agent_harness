@@ -22,6 +22,10 @@
 | Connectors | LangChain MCPAdapter（beta） | 领域认证、服务配置、限流 | 自己写 MCP 协议 |
 | Interface | Streaming/ACP/AG-UI 等现成协议 | 产品 UI 与业务审批 | 重新设计 Agent 通讯协议 |
 
+MCP 接入由 `config.mcp` 校验 `VA_MCP_SERVERS`，`engine.mcp.aopen_mcp_tools` 使用显式 `StdioTransport` / `StreamableHttpTransport` 与 LangChain 原生 `MCPAdapter` 发现工具。每个服务独立会话，工具加服务名前缀后作为 `ToolContribution` 进入现有去重与 HITL 注册流程；副作用级别由宿主配置，默认 `external`。`aopen_agent` 在同一异步任务内持有会话与缺省存储，退出时反向关闭；stdio 关闭跨上下文 keep-alive，避免遗留子进程。CLI 在启用 MCP 时使用此异步入口，Time Travel 同时使用异步持久化 API。纯监督者模式不连接 MCP，查询检查点历史不执行 MCP 发现。
+
+Tool Annotations 直接复用 `MCPAdapter` 的 `metadata.mcp.tool.annotations`（snake_case），通过 `ToolContribution.mcp_annotations` 读取并在 HITL 请求描述中展示。工具命名空间重命名保留原生元数据。注解只是服务端提示，宿主 `effect` 继续独立控制审批；`idempotent_hint` 不作为自动重试或去重依据，缺省注解不自行补全。
+
 ## 2. 六个模块组（推荐目录边界）
 
 1. `composition`：应用唯一装配点；扫描分发包入口、校验清单、聚合 LangChain 原生对象，最后调用一次 `create_deep_agent()`。
@@ -102,7 +106,63 @@ INFO 记录应用生命周期与业务结果统计，DEBUG 展开完整阶段和
 
 具体配置及库集成示例见 README 的“日志”一节。
 
-## 10. 官方资料
+## 10. Deep Agents Supervisor + LangGraph Workflow Plugins 架构
+
+针对确定性业务工作流监督场景，框架采用 **Supervisor + Plugin Registry + LangGraph Workflow Plugins** 三层解耦架构，原生对接 Deep Agents 的 `CompiledSubAgent` 与 `AsyncSubAgent`，无需将每个 LangGraph 工作流手动包装为普通 `@tool` Adapter：
+
+- **Supervisor（主智能体）**：唯一负责理解需求、制定计划、委派已注册工作流、查询状态与验收结果的智能体，不直接操控工作流内部节点。
+- **Workflow Plugin Registry（插件工作流注册表）**：通过 `WorkflowContribution` 与 `discover_workflow_graphs` 维护工作流清单、模式切换（`compiled` / `async`）及权限策略，不引入额外 LLM。
+- **Workflow Plugin（纯 LangGraph 工作流）**：各插件导出独立的预编译 `StateGraph`，内部可完全由确定性节点组成。
+
+### 10.1 工作流三层数据契约（强制校验）
+
+每个 `WorkflowContribution` 必须显式定义并区分三层状态 Schema（由 `WorkflowContribution` 在注册期强制校验）：
+
+| 状态层 | 字段 / 别名 | 职责与安全边界 |
+|---|---|---|
+| `InternalState` | `internal_state` | 定义工作流内部节点流转使用的数据（如 `validated_input`、`evaluation_result`），禁止外部调用方或 LLM 直接写入，也不得泄露到最终输出 |
+| `input_schema` | `input_schema` | 定义调用方/Supervisor 需要提供的数据（继承 `WorkflowInputState`，兼容 `messages` 协议），由入口节点统一完成参数提取与 Pydantic 校验 |
+| `output_schema` | `output_schema` | 定义工作流最终返回给调用方/Supervisor 的数据（继承 `WorkflowOutputState`，包含 `messages` 与 `structured_response`） |
+
+### 10.2 双运行模式（`CompiledSubAgent` vs `AsyncSubAgent`）
+
+- `WorkflowMode.COMPILED`（默认）：通过 `CompiledSubAgent(runnable=...)` 在单进程内挂载预编译图，自动继承父图 Checkpointer 并绑定 `durability="sync"`，适合短工作流与强确定性同步验收。
+- `WorkflowMode.ASYNC`：通过 `AsyncSubAgent(graph_id=...)` 对接 Agent Protocol（支持 `start_async_task`、`check_async_task`、`update_async_task`、`cancel_async_task`、`list_async_tasks`），适合长耗时任务与并行生命周期管理。
+
+### 10.3 确定性监督策略层（`SupervisorPolicyMiddleware`）
+
+由 `SupervisorPolicyMiddleware` 与 `build_workflow_interrupt_configs` 在 `Dispatch / Monitor / Validate` 阶段执行确定性治理：
+
+1. **插件白名单与租户权限（RBAC）**：拦截未注册工作流及未授权租户（`allowed_tenants`）。
+2. **任务依赖关系（`depends_on`）**：基于当前会话消息历史校验前置工作流是否已成功完成。
+3. **最大委派/重试次数（`max_dispatches`）**：防止主智能体对同一工作流无限循环重试。
+4. **幂等性复用（`idempotent`）**：对相同工作流与任务载荷直接复用已验收结果。
+5. **结果模式校验（`result_schema`）**：对工作流返回 JSON 执行 Pydantic 确定性校验。
+6. **高风险任务审批（HITL）**：利用 `InterruptOnConfig(when=...)` 仅在委派 `WRITE` / `EXTERNAL` 工作流时触发人工审批。
+
+### 10.4 智能体与工作流 Time Travel / Time Travel Fork（`durability="sync"`）
+
+- 默认启用 `durability="sync"`，确保主智能体与子工作流在每一步节点完成后同步落盘检查点（支持 `SqliteSaver` / `AsyncSqliteSaver`）。
+- 提供 `get_checkpoint_history`、`get_checkpoint_snapshot`、`fork_checkpoint` 与 `time_travel_invoke`（及对应异步接口），支持按历史 `checkpoint_id` 原地回放、同线程状态修改分叉（`--update-state`）或跨线程克隆分叉（`--fork-thread-id`）。
+- 由于 `SupervisorPolicyMiddleware` 直接从当前检查点的 `state["messages"]` 重建调度计数与完成状态，执行 Time Travel 回溯或分叉后，监督策略状态自动与回溯点保持严格一致。
+
+## 11. 用户记忆与独立后台整合
+
+`engine.memory` 复用 LangMem `create_memory_manager`，以 Pydantic `UserPreferences` / `ConsolidatedMemory` 作为有界档案，通过原生 LangChain middleware 接入同步和异步 Deep Agent。既有 `/memories/` 文件路由仍供工具读写，不自动注入文件内容。`enable_memory` 是总开关，自动偏好和后台整合分别选择启用；检查点生命周期独立。
+
+新自动记忆按可信运行上下文的 tenant/user 摘要隔离，包含偏好、长期事实、不可逆哈希回执，以及临时输入队列。偏好在回答前更新；整合由独立 `--memory-worker` 进程每分钟检查持久化周计划，默认从每个用户首次采集起每 7 天处理一次。任务不依赖对话进程存活，重启后续跑；没有新输入不消耗模型调用。`--consolidate-memory` 提供系统调度器单次执行入口。
+
+每批输入有大小限制；LangMem 更新单个结构化档案，Store `batch` 将摘要与队列消费一并提交。成功队列原文删除，仅保留摘要和去重回执；失败批次保留待重试，成功批次不重复运行。只提取用户明确陈述，避免固化模型猜测，并将召回内容标为低信任参考。新命名空间与原有文件记忆共存，不迁移或删除旧记忆。API 及配置、数据保留说明见 README。
+
+当前调度面向单 worker、共享 SQLite；宿主须串行化同用户偏好写入，并对线程身份访问负责。多副本需要分布式租约及写冲突控制。Store 不参与检查点回滚，不能将 Time Travel 解释为删除已学习的用户记忆。
+
+## 12. 独立评测、反馈与回归数据
+
+`observability` 只负责 LangSmith 配置和 tracing 生命周期，不负责模型配置。`evaluation` 独立包通过既有 `build_agent` / `aopen_agent` 与插件发现契约适配评测目标，`vertical-eval` 只解析参数与调用服务，不向对话主流程加入评测逻辑。`targets` 管隔离运行和候选注入，`scoring` 管确定性断言与 OpenEvals，`offline` 管 LangSmith 实验及 LangMem 候选比较，`feedback` 管用户反馈和参考案例转换，`datasets` 管固定快照，`online` 管独立 worker。配置和 Python 公共接口位于该包，模型初始化复用 `VA_*`。
+
+生产 trace 使用可关联 run UUID；在线抽样评测写入模型来源的版本化反馈，用户反馈单独以 `user_feedback` 保存。明确修正答案才提升为 Regression Dataset 的参考输出；来源 run / feedback UUID 保留，重复导入保留首个案例。离线优化从训练反馈生成候选，用同一 held-out 快照比较并输出逐案例回退，不修改生产配置。详细命令与边界见 [EVALUATION.md](EVALUATION.md)。
+
+## 13. 官方资料
 
 1. https://docs.langchain.com/oss/python/deepagents/overview
 2. https://docs.langchain.com/oss/python/deepagents/customization

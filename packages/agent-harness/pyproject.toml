@@ -9,12 +9,15 @@ description = "Composable Deep Agents harness with Python distribution plugins"
 requires-python = ">=3.11"
 dependencies = [
   "deepagents>=0.7.22,<0.8",
-  "langchain>=1.4,<2",
+  "langchain[mcp]>=1.4,<2",
   "langchain-deepseek>=0.1",
   "langgraph>=1,<2",
   "langgraph-checkpoint-sqlite>=3,<4",
   "pydantic>=2.10,<3",
   "pydantic-settings>=2.6,<3",
+  "langmem>=0.0.30,<0.1",
+  "langsmith>=0.14.11,<0.15",
+  "openevals>=0.1,<0.2",
 ]
 
 [project.optional-dependencies]
@@ -23,6 +26,7 @@ dev = ["pytest>=8", "ruff>=0.9"]
 
 [project.scripts]
 vertical-agent = "vertical_harness.cli:main"
+vertical-eval = "vertical_harness.evaluation.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/vertical_harness"]

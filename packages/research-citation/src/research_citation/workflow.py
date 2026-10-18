@@ -1,0 +1,313 @@
+"""基于 LangGraph 的确定性学术引用核查工作流插件实现模块。
+
+本模块遵循三层状态隔离规范：
+- `CitationInputState` (`input_schema`)：定义调用方/主智能体需要提供的数据（兼容 `messages` 协议）；
+- `CitationInternalState` (`InternalState`)：定义工作流内部节点流转使用的数据（禁止外部直接写入）；
+- `CitationOutputState` (`output_schema`)：定义工作流最终返回给主智能体的数据。
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import re
+from typing import Any, Literal, NotRequired
+
+from langchain_core.messages import AIMessage, AnyMessage
+from langgraph.checkpoint.base import BaseCheckpointSaver
+from langgraph.graph import END, START, StateGraph
+from langgraph.graph.state import CompiledStateGraph
+from pydantic import ValidationError
+
+from research_citation.checker.evaluator import evaluate_references
+from research_citation.models.check import ReferenceCheckInput, ReferenceCheckResult
+from vertical_harness.plugins.contracts import (
+    SideEffect,
+    WorkflowContribution,
+    WorkflowInputState,
+    WorkflowMode,
+    WorkflowOutputState,
+)
+
+logger = logging.getLogger(__name__)
+
+# 工作流子任务与 Agent Protocol 图注册唯一标识符
+CITATION_WORKFLOW_NAME = "citation_audit"
+
+# 匹配 Markdown JSON 代码块（```json ... ```）的正则表达式
+_FENCED_JSON_RE = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL)
+
+
+class CitationInputState(WorkflowInputState):
+    """定义调用方需要提供的数据（input_schema）。"""
+
+    # 可选的结构化手稿正文纯文本（若未直接传入则由入口节点从 messages 载荷提取）
+    manuscript_text: NotRequired[str]
+    # 可选的结构化参考文献条目列表（若未直接传入则由入口节点从 messages 载荷提取）
+    bibliography: NotRequired[list[str]]
+
+
+class CitationOutputState(WorkflowOutputState):
+    """定义工作流最终返回的数据（output_schema）。"""
+
+    # 供调用方或主智能体直接读取的结构化核查结果字典
+    structured_response: NotRequired[dict[str, Any] | None]
+
+
+class CitationInternalState(CitationInputState, CitationOutputState):
+    """定义工作流内部使用的数据（InternalState，不暴露于 input_schema 与 output_schema）。"""
+
+    # 经入口节点提取并通过 ReferenceCheckInput 严格校验后的内部安全参数字典
+    validated_input: NotRequired[dict[str, Any] | None]
+    # 入口参数提取或 Pydantic 校验失败时的错误原因描述
+    validation_error: NotRequired[str | None]
+    # 确定性引用比对节点生成的中间评估结果字典
+    evaluation_result: NotRequired[dict[str, Any] | None]
+
+
+# 规范标准别名导出（InternalState / input_schema / output_schema）
+InternalState = CitationInternalState
+input_schema = CitationInputState
+output_schema = CitationOutputState
+
+
+def _message_content_to_text(message: AnyMessage | dict[str, Any]) -> str:
+    """将 LangChain 消息对象或消息字典安全提取为纯文本。"""
+    content = message.get("content", "") if isinstance(message, dict) else getattr(message, "content", "")
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "\n".join(
+            block.get("text", "") if isinstance(block, dict) else str(block)
+            for block in content
+        )
+    return str(content)
+
+
+def _extract_json_dict(text: str) -> dict[str, Any] | None:
+    """从任务描述文本中提取 JSON 对象字典（支持纯 JSON、代码块 JSON 或内嵌大括号 JSON）。"""
+    stripped = text.strip()
+    if not stripped:
+        return None
+
+    candidates: list[str] = [stripped]
+    fenced_match = _FENCED_JSON_RE.search(stripped)
+    if fenced_match is not None:
+        candidates.insert(0, fenced_match.group(1).strip())
+
+    first_brace = stripped.find("{")
+    last_brace = stripped.rfind("}")
+    if 0 <= first_brace < last_brace:
+        brace_slice = stripped[first_brace : last_brace + 1]
+        if brace_slice not in candidates:
+            candidates.append(brace_slice)
+
+    for candidate in candidates:
+        try:
+            loaded = json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(loaded, dict):
+            return loaded
+    return None
+
+
+def parse_and_validate_input(state: CitationInternalState) -> dict[str, Any]:
+    """工作流入口节点：从输入状态或消息载荷提取参数并执行严格 Pydantic 校验。
+
+    外部调用方或主智能体无法直接写入 `validated_input` 或 `evaluation_result`；
+    所有业务数据必须通过本入口节点完成参数转换与边界校验后方可进入内部状态。
+
+    :param state: 当前工作流状态快照。
+    :return: 更新 `validated_input` 与 `validation_error` 的内部状态增量。
+    """
+    raw_payload: dict[str, Any] = {}
+    if "manuscript_text" in state and state["manuscript_text"] is not None:
+        raw_payload["manuscript_text"] = state["manuscript_text"]
+    if "bibliography" in state and state["bibliography"] is not None:
+        raw_payload["bibliography"] = state["bibliography"]
+
+    if "manuscript_text" not in raw_payload or "bibliography" not in raw_payload:
+        messages = state.get("messages") or []
+        if messages:
+            last_text = _message_content_to_text(messages[-1])
+            parsed_json = _extract_json_dict(last_text)
+            if parsed_json is not None:
+                raw_payload = {**parsed_json, **raw_payload}
+
+    if not raw_payload:
+        error_msg = (
+            "Missing citation check parameters: provide 'manuscript_text' and 'bibliography' "
+            "via input_schema fields or a JSON task payload."
+        )
+        logger.warning("citation_workflow_input_invalid", extra={"event_fields": {"reason": "empty_payload"}})
+        return {
+            "validated_input": None,
+            "validation_error": error_msg,
+            "evaluation_result": None,
+        }
+
+    try:
+        validated = ReferenceCheckInput.model_validate(raw_payload)
+    except ValidationError as exc:
+        logger.warning(
+            "citation_workflow_input_invalid",
+            extra={"event_fields": {"error_count": len(exc.errors())}},
+        )
+        return {
+            "validated_input": None,
+            "validation_error": f"Invalid ReferenceCheckInput payload: {exc}",
+            "evaluation_result": None,
+        }
+
+    return {
+        "validated_input": {
+            "manuscript_text": validated.manuscript_text,
+            "bibliography": list(validated.bibliography),
+        },
+        "validation_error": None,
+        "evaluation_result": None,
+    }
+
+
+def _route_after_validation(
+    state: CitationInternalState,
+) -> Literal["evaluate_citations", "finalize_output"]:
+    """根据入口节点校验结果决定后续确定性路由分支。"""
+    if state.get("validation_error") is None and state.get("validated_input") is not None:
+        return "evaluate_citations"
+    return "finalize_output"
+
+
+def evaluate_citations(state: CitationInternalState) -> dict[str, Any]:
+    """工作流核心计算节点：基于内部已校验参数执行确定性引用序号范围与覆盖率评估。
+
+    :param state: 包含 `validated_input` 的内部工作流状态。
+    :return: 更新 `evaluation_result` 的内部状态增量。
+    """
+    validated_input = state.get("validated_input")
+    if validated_input is None:
+        return {
+            "validation_error": "Internal state missing 'validated_input'",
+            "evaluation_result": None,
+        }
+    result = evaluate_references(
+        manuscript_text=validated_input["manuscript_text"],
+        bibliography=validated_input["bibliography"],
+    )
+    return {
+        "evaluation_result": result.model_dump(mode="json"),
+    }
+
+
+def finalize_output(state: CitationInternalState) -> dict[str, Any]:
+    """工作流出口节点：将内部评估结果封装为符合 `CitationOutputState` 的标准响应。
+
+    :param state: 当前内部工作流状态。
+    :return: 仅包含 `messages` 与 `structured_response` 的输出状态字典。
+    """
+    evaluation_result = state.get("evaluation_result")
+    validation_error = state.get("validation_error")
+    if validation_error is not None or evaluation_result is None:
+        error_payload: dict[str, Any] = {
+            "status": "invalid_input",
+            "error": validation_error or "Citation evaluation did not produce a result",
+        }
+        return {
+            "messages": [AIMessage(content=json.dumps(error_payload, ensure_ascii=False))],
+            "structured_response": error_payload,
+        }
+
+    verified = ReferenceCheckResult.model_validate(evaluation_result)
+    return {
+        "messages": [AIMessage(content=verified.model_dump_json())],
+        "structured_response": verified.model_dump(mode="json"),
+    }
+
+
+def build_citation_workflow(
+    *,
+    checkpointer: BaseCheckpointSaver[Any] | bool | None = None,
+) -> CompiledStateGraph[Any, Any, Any, Any]:
+    """构建并编译确定性学术引用审计 LangGraph 工作流。
+
+    显式绑定三层状态模式：
+    - `state_schema=CitationInternalState` (`InternalState`)
+    - `input_schema=CitationInputState`
+    - `output_schema=CitationOutputState`
+
+    :param checkpointer: 可选的检查点保存器或父图继承布尔标记。
+    :return: 预编译的 `CompiledStateGraph` 实例。
+    """
+    builder: StateGraph[Any, Any, Any, Any] = StateGraph(
+        CitationInternalState,
+        input_schema=CitationInputState,
+        output_schema=CitationOutputState,
+    )
+    builder.add_node("parse_and_validate_input", parse_and_validate_input)
+    builder.add_node("evaluate_citations", evaluate_citations)
+    builder.add_node("finalize_output", finalize_output)
+
+    builder.add_edge(START, "parse_and_validate_input")
+    builder.add_conditional_edges(
+        "parse_and_validate_input",
+        _route_after_validation,
+        {
+            "evaluate_citations": "evaluate_citations",
+            "finalize_output": "finalize_output",
+        },
+    )
+    builder.add_edge("evaluate_citations", "finalize_output")
+    builder.add_edge("finalize_output", END)
+
+    return builder.compile(checkpointer=checkpointer, name=CITATION_WORKFLOW_NAME)
+
+
+# 导出模块级预编译 LangGraph 实例，可直接配置于 langgraph.json
+graph = build_citation_workflow()
+
+
+def build_citation_workflow_contribution(
+    *,
+    mode: WorkflowMode | None = None,
+) -> WorkflowContribution:
+    """构造 `citation_audit` 工作流插件贡献声明（同时支持 `CompiledSubAgent` 与 `AsyncSubAgent`）。
+
+    :param mode: 可选强制指定的接入模式（默认随宿主 `workflow_mode` 自动解析）。
+    :return: 经过三层状态模式校验的 `WorkflowContribution` 实例。
+    """
+    return WorkflowContribution(
+        name=CITATION_WORKFLOW_NAME,
+        description=(
+            "Execute the deterministic LangGraph numeric citation audit workflow. "
+            "Provide a JSON payload with 'manuscript_text' and 'bibliography'."
+        ),
+        internal_state=CitationInternalState,
+        input_schema=CitationInputState,
+        output_schema=CitationOutputState,
+        runnable=graph,
+        graph_id=CITATION_WORKFLOW_NAME,
+        mode=mode,
+        context_mode="isolated",
+        durability="sync",
+        effect=SideEffect.READ,
+        idempotent=True,
+        result_schema=ReferenceCheckResult,
+    )
+
+
+__all__ = [
+    "CITATION_WORKFLOW_NAME",
+    "CitationInputState",
+    "CitationInternalState",
+    "CitationOutputState",
+    "InternalState",
+    "build_citation_workflow",
+    "build_citation_workflow_contribution",
+    "evaluate_citations",
+    "finalize_output",
+    "graph",
+    "input_schema",
+    "output_schema",
+    "parse_and_validate_input",
+]

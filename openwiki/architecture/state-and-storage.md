@@ -8,10 +8,10 @@ sources:
     resource: repo://packages/agent-harness/src/vertical_harness/storage/backends.py
   - id: openwiki-source-03421093e23299854e4dcf40
     resource: repo://packages/agent-harness/src/vertical_harness/storage/namespace.py
-generated: { by: "antigravity", at: "2026-10-18T06:56:09.371Z" }
+generated: { by: "antigravity", at: "2026-10-18T10:47:09.347Z" }
 verified:
   - by: openwiki/0.7.2
-    at: 2026-10-18T07:44:10.514Z
+    at: 2026-10-18T12:40:07.975Z
 ---
 
 # 状态隔离与分层存储
@@ -25,7 +25,7 @@ verified:
 1. **短期会话状态 (Thread State / Checkpointer)**：
    - 包含当前会话消息列表、Agent 执行计划、中间状态；
    - 关联具体的 `thread_id`；
-   - 演示环境下默认使用 `InMemorySaver`，生产部署需由宿主进程注入持久化 Checkpointer（如 Postgres）。
+   - 本地开发与 CLI 默认使用 SQLite Checkpointer（`SqliteSaver` / `AsyncSqliteSaver`，路径 `<workspace_root>/.checkpoints/checkpoints.sqlite`），配合 `durability="sync"` 确保每个节点执行后同步落盘，支持跨进程恢复与 Time Travel 回放；生产部署可注入分布式持久化 Checkpointer（如 Postgres）。
 2. **长期记忆与偏好 (Long-term Store)**：
    - 存储跨线程的项目偏好、经过核准的专业记忆与业务策略；
    - 依托 LangGraph 原生 `BaseStore`（默认提供 `SqliteStore` 与 `AsyncSqliteStore`）；
@@ -77,6 +77,18 @@ flowchart LR
 - **物理工作区映射**：默认路由指向 `FilesystemBackend(root_dir=str(workspace_root), virtual_mode=True)`，文件真实落盘在本地目录。
 - **记忆路由重定向**：使用 `PurePosixPath` 规范化虚拟记忆路由前缀（默认 `/memories/`），通过 `StoreBackend(store=store, namespace=namespace_factory)` 拦截并透明转换为对 `SqliteStore` 的键值存取，绝不会在磁盘上创建物理子目录。
 - **测试验证**：在 [tests/test_store.py](../../tests/test_store.py) 中针对隔离性进行了回归验证，确认向 `/memories/AGENTS.md` 写入的内容仅存在于 SQLite 数据库内，磁盘上无物理对应文件。
+
+## 5. Checkpoint 持久化与 Time Travel Fork (`engine/time_travel.py`)
+
+为支持跨进程会话恢复、确定性调试与分支实验，框架深度集成了 LangGraph Checkpointer 与 Deep Agents 的同步落盘机制：
+
+- **同步持久化 (`durability="sync"`)**：默认启用同步持久化策略，无论是主智能体 Supervisor 还是挂载的 `CompiledSubAgent` 工作流，每一步节点执行完毕后均同步落盘至 SQLite 检查点数据库（`SqliteSaver` / `AsyncSqliteSaver`），避免异步落盘导致的状态滞后或丢失。
+- **检查点历史检索与快照**：通过 `get_checkpoint_history(agent, thread_id)` 与 `get_checkpoint_snapshot(agent, thread_id, checkpoint_id)` 检索会话的完整快照链，输出包含 `checkpoint_id`、父检查点、当前活跃节点 `next_nodes` 与更新时间的时间线。
+- **Time Travel 原地回放与状态分叉 (`fork_checkpoint` / `time_travel_invoke`)**：
+  - **原地回放**：通过指定 `--checkpoint-id` 直接从历史状态恢复执行。
+  - **状态注入分叉**：支持注入 `--update-state` 覆盖历史消息或上下文参数，探索不同决策路径。
+  - **跨线程分支 (Fork)**：支持通过 `--fork-thread-id` 将历史检查点完整克隆至新线程，新旧线程彼此隔离，互不干扰。
+  - **策略一致性保障**：由于 `SupervisorPolicyMiddleware` 直接从当前检查点的 `messages` 历史重建调度次数与状态，执行 Time Travel 回溯或分叉后，工作流监督策略自动与回溯点保持严格一致。
 
 ## 相关页面
 
