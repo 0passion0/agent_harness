@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import base64
 import json
 import logging
+import mimetypes
 import uuid
 from collections.abc import Sequence
+from pathlib import Path
 from time import perf_counter
 
 from langchain_core.messages import HumanMessage
@@ -32,6 +35,26 @@ from vertical_harness.storage import open_checkpointer, open_store
 logger = logging.getLogger(__name__)
 
 
+def _image_content(value: str) -> dict[str, str]:
+    """读取本地图片为标准内容块，限制读取量以免附件耗尽内存。"""
+    path = Path(value).expanduser()
+    mime_type = mimetypes.guess_type(path.name)[0]
+    if mime_type not in {"image/png", "image/jpeg", "image/gif", "image/webp"}:
+        raise argparse.ArgumentTypeError("Image must be PNG, JPEG, GIF or WebP")
+    max_bytes = 20 * 1024 * 1024
+    try:
+        with path.open("rb") as source:
+            data = source.read(max_bytes + 1)
+    except OSError as exc:
+        raise argparse.ArgumentTypeError("Cannot read image file") from exc
+    if not data or len(data) > max_bytes:
+        raise argparse.ArgumentTypeError("Image must be nonempty and at most 20 MiB")
+    return {
+        "type": "image", "base64": base64.b64encode(data).decode("ascii"),
+        "mime_type": mime_type,
+    }
+
+
 def _build_parser() -> argparse.ArgumentParser:
     """构建命令行参数解析器。
 
@@ -39,6 +62,10 @@ def _build_parser() -> argparse.ArgumentParser:
     """
     parser = argparse.ArgumentParser(description="Deep Agents plugin harness")
     parser.add_argument("prompt", nargs="?", help="Input prompt to send to the agent")
+    parser.add_argument(
+        "--image", dest="images", action="append", default=[], type=_image_content,
+        metavar="PATH", help="Attach a local image (PNG/JPEG/GIF/WebP, <=20 MiB); repeat for multiple images",
+    )
     memory_command = parser.add_mutually_exclusive_group()
     memory_command.add_argument(
         "--memory-worker", action="store_true",
@@ -192,9 +219,14 @@ def _invoke_prompt(args: argparse.Namespace, settings: HarnessSettings) -> None:
     )
 
     logger.info("agent_run_started", extra={"event_fields": {"task_tier": args.task_tier}})
+    content = (
+        ([{"type": "text", "text": args.prompt}] if args.prompt else []) + args.images
+        if args.images else args.prompt
+    )
+    payload = {"messages": [HumanMessage(content=content)]} if content else None
     travel_kwargs = {
         "checkpoint_id": args.checkpoint_id,
-        "prompt": args.prompt,
+        "input_state": payload,
         "values": update_values,
         "as_node": args.as_node,
         "fork_thread_id": args.fork_thread_id,
@@ -204,7 +236,6 @@ def _invoke_prompt(args: argparse.Namespace, settings: HarnessSettings) -> None:
         "run_id": args.run_id,
     }
     invoke_kwargs = {"config": run_config, "context": run_context, "durability": durability}
-    payload = {"messages": [HumanMessage(content=args.prompt)]} if args.prompt else None
     if settings.mcp_servers and not settings.supervisor_only:
         async def invoke_with_mcp():
             async with aopen_agent(settings) as agent:
@@ -240,6 +271,11 @@ def main(argv: Sequence[str] | None = None) -> None:
     """
     parser = _build_parser()
     args = parser.parse_args(argv)
+    if args.images and (
+        args.list_plugins or args.list_workflows or args.history
+        or args.memory_worker or args.consolidate_memory
+    ):
+        parser.error("--image cannot be combined with listing, history or memory worker commands")
     if (args.memory_worker or args.consolidate_memory) and (
         args.prompt or args.list_plugins or args.list_workflows or args.history
         or args.checkpoint_id or args.fork_thread_id or args.update_state
@@ -258,8 +294,9 @@ def main(argv: Sequence[str] | None = None) -> None:
         and not args.memory_worker
         and not args.consolidate_memory
         and not args.prompt
+        and not args.images
     ):
-        parser.error("Please specify a prompt")
+        parser.error("Please specify a prompt or --image")
 
     try:
         settings = HarnessSettings()

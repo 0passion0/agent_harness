@@ -16,6 +16,26 @@ pytest -q
 
 也可使用 uv workspace：`uv sync --all-packages` 后 `uv run --package vertical-agent-harness vertical-agent --list-plugins`。
 
+## 图片理解
+
+使用 `--image` 将本地图片直接附加到用户消息，可重复传入多张，也可只传图片：
+
+```bash
+vertical-agent '解释这张图里的内容' --image ./chart.png
+vertical-agent '比较两张截图的差异' --image ./before.png --image ./after.png
+```
+
+支持 PNG、JPEG、GIF、WebP，单张非空且不超过 20 MiB；按扩展名选择 MIME，实际图片解码由模型服务验证。图片路径相对当前命令行目录，支持 `~`，无需先放入 Agent 工作区。同步、MCP 异步调用和 Time Travel / Fork 使用相同的图片消息；库调用 `invoke` / `ainvoke` / `astream_agent` 也可直接传 LangChain 标准图片内容块：
+
+```python
+inputs = {"messages": [{"role": "user", "content": [
+    {"type": "text", "text": "解释这张图片"},
+    {"type": "image", "url": "https://example.com/chart.png"},
+]}]}
+```
+
+所选模型必须支持视觉输入；当前默认的 `deepseek-flash` 支持，参见 [DeepSeek 图像理解文档](https://api-docs.deepseek.com/zh-cn/guides/vision/)。启用动态路由时须确认实际选中的模型也支持图片。当前 `langchain-deepseek` 会将工具返回的内容数组序列化为 JSON 文本，因此 DeepSeek 图片理解请使用 `--image` 或用户消息图片块，不能依赖 `read_file` 的图片工具结果。图片会发送给配置的模型服务，并保存在对话检查点中；启用 LangSmith tracing 时也可能随输入上传。
+
 ## 记忆、用户偏好与每周后台整合
 
 已有 LangGraph 检查点保存同一线程的短期状态，SQLite Store 和 `/memories/` 文件路由保存跨线程记忆。本次基于 [LangMem](https://langchain-ai.github.io/langmem/reference/memory/) 补充结构化用户偏好、自动召回与 Background Memory Consolidation。自动处理默认关闭：
