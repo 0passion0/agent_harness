@@ -1,8 +1,9 @@
-"""科研数据分析插件（data_analysis）、LangGraph 工作流、三层状态契约、表画像与报告交付测试模块。"""
+"""科研数据分析插件（data_analysis）、LangGraph 工作流、三层状态契约、表画像、报告交付与 Hook 控制测试模块。"""
 
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
@@ -24,9 +25,14 @@ from data_analysis import (
     artifact_paths,
     build_data_analysis_workflow,
     build_data_analysis_workflow_contribution,
+    fork_node_branch,
+    get_node_prompt,
     input_schema,
+    inspect_node_checkpoints,
+    modify_node_state,
     output_schema,
     profile_table,
+    retry_node,
     save_report,
     snapshot,
 )
@@ -173,7 +179,6 @@ def test_table_profile_xlsx(tmp_path: Path) -> None:
 
 def test_report_validation_and_atomic_save(tmp_path: Path) -> None:
     """测试科研中文报告七大二级标题校验、证据匹配与原子发布落盘。"""
-    # 构造伪造的分析脚本与 JSON 结果产物
     scripts_dir = tmp_path / "scripts"
     scripts_dir.mkdir(parents=True, exist_ok=True)
     script_file = scripts_dir / "analyze.py"
@@ -188,15 +193,10 @@ def test_report_validation_and_atomic_save(tmp_path: Path) -> None:
     evidence_receipt = {
         "execution_id": "test-exec-1",
         "script": "scripts/analyze.py",
-        "script_sha256": "5bc839d372551a3198bd1a1d9b3d07e29cb0118eb3d42b93ffb307ec3c306be7",
+        "script_sha256": "",
         "exit_code": 0,
-        "artifact_sha256": {
-            "artifacts/metrics.json": "07c3f309b1fdbce5e933d0eb27429665bc72f10b7efd758c0c97e75ea8d1d8a1",
-        },
+        "artifact_sha256": {},
     }
-    # 动态匹配当前文件实际真实哈希
-    import hashlib
-
     with script_file.open("rb") as f:
         evidence_receipt["script_sha256"] = hashlib.file_digest(f, "sha256").hexdigest()
     with result_file.open("rb") as f:
@@ -320,24 +320,82 @@ def test_desktop_snapshot_and_artifact_paths(tmp_path: Path) -> None:
     assert artifact_paths(inactive_state, tmp_path) == []
 
 
-def test_data_analysis_tools_and_guides(tmp_path: Path) -> None:
-    """测试 DataAnalysisToolkit 工具读取指南与异常校验。"""
+def test_data_analysis_toolkit_and_node_prompts(tmp_path: Path) -> None:
+    """测试 DataAnalysisToolkit 工具与固定节点系统提示词查询。"""
     toolkit = DataAnalysisToolkit(workspace_root=tmp_path)
     tools = {t.name: t for t in toolkit.get_tools()}
 
-    # 1. 测试各指南读取
-    read_guide = tools["data_analysis_read_guide"]
-    for guide_name in (
-        "research-analysis",
-        "tabular-data",
-        "statistical-analysis",
-        "supervised-ml",
-        "unsupervised-ml",
-        "model-interpretation",
-        "reporting-export",
-    ):
-        content = read_guide.invoke({"name": guide_name})
-        assert len(content) > 50
+    # 1. 验证导出工具集合
+    assert "data_analysis_get_node_prompt" in tools
+    assert "data_analysis_inspect_table" in tools
+    assert "data_analysis_ask_researcher" in tools
+    assert "data_analysis_finalize_report" in tools
 
-    with pytest.raises((ValueError, Exception)):
-        read_guide.invoke({"name": "nonexistent-guide"})
+    # 2. 测试查询节点系统提示词
+    read_prompt_tool = tools["data_analysis_get_node_prompt"]
+    prompt_text = read_prompt_tool.invoke({"node_name": "profile_table"})
+    assert "profile_table" in prompt_text
+    assert "DuckDB" in prompt_text
+
+    # 3. 测试纯函数 get_node_prompt
+    for node in ("parse_and_validate_input", "profile_table", "validate_report", "finalize_output"):
+        p = get_node_prompt(node)
+        assert len(p) > 20
+
+    with pytest.raises(KeyError, match="未知的分析节点"):
+        get_node_prompt("nonexistent_node")
+
+
+def test_data_analysis_workflow_hooks(tmp_path: Path) -> None:
+    """测试主智能体监控与干预 Hook：审查检查点、修改状态、重试节点与分叉分支。"""
+    csv_file = tmp_path / "test_hook.csv"
+    csv_file.write_text("x,y\n10,20\n30,40\n", encoding="utf-8")
+
+    checkpointer = InMemorySaver()
+    workflow = build_data_analysis_workflow(workspace_root=tmp_path, checkpointer=checkpointer)
+    thread_id = "hook-test-thread-1"
+
+    # 1. 初始运行工作流
+    config = {"configurable": {"thread_id": thread_id}}
+    initial_output = workflow.invoke(
+        {
+            "messages": [HumanMessage(content="分析数据")],
+            "file_path": str(csv_file),
+            "task_type": "profile",
+        },
+        config=config,
+        durability="sync",
+    )
+    assert initial_output["structured_response"]["status"] == "passed"
+
+    # 2. Hook: 审查节点检查点历史 (inspect_node_checkpoints)
+    summaries = inspect_node_checkpoints(workflow, thread_id)
+    assert len(summaries) >= 1
+    assert any(s.thread_id == thread_id for s in summaries)
+
+    # 3. Hook: 修改节点状态 (modify_node_state)
+    new_cfg = modify_node_state(
+        workflow,
+        thread_id=thread_id,
+        values={"validation_error": "manual_intervention_error"},
+        as_node="parse_and_validate_input",
+    )
+    assert "configurable" in new_cfg
+
+    # 4. Hook: 分叉新建分支 (fork_node_branch)
+    fork_thread_id = "hook-test-branch-2"
+    forked_cfg = fork_node_branch(
+        workflow,
+        thread_id=thread_id,
+        fork_thread_id=fork_thread_id,
+        values={"task_type": "profile"},
+    )
+    assert forked_cfg["configurable"]["thread_id"] == fork_thread_id
+
+    # 5. Hook: 重试执行节点 (retry_node)
+    retried = retry_node(
+        workflow,
+        thread_id=fork_thread_id,
+        values={"file_path": str(csv_file), "task_type": "profile"},
+    )
+    assert retried["structured_response"]["status"] == "passed"
