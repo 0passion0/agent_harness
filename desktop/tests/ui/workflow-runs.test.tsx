@@ -42,6 +42,16 @@ test('groups each workflow invocation with its descendant tools and terminal eve
   expect(inProgress).toContain('运行中')
 })
 
+test('merging tool lifecycle records preserves the original arguments and terminal output', () => {
+  const merged = workflowSteps([
+    {kind:'tool_start',call_id:'call',name:'read_file',arguments:{path:'data.csv'},status:'running'},
+    {kind:'tool_end',call_id:'call',output:'ok',status:'success'}
+  ])
+  expect(merged).toHaveLength(1)
+  expect(merged[0]).toMatchObject({name:'read_file',arguments:{path:'data.csv'},output:'ok',status:'success'})
+  expect(stepStatus({kind:'tool_start',status:'running'},'complete')).toBe('interrupted')
+})
+
 test('places each saved run under the human message that started it', () => {
   const first = [workflow('workflow-1', 'completed', 1), node('node-1', 'workflow-1', 2)]
   const second = [workflow('workflow-2', 'completed', 3), node('node-2', 'workflow-2', 4)]

@@ -134,7 +134,7 @@ export function reduceAgent(state: AgentState, action: Action): AgentState {
     case 'run.event': {
       if (state.runId && state.runId !== action.run_id) return state
       const data = action.data
-      const tools = data.call_id ? { ...state.tools, [data.call_id]: data } : state.tools
+      const tools = data.call_id ? { ...state.tools, [data.call_id]: { ...state.tools[data.call_id], ...data } } : state.tools
 
       // 提取流式生成的文本片段
       const text = typeof data.text === 'string'

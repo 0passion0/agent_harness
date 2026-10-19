@@ -36,8 +36,9 @@ app.on('browser-window-created', (_event, window) => {
         { kind: 'workflow', seq: 4, operation_id: 'workflow-1', plugin_id: 'research.citations', workflow_name: 'check_references', status: 'completed' }
       ]
       let session = 'thread', messages = [], runs = [], run = null
+      let layoutActiveRun
       const commands = [], errors = []
-      const snapshot = () => ({session_id:session,thread_id:session,thread_ids:[session],messages,attachments:[],artifacts:[],runs,totals:{},unsettled_history:false})
+      const snapshot = () => ({session_id:session,thread_id:session,thread_ids:[session],messages,attachments:[],artifacts:[],runs,totals:{},unsettled_history:false,...(layoutActiveRun ? {active_run:layoutActiveRun} : {})})
       const sessions = () => [{id:session,title:'测试会话',updated:new Date().toISOString()}]
       const emptyUsage = { requests:0,reported_requests:0,input_tokens:0,output_tokens:0,total_tokens:0,cache_read:null,reasoning:null,cost_estimate:null,unpriced_requests:0,jev_requests:0 }
       const send = frame => window.webContents.send('backend:event',frame)
@@ -50,7 +51,21 @@ app.on('browser-window-created', (_event, window) => {
       ]
       let questionIndex = 0
       const ask = () => send({event:'interaction.request',session_id:session,run_id:run,data:questions[questionIndex]})
-      const finish = status => { const current = run; run = null; messages = [{type:'human',data:{id:'user-1',content:'smoke hello'}},{type:'ai',data:{content:'smoke reply'}}]; runs = [{id:current,user_message_id:'user-1',status,records:workflowRecords,requests:[],tools:{},elapsed:1}]; send({event:'run.finished',session_id:session,run_id:current,data:{status,snapshot:snapshot()}}) }
+      const report = [
+        '# 数据分析插件测试结果',
+        'smoke reply：已核对工作区中的两个 CSV，结果如下。',
+        '## 一、逐项状态',
+        '| 步骤 | 输入 | 结果 |',
+        '| --- | --- | --- |',
+        '| profile | `参考图尺寸.csv` | **passed**：6 行 × 4 列，宽 / 高 / 宽高比均为数值 |',
+        '| full_analysis / correlation | `包含较长中文名称的商品价格与累计浏览量调查数据.csv` | **failed**：`Audit failed: artifact SHA256 does not match execution receipt` |',
+        '| 串行重跑 | [分析报告](artifacts/report.md) | **passed**：r = −0.151976，n = 31 |',
+        '## 二、独立核对的数据',
+        '- 价格数值条数 31，已排除 4 条缺失值。\n- 均值 111.27，中位数 99.0。',
+        '```python\nresult = analyze(data)\nprint(result)\n```',
+        ...Array.from({length:8}, () => '已核对原始数据，报告中的数值与执行记录一致。')
+      ].join('\n\n').replace(/\n\n(?=\|)/g, '\n')
+      const finish = status => { const current = run; run = null; messages = [{type:'human',data:{id:'user-1',content:'smoke hello'}},{type:'ai',data:{content:'先检查工作区中的文件和字段。'}},{type:'ai',data:{content:'两个表已完成画像，开始核对统计结果。'}},{type:'ai',data:{content:report}}]; runs = [{id:current,user_message_id:'user-1',status,records:workflowRecords,requests:[],tools:{},elapsed:1}]; send({event:'run.finished',session_id:session,run_id:current,data:{status,snapshot:snapshot()}}) }
       ipcMain.removeHandler('backend:command')
       ipcMain.removeHandler('workspace:list-files')
       ipcMain.handle('workspace:list-files', () => [])
@@ -139,6 +154,7 @@ app.on('browser-window-created', (_event, window) => {
         click('允许这次操作');
         await until(()=>document.body.innerText.includes('smoke reply')&&document.querySelector('[aria-label="提交任务"]'));
         await until(()=>document.querySelector('.workflow-card-heading'));
+        document.querySelector('.saved-run-activity > details > summary').click();
         document.querySelector('.workflow-card-heading').click();
         await until(()=>document.querySelector('.workflow-card').textContent.includes('已核查 3 条引用'));
         if(!document.querySelector('.workflow-card-heading').textContent.includes('已完成'))throw new Error('Workflow terminal status missing');
@@ -154,13 +170,91 @@ app.on('browser-window-created', (_event, window) => {
         return {tabs:tabs.length,text:document.body.innerText,dark:document.querySelector('.product-v3').classList.contains('dark')};
       })()`)
       assert.equal(checked.tabs,7);assert.equal(checked.dark,true);assert.deepEqual(errors,[])
+      // Reuse the completed report to check the actual CSS cascade in Chromium.
+      session = 'layout-report'
+      messages = [{type:'ai',data:{content:'先检查工作区中的文件和字段。'}},{type:'ai',data:{content:report}}]
+      const layoutReloaded = new Promise(resolve => window.webContents.once('did-finish-load', resolve))
+      window.webContents.reload();await layoutReloaded
+      for (const [name, width, height, dark] of [['light',1440,900,false],['dark',1440,900,true],['narrow',640,720,false]]) {
+        window.setSize(width,height)
+        const layout = await window.webContents.executeJavaScript(`(async () => {
+          while(!document.querySelector('.message-table-scroll'))await new Promise(resolve=>requestAnimationFrame(resolve));
+          if(innerWidth<860&&document.querySelector('.sidebar'))document.querySelector('[aria-label="切换侧边栏"]').click();
+          document.querySelector('.app').classList.toggle('dark',${dark});
+          await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+          const pane=document.querySelector('.conversation');pane.scrollTop=0;
+          const rect=selector=>document.querySelector(selector).getBoundingClientRect();
+          const table=document.querySelector('.message-table-scroll');
+          const chip=document.querySelector('.file-link-chip');
+          const first=document.querySelector('.message.ai');
+          return {
+            buttonWidth:rect('.file-chip-btn').width,buttonHeight:rect('.file-chip-btn').height,
+            copyHeight:rect('.msg-copy-btn').height,chipHeight:chip.getBoundingClientRect().height,
+            aligned:Math.abs(rect('.message-avatar').top-first.querySelector('p').getBoundingClientRect().top)<=4,
+            separated:rect('.conversation-wrap').bottom<=rect('.task-bottom').top+1,
+            fits:table.clientWidth<=rect('.message-content').width+1&&pane.scrollWidth<=pane.clientWidth+1,
+            tableScrolls:table.scrollWidth>table.clientWidth,
+            composerFits:rect('.task-composer').right<=innerWidth&&rect('.task-composer').bottom<=innerHeight,
+            codePadding:getComputedStyle(document.querySelector('.modern-code-pre')).paddingTop
+          };
+        })()`)
+        assert.equal(layout.buttonWidth,24);assert.equal(layout.buttonHeight,24)
+        assert.equal(layout.copyHeight,28);assert.ok(layout.chipHeight<=30)
+        assert.equal(layout.aligned,true);assert.equal(layout.separated,true)
+        assert.equal(layout.fits,true);assert.equal(layout.composerFits,true)
+        assert.equal(layout.codePadding,'14px')
+        if(name==='narrow')assert.equal(layout.tableScrolls,true)
+        await new Promise(resolve => setTimeout(resolve, 250))
+        writeFileSync(path.join(screenshots, `conversation-${name}.png`), (await window.webContents.capturePage(undefined, { stayAwake: true })).toPNG())
+      }
+      session = 'layout-stream'
+      const toolRecords = Array.from({length:24}, (_, index) => [
+        {kind:'tool_start',call_id:`file-${index}`,name:'read_file',status:'running',arguments:{path:`data/table-${index}.csv`}},
+        ...(index<23 ? [{kind:'tool_end',call_id:`file-${index}`,name:'read_file',status:'success',output:'已读取文件',elapsed:0.12}] : [])
+      ]).flat()
+      messages = [{type:'human',data:{id:'layout-user',content:'检查数据文件，并给出统计结果。'}}]
+      runs = []
+      layoutActiveRun = {id:'layout-run',started_at:'now',user_message_id:'layout-user',records:toolRecords}
+      window.setSize(1000,800)
+      const streamReloaded = new Promise(resolve => window.webContents.once('did-finish-load', resolve))
+      window.webContents.reload();await streamReloaded
+      await window.webContents.executeJavaScript(`(async()=>{while(!document.querySelector('.inline-activity-card'))await new Promise(resolve=>requestAnimationFrame(resolve));})()`)
+      send({event:'run.event',session_id:session,run_id:'layout-run',data:{kind:'text',text:'正在整理数据，已读取 23 个文件。'}})
+      const streaming = await window.webContents.executeJavaScript(`(async()=>{
+        while(!document.querySelector('.inline-activity-card.is-active'))await new Promise(resolve=>requestAnimationFrame(resolve));
+        const card=document.querySelector('.inline-activity-card');
+        const compact=!card.open&&card.getBoundingClientRect().height<80;
+        card.querySelector('summary').click();
+        await new Promise(resolve=>requestAnimationFrame(resolve));
+        const list=card.querySelector('.inline-activity-list');
+        return {compact,items:card.querySelectorAll('.act-item').length,active:card.querySelectorAll('.act-item.is-running').length,bounded:list.clientHeight<=320&&list.scrollHeight>list.clientHeight};
+      })()`)
+      assert.deepEqual(streaming,{compact:true,items:24,active:1,bounded:true})
+      await new Promise(resolve => setTimeout(resolve,250))
+      writeFileSync(path.join(screenshots,'activity-streaming.png'),(await window.webContents.capturePage(undefined,{stayAwake:true})).toPNG())
+      toolRecords.push({kind:'tool_end',call_id:'file-23',name:'read_file',status:'success',output:'已读取文件',elapsed:0.12})
+      messages.push({type:'ai',data:{content:'已完成 24 个文件的检查，执行记录保留在下方，可随时展开查看。'}})
+      runs = [{id:'layout-run',user_message_id:'layout-user',status:'complete',records:toolRecords,requests:[],tools:{},elapsed:1}]
+      layoutActiveRun = undefined
+      send({event:'run.finished',session_id:session,run_id:'layout-run',data:{status:'complete',snapshot:snapshot()}})
+      for (const reload of [false,true]) {
+        if(reload){const loaded=new Promise(resolve=>window.webContents.once('did-finish-load',resolve));window.webContents.reload();await loaded;}
+        const saved = await window.webContents.executeJavaScript(`(async()=>{
+          while(!document.querySelector('.saved-run-activity'))await new Promise(resolve=>requestAnimationFrame(resolve));
+          const card=document.querySelector('.saved-run-activity > details');
+          return {collapsed:!card.open,items:card.querySelectorAll('.act-item').length,active:card.querySelectorAll('.is-running').length,complete:card.textContent.includes('24 已完成')};
+        })()`)
+        assert.deepEqual(saved,{collapsed:true,items:24,active:0,complete:true})
+      }
+      await new Promise(resolve => setTimeout(resolve,250))
+      writeFileSync(path.join(screenshots,'activity-complete.png'),(await window.webContents.capturePage(undefined,{stayAwake:true})).toPNG())
       await new Promise(resolve => setTimeout(resolve, 250))
       writeFileSync(path.join(screenshots, 'workspace-dark.png'), (await window.webContents.capturePage(undefined, { stayAwake: true })).toPNG())
       assert.equal(commands.filter(c=>c.method==='run.start').length,1)
       assert.equal(commands.filter(c=>c.method==='interaction.answer').length,5)
       const submitted = commands.find(c=>c.method==='run.start').params
       assert.deepEqual(submitted.selected_plugins,['research.citations']);assert.deepEqual(submitted.selected_skills,['global:citations'])
-      console.log('Electron smoke passed: startup IPC, selected capabilities, plugin approval, choices, custom and free text answers, ordinary approval, light/dark/narrow layouts, workflows, settings and new task')
+      console.log('Electron smoke passed: startup IPC, selected capabilities, approvals, light/dark/narrow layouts, compact streaming, merged tool calls, execution history after finish/reload, workflows, settings and new task')
       clearTimeout(timer);app.quit();timer=setTimeout(()=>app.exit(1),5000)
     } catch(error){ console.error(error);app.exit(1) }
   })

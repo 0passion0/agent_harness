@@ -2,6 +2,12 @@
 .product-v3 .workspace-layout {position:relative;min-width:0;min-height:0}
 .product-v3 .workspace-layout > * {min-width:0;min-height:0}
 .product-v3 .task-main {overflow:hidden;display:flex;flex-direction:column}
+.product-v3 .conversation-wrap {flex:1 1 0;min-width:0;min-height:0;overflow:hidden}
+.product-v3 .conversation {height:100%;padding:28px max(20px,calc((100% - 860px)/2)) 24px;overscroll-behavior:contain;scrollbar-gutter:stable}
+.product-v3 .task-bottom {flex:none;padding:12px max(20px,calc((100% - 860px)/2)) 16px;background:var(--bg);border-top:1px solid var(--line)}
+.product-v3 .task-composer textarea {min-height:64px;max-height:180px;padding:14px 16px 6px;font-size:14px;line-height:1.7;field-sizing:content;overflow-y:auto}
+.product-v3 .composer-bottom-row {flex-wrap:wrap}
+.product-v3 .composer-actions {margin-left:auto;flex:none}
 .product-v3 .task-header-left,.product-v3 .task-header-right {min-width:0}
 .product-v3 .task-header-left {flex:1;overflow:hidden}
 .product-v3 .task-header-left .header-path,.product-v3 .task-header-left strong {overflow:hidden;white-space:nowrap;text-overflow:ellipsis;min-width:0}

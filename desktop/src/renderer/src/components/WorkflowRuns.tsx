@@ -39,8 +39,8 @@ export function workflowSteps(records: RunRecord[]): RunRecord[] {
     .forEach((record, index) => {
       const key = record.kind === 'workflow.node'
         ? `node:${record.operation_id ?? record.seq ?? index}`
-        : `tool:${record.operation_id ?? record.call_id ?? index}`
-      steps.set(key, record)
+        : `tool:${record.call_id ?? record.operation_id ?? index}`
+      steps.set(key, { ...steps.get(key), ...record })
     })
   return [...steps.values()]
 }
@@ -90,6 +90,7 @@ export interface WorkflowRunsProps {
   activeRun?: Snapshot['active_run']
   /** 当前任务或会话是否处于暂停状态，默认为 true */
   paused?: boolean
+  status?: string
 }
 
 /**
@@ -102,7 +103,7 @@ export interface WorkflowRunsProps {
  *
  * @param props - 组件属性
  */
-export function WorkflowRuns({ records, runs = [], activeRun, paused = true }: WorkflowRunsProps) {
+export function WorkflowRuns({ records, runs = [], activeRun, paused = true, status: runStatus }: WorkflowRunsProps) {
   // 第一步：整理并索引持久化与活跃批次状态
   const persisted = runs.flatMap(run => run.records ?? [])
   const active = activeRun?.records ?? []
@@ -123,7 +124,7 @@ export function WorkflowRuns({ records, runs = [], activeRun, paused = true }: W
       const roots = group.records.filter(record => record.kind === 'workflow')
       const terminal = [...roots].reverse().find(record => ['complete', 'completed', 'success', 'failed', 'cancelled', 'canceled'].includes(record.status ?? ''))
       const fallbackStatus = group.records.map(record => runStatusByRecord.get(recordKey(record))).find(Boolean)
-      const status = terminal?.status ?? fallbackStatus ?? roots.at(-1)?.status ?? 'running'
+      const status = terminal?.status ?? fallbackStatus ?? runStatus ?? roots.at(-1)?.status ?? 'running'
       return <WorkflowCard key={group.operationId} group={group} status={status} />
     })}
   </div>
@@ -178,7 +179,9 @@ function WorkflowCard({ group, status }: { group: WorkflowGroup; status: string 
  */
 export function stepStatus(step: RunRecord, workflowStatus: string): string {
   const currentStatus = step.status ?? (step.kind === 'tool_start' ? 'running' : step.kind)
-  if (['failed', 'cancelled', 'canceled'].includes(workflowStatus) && currentStatus === 'running') return workflowStatus
+  if (currentStatus === 'running' && workflowStatus !== 'running') {
+    return ['complete', 'completed', 'success'].includes(workflowStatus) ? 'interrupted' : workflowStatus
+  }
   return currentStatus
 }
 
@@ -212,6 +215,9 @@ function statusLabel(status: string): string {
     canceled: '已取消',
     tool_start: '运行中',
     tool_end: '已完成',
-    tool_error: '失败'
+    tool_error: '失败',
+    interrupted: '未完成',
+    stopping: '正在停止',
+    disconnected: '连接中断'
   } as Record<string, string>)[status] ?? status
 }

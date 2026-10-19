@@ -1,0 +1,1084 @@
+/**
+ * @file modern-aesthetics.css
+ * @description 现代化极简前端美化样式库。
+ * 包含：交互式文件胶囊与目录直达、对话记录一键复制、代码块语法美化与独立复制、
+ * 高颜值流式输出与呼吸光标、后台 LLM 推理及工具调用卡片流、以及极简设置中心。
+ * @author tongliga
+ * @date 2026-10-19
+ */
+
+/* ==========================================================================
+   1. 交互式文件与目录直达胶囊 (FileLink & Directory Navigation)
+   ========================================================================== */
+
+.product-v3 .file-link-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  max-width: 100%;
+  vertical-align: middle;
+  padding: 0 4px;
+  margin: 0 2px;
+  border-radius: 6px;
+  font-size: 0.85em;
+  font-family: inherit;
+  line-height: 1.4;
+  background: var(--sidebar);
+  border: 1px solid var(--line-strong);
+  color: var(--heading);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+  transition: all 0.16s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.product-v3 .file-link-chip:hover {
+  background: var(--soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.product-v3 .file-link-chip:active {
+  transform: translateY(0);
+}
+
+.product-v3 .file-link-chip.is-dir {
+  background: color-mix(in srgb, #eab308 9%, var(--panel));
+  border-color: color-mix(in srgb, #eab308 26%, transparent);
+}
+
+.product-v3 .file-link-chip.is-dir:hover {
+  border-color: #eab308;
+  color: #b45309;
+  background: color-mix(in srgb, #eab308 16%, var(--panel));
+}
+
+.product-v3 .file-chip-main {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  padding: 2px 3px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  line-height: 22px;
+  text-align: left;
+}
+
+.product-v3 .file-chip-name {
+  font-weight: 550;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 220px;
+}
+
+.product-v3 .file-chip-icon {
+  flex-shrink: 0;
+}
+
+.product-v3 .file-chip-icon.dir { color: #eab308; }
+.product-v3 .file-chip-icon.code { color: #3b82f6; }
+.product-v3 .file-chip-icon.sheet { color: #10b981; }
+.product-v3 .file-chip-icon.doc { color: #8b5cf6; }
+.product-v3 .file-chip-icon.generic { color: var(--muted); }
+
+.product-v3 .file-chip-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: 2px;
+  flex: none;
+}
+
+.product-v3 .file-chip-btn {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  opacity: 0.65;
+  transition: opacity 0.12s, background 0.12s, color 0.12s;
+}
+
+.product-v3 .file-chip-btn:hover {
+  opacity: 1;
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  color: var(--accent);
+}
+
+/* 行内普通代码与自定义渲染 */
+.product-v3 .modern-inline-code {
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  font-size: 0.88em;
+  padding: 2px 4px;
+  border-radius: 4px;
+  background: var(--sidebar);
+  color: var(--heading);
+  border: 1px solid var(--line);
+  box-decoration-break: clone;
+}
+
+/* ==========================================================================
+   2. 对话工具条与消息复制 (Conversation Toolbar & Copy Actions)
+   ========================================================================== */
+
+.product-v3 .conversation-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 0 4px 12px;
+  margin-bottom: 8px;
+}
+
+.product-v3 .conv-toolbar-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 11px;
+  font-size: 11px;
+  font-weight: 500;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--muted);
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+  transition: all 0.15s ease;
+}
+
+.product-v3 .conv-toolbar-btn:hover {
+  background: var(--soft);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.product-v3 .conv-toolbar-btn.is-copied {
+  color: #10b981;
+  border-color: #10b981;
+  background: rgba(16, 185, 129, 0.08);
+}
+
+/* 消息底部工具栏与复制按钮 */
+.product-v3 .message-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  margin-bottom: 6px;
+  min-height: 20px;
+}
+
+.product-v3 .message-footer-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  margin-top: 6px;
+  min-height: 24px;
+}
+
+.product-v3 .message.human .message-footer-row {
+  justify-content: flex-end;
+  margin-top: 6px;
+}
+
+.product-v3 .conversation-bottom-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 18px 0 24px;
+  margin-top: 14px;
+  border-top: 1px dashed var(--line);
+}
+
+.product-v3 .message-actions-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.product-v3 .message:hover .message-actions-bar,
+.product-v3 .message:focus-within .message-actions-bar {
+  opacity: 1;
+}
+
+.product-v3 .msg-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 28px;
+  height: 28px;
+  justify-content: center;
+  padding: 4px 6px;
+  font-size: 10.5px;
+  font-weight: 500;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.product-v3 .msg-copy-btn:hover {
+  background: var(--hover);
+  color: var(--heading);
+  border-color: var(--line);
+}
+
+.product-v3 .msg-copy-btn.is-copied {
+  color: #10b981;
+  background: rgba(16, 185, 129, 0.1);
+  border-color: rgba(16, 185, 129, 0.25);
+}
+
+.product-v3 .copy-icon-check {
+  color: #10b981;
+}
+
+/* ==========================================================================
+   3. 极简现代代码块 (Modern Code Block)
+   ========================================================================== */
+
+.product-v3 .modern-code-block {
+  margin: 14px 0;
+  border-radius: 11px;
+  border: 1px solid var(--line);
+  background: var(--sidebar);
+  overflow: hidden;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.025);
+}
+
+.product-v3 .modern-code-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 12px;
+  background: color-mix(in srgb, var(--heading) 3%, var(--panel));
+  border-bottom: 1px solid var(--line);
+}
+
+.product-v3 .modern-code-lang {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+
+.product-v3 .modern-code-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  font-size: 10px;
+  font-weight: 500;
+  border-radius: 5px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--muted);
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.product-v3 .modern-code-copy:hover {
+  color: var(--heading);
+  border-color: var(--accent);
+  background: var(--soft);
+}
+
+.product-v3 .modern-code-copy.is-copied {
+  color: #10b981;
+  border-color: #10b981;
+  background: rgba(16, 185, 129, 0.08);
+}
+
+.product-v3 .modern-code-pre {
+  margin: 0;
+  padding: 14px 16px;
+  overflow-x: auto;
+  font-size: 12.5px;
+  line-height: 1.68;
+  font-family: ui-monospace, "SFMono-Regular", "Cascadia Code", Consolas, monospace;
+  scrollbar-width: thin;
+}
+
+.product-v3 .modern-code-pre code {
+  font-family: inherit;
+  color: inherit;
+}
+
+/* ==========================================================================
+   4. 精美流式输出与呼吸光标 (Streaming Cursor & Thinking Indicators)
+   ========================================================================== */
+
+.product-v3 .message-markdown-wrap {
+  position: relative;
+  display: block;
+  width: 100%;
+}
+
+.product-v3 .streaming-cursor {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  background: var(--muted);
+  vertical-align: middle;
+  margin-left: 6px;
+  border-radius: 50%;
+  animation: streamingBlink 0.85s ease-in-out infinite;
+}
+
+@keyframes streamingBlink {
+  0%, 100% {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+  50% {
+    opacity: 0.12;
+    transform: scaleY(0.75);
+  }
+}
+
+.product-v3 .streaming-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.product-v3 .streaming-pulse-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--muted);
+  animation: pulseDot 1.4s infinite ease-in-out;
+}
+
+@keyframes pulseDot {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.35);
+    opacity: 0.45;
+  }
+}
+
+/* 消息正文与表格沿用同一阅读宽度，滚动只发生在表格内部。 */
+.product-v3 .message-content { font-size: 15px; line-height: 1.8; }
+.product-v3 .message-markdown-wrap.is-streaming > p:nth-last-child(2) { display: inline; }
+.product-v3 .message-markdown-wrap > :first-child { margin-top: 0; }
+.product-v3 .message-markdown-wrap > :last-child { margin-bottom: 0; }
+.product-v3 .message-content h1 { font-size: 22px; }
+.product-v3 .message-content h2 { font-size: 19px; }
+.product-v3 .message-content h3 { font-size: 16px; }
+.product-v3 .message-content h1,
+.product-v3 .message-content h2,
+.product-v3 .message-content h3 { margin-top: 28px; margin-bottom: 12px; line-height: 1.5; }
+.product-v3 .message-content p { margin: 0 0 14px; }
+.product-v3 .message-content li { margin: 6px 0; }
+.product-v3 .message { margin-bottom: 24px; min-width: 0; }
+.product-v3 .message.ai { padding-left: 34px; }
+.product-v3 .message-avatar { top: 3px; }
+.product-v3 .message-actions-bar .copy-label { display: none; }
+.product-v3 .msg-copy-btn.is-copied .copy-label { display: inline; }
+.product-v3 .message:last-of-type .message-actions-bar { opacity: 1; }
+.product-v3 .message-table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  margin: 18px 0;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  scrollbar-width: thin;
+}
+.product-v3 .message-content table {
+  display: table;
+  width: 100%;
+  min-width: 520px;
+  margin: 0;
+  border-collapse: collapse;
+  font-size: 13px;
+  line-height: 1.7;
+}
+.product-v3 .message-content th,
+.product-v3 .message-content td {
+  min-width: 120px;
+  padding: 12px 14px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+.product-v3 .message-content th { background: var(--sidebar); font-weight: 600; color: var(--heading); }
+.product-v3 .message-content tbody tr:last-child td { border-bottom: 0; }
+.product-v3 .message-content tbody tr:hover { background: var(--sidebar); }
+.product-v3 .file-link-chip.is-block { display: flex; width: fit-content; }
+.product-v3 .file-chip-main:focus-visible,
+.product-v3 .file-chip-btn:focus-visible,
+.product-v3 .message-table-scroll:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (hover: none) {
+  .product-v3 .message-actions-bar { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .product-v3 .streaming-cursor,
+  .product-v3 .streaming-pulse-dot { animation: none; }
+}
+
+/* Compact execution summaries; details stay available after the run ends. */
+.product-v3 .saved-run-activity { margin: -12px 0 24px 34px; }
+.product-v3 .inline-activity-card {
+  margin: 12px 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--sidebar);
+  overflow: hidden;
+}
+.product-v3 .inline-activity-bar,
+.product-v3 .act-item-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  min-height: 42px;
+  list-style: none;
+  cursor: pointer;
+}
+.product-v3 .inline-activity-bar { flex-wrap: wrap; }
+.product-v3 .inline-activity-bar::-webkit-details-marker,
+.product-v3 .act-item-header::-webkit-details-marker { display: none; }
+.product-v3 .inline-activity-bar:hover,
+.product-v3 .act-item-header:hover { background: var(--hover); }
+.product-v3 .act-bar-left,
+.product-v3 .act-bar-right,
+.product-v3 .act-item-title-wrap,
+.product-v3 .act-item-meta { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.product-v3 .act-bar-left,
+.product-v3 .act-item-title-wrap { flex: 1; }
+.product-v3 .act-bar-right { margin-left: auto; }
+.product-v3 .act-bar-symbol,
+.product-v3 .act-item-icon-wrap,
+.product-v3 .act-chevron,
+.product-v3 .act-toggle-arrow { display: inline-flex; flex: none; color: var(--muted); }
+.product-v3 .act-bar-label,
+.product-v3 .act-item-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 500; color: var(--heading); }
+.product-v3 .act-count-pill,
+.product-v3 .act-summary-badge,
+.product-v3 .act-elapsed,
+.product-v3 .act-status-tag { color: var(--muted); font-size: 11px; white-space: nowrap; }
+.product-v3 .act-count-pill,
+.product-v3 .act-item-meta { flex: none; }
+.product-v3 .act-active-dot,
+.product-v3 .act-plugin-badge { display: none; }
+.product-v3 .act-spinner { animation: spin 1.2s linear infinite; color: var(--muted); }
+.product-v3 .act-status-ok { color: #269477; }
+.product-v3 .act-status-err,
+.product-v3 .act-item.is-error .act-status-tag { color: #cf5863; }
+.product-v3 .inline-activity-card[open] > summary .act-chevron { transform: rotate(90deg); }
+.product-v3 .inline-activity-list {
+  max-height: min(320px, 45vh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  padding: 4px 10px;
+  border-top: 1px solid var(--line);
+  background: var(--panel);
+}
+.product-v3 .inline-activity-list .workflow-runs:empty { display: none; }
+.product-v3 .inline-activity-list .workflow-card { width: 100%; background: var(--panel); }
+.product-v3 .inline-activity-list .workflow-card-heading { border: 0; padding: 10px; background: transparent; font-size: 12px; }
+.product-v3 .act-item { border-bottom: 1px solid var(--line); }
+.product-v3 .act-item:last-child { border: 0; }
+.product-v3 .act-item-header { padding: 8px 2px; }
+.product-v3 .act-item-details { padding: 4px 2px 12px; font-size: 12px; }
+.product-v3 .act-summary-line { margin-bottom: 8px; overflow-wrap: anywhere; }
+.product-v3 .act-detail-section { margin-top: 10px; }
+.product-v3 .act-detail-label { display: block; margin-bottom: 6px; color: var(--muted); font-size: 11px; }
+.product-v3 .act-payload-box { padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--sidebar); }
+.product-v3 .act-file-chips { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.product-v3 .act-file-chips-label { color: var(--muted); font-size: 11px; }
+.product-v3 .act-payload-content { position: relative; }
+.product-v3 .act-copy-btn { position: absolute; top: 0; right: 0; display: inline-flex; align-items: center; gap: 4px; padding: 3px 6px; border: 0; border-radius: 4px; background: var(--panel); color: var(--muted); font-size: 11px; }
+.product-v3 .act-json-pre { margin: 0; padding-top: 28px; max-height: 200px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.6 ui-monospace, Consolas, monospace; }
+.product-v3 .act-empty-loading { display: flex; align-items: center; gap: 8px; padding: 10px 2px; font-size: 12px; color: var(--muted); }
+@media (prefers-reduced-motion: reduce) { .product-v3 .act-spinner { animation: none; } }
+
+/* ==========================================================================
+   6. 极简现代设置页面 (Modern Settings Aesthetics)
+   ========================================================================== */
+
+.modern-settings .settings-navigation {
+  border-right: 1px solid var(--line);
+  background: var(--sidebar);
+  padding: 24px 14px 18px;
+  display: flex;
+  flex-direction: column;
+}
+
+.settings-nav-header {
+  padding: 0 10px 18px;
+}
+
+.settings-nav-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--heading);
+  letter-spacing: -0.02em;
+}
+
+.settings-nav-caption {
+  font-size: 11.5px;
+  color: var(--muted);
+  margin-top: 3px;
+}
+
+.settings-nav-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.settings-nav-group {
+  margin-bottom: 20px;
+}
+
+.settings-nav-label {
+  display: block;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--muted);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 0 10px;
+  margin-bottom: 8px;
+}
+
+.settings-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  height: 38px;
+  padding: 0 12px;
+  border-radius: 9px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.14s ease;
+}
+
+.settings-nav-item:hover {
+  background: var(--hover);
+  color: var(--heading);
+}
+
+.settings-nav-item.active {
+  background: var(--soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.settings-nav-item .nav-item-icon {
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.settings-nav-item.active .nav-item-icon {
+  color: var(--accent);
+}
+
+.settings-nav-arrow {
+  margin-left: auto;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.settings-nav-item:hover .settings-nav-arrow,
+.settings-nav-item.active .settings-nav-arrow {
+  opacity: 0.7;
+}
+
+.settings-brand-badge {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 10px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.settings-nav-initial {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #5b87ee, #7f58d9);
+  color: #fff;
+  font-weight: 700;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.settings-brand-info strong {
+  display: block;
+  font-size: 11.5px;
+  color: var(--heading);
+}
+
+.settings-brand-info small {
+  display: block;
+  font-size: 10px;
+  color: var(--muted);
+}
+
+/* 设置主内容区域现代卡片 */
+.modern-card {
+  border-radius: 14px !important;
+  border: 1px solid var(--line) !important;
+  background: var(--panel) !important;
+  padding: 24px 26px !important;
+  margin-bottom: 22px !important;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.02) !important;
+}
+
+.modern-feedback {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border-radius: 10px;
+  background: var(--soft);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  color: var(--heading);
+  font-size: 12.5px;
+  font-weight: 500;
+  margin-bottom: 24px;
+}
+
+/* 现代开关控件 (iOS/Linear Style Toggle Switch) */
+.modern-switch-label {
+  position: relative;
+  display: inline-block;
+  width: 40px;
+  height: 22px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.modern-switch-label input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+  position: absolute;
+}
+
+.modern-switch-slider {
+  position: absolute;
+  inset: 0;
+  background: var(--line-strong);
+  border-radius: 22px;
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.modern-switch-slider::before {
+  content: "";
+  position: absolute;
+  height: 16px;
+  width: 16px;
+  left: 3px;
+  bottom: 3px;
+  background: #ffffff;
+  border-radius: 50%;
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+}
+
+.modern-switch-label input:checked + .modern-switch-slider {
+  background: var(--accent);
+}
+
+.modern-switch-label input:checked + .modern-switch-slider::before {
+  transform: translateX(18px);
+}
+
+.modern-switch-label input:disabled + .modern-switch-slider {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* 现代下拉与按钮控件 */
+.modern-select {
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid var(--line-strong);
+  background: var(--panel);
+  color: var(--heading);
+  font-size: 12px;
+  font-weight: 500;
+  outline: none;
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+
+.modern-select:focus {
+  border-color: var(--accent);
+}
+
+.modern-outline-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 13px;
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: 8px;
+  border: 1px solid var(--line-strong);
+  background: var(--panel);
+  color: var(--heading);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.modern-outline-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--soft);
+}
+
+.modern-outline-btn-sm {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  font-size: 11px;
+  font-weight: 500;
+  border-radius: 6px;
+  border: 1px solid var(--line-strong);
+  background: var(--panel);
+  color: var(--heading);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.modern-outline-btn-sm:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--soft);
+}
+
+/* 现代代码与配置编辑器 */
+.modern-editor {
+  width: 100%;
+  border-radius: 10px;
+  border: 1px solid var(--line-strong);
+  background: var(--sidebar);
+  color: var(--text);
+  padding: 14px 16px;
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.65;
+  min-height: 190px;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.modern-editor:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 15%, transparent);
+}
+
+/* 范围选择器分段外观 */
+.modern-scope-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 22px;
+  padding: 9px 14px;
+  border-radius: 10px;
+  background: var(--sidebar);
+  border: 1px solid var(--line);
+}
+
+.scope-label {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--heading);
+}
+
+/* 插件与技能行美化 */
+.modern-plugin-row,
+.modern-skill-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 0;
+  border-top: 1px solid var(--line);
+}
+
+.plugin-info-col {
+  flex: 1;
+  min-width: 0;
+}
+
+.plugin-info-title {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 4px;
+}
+
+.plugin-info-title strong {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--heading);
+}
+
+.plugin-tag {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 99px;
+}
+
+.plugin-tag.is-enabled {
+  background: rgba(16, 185, 129, 0.12);
+  color: #10b981;
+}
+
+.plugin-tag.is-disabled {
+  background: var(--hover);
+  color: var(--muted);
+}
+
+.plugin-meta-line {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.5;
+  margin-bottom: 6px;
+}
+
+.plugin-wf-item {
+  font-size: 11px !important;
+  color: var(--text) !important;
+  margin: 3px 0 !important;
+}
+
+.skill-actions-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.skill-editor-box {
+  margin-top: 16px;
+  padding: 14px;
+  border-radius: 10px;
+  background: var(--sidebar);
+  border: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.skill-editor-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--heading);
+}
+
+/* 提示与特性线 */
+.modern-hint-box {
+  margin-top: 16px;
+  padding: 12px 14px;
+  border-radius: 9px;
+  background: var(--soft);
+  color: var(--text);
+  font-size: 11.5px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.modern-hint-box svg {
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.profile-details-dl {
+  display: grid;
+  gap: 0;
+  margin: 16px 0 0;
+}
+
+.profile-details-dl > div {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 0;
+  border-top: 1px solid var(--line);
+  font-size: 12.5px;
+}
+
+.profile-details-dl dt {
+  color: var(--muted);
+}
+
+.profile-details-dl dd {
+  margin: 0;
+  font-weight: 550;
+  color: var(--heading);
+}
+
+.profile-details-dl .credits-val {
+  color: var(--accent);
+  font-weight: 700;
+  font-size: 14px;
+}
+
+/* ToolCard 细节增强 */
+.modern-tool-card {
+  border-radius: 11px !important;
+  border: 1px solid var(--line) !important;
+  background: var(--panel) !important;
+  overflow: hidden !important;
+  transition: all 0.16s ease !important;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.02) !important;
+}
+
+.modern-tool-card summary {
+  padding: 11px 14px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  cursor: pointer !important;
+  background: var(--sidebar) !important;
+}
+
+.modern-tool-card:hover summary {
+  background: var(--hover) !important;
+}
+
+.tool-summary-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.tool-type-icon {
+  color: var(--accent);
+  display: grid;
+  place-items: center;
+}
+
+.tool-summary-meta {
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  font-size: 11px !important;
+}
+
+.tool-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 500;
+}
+
+.tool-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 10px 0 4px;
+}
+
+.tool-copy-json {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--muted);
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.tool-copy-json:hover {
+  color: var(--heading);
+  border-color: var(--accent);
+}
+
+.tool-linked-files {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin: 6px 0;
+  padding: 6px 8px;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--accent) 5%, var(--panel));
+  border: 1px solid color-mix(in srgb, var(--accent) 15%, transparent);
+}
+
+.tool-linked-label {
+  font-size: 10.5px;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.primary-action-sm {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px;
+  border-radius: 7px;
+  background: var(--accent);
+  color: var(--accent-on);
+  font-size: 11px;
+  font-weight: 600;
+  border: 0;
+  cursor: pointer;
+}
+
+.subtle-button-sm {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text);
+  font-size: 11px;
+  border: 1px solid var(--line);
+  cursor: pointer;
+}
+
+.subtle-button-sm:hover {
+  background: var(--hover);
+}

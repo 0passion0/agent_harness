@@ -33,6 +33,7 @@ import './settings.css'
 import './v2.css'
 import './v3.css'
 import './styles/layout.css'
+import './styles/modern-aesthetics.css'
 
 /** 界面外观模式 */
 type Theme = 'light' | 'dark'
