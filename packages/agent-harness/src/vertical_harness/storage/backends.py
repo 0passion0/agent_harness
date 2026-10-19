@@ -10,7 +10,8 @@ from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any
 
 from deepagents.backends import CompositeBackend, FilesystemBackend, StoreBackend
-from deepagents.backends.protocol import BackendProtocol
+from deepagents.backends.protocol import BackendProtocol, FileData, ReadResult
+from deepagents.backends.utils import slice_read_response
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.checkpoint.sqlite import SqliteSaver
@@ -20,6 +21,7 @@ from langgraph.store.memory import InMemoryStore
 from langgraph.store.sqlite import AsyncSqliteStore, SqliteStore
 
 from vertical_harness.config.settings import StoreBackendType
+from vertical_harness.desktop_attachments import extract_text
 from vertical_harness.storage.namespace import tenant_memory_namespace
 
 if TYPE_CHECKING:
@@ -28,6 +30,29 @@ if TYPE_CHECKING:
     from vertical_harness.config.settings import HarnessSettings
 
 logger = logging.getLogger(__name__)
+
+
+class DocumentFilesystemBackend(FilesystemBackend):
+    """Expose common office documents as paginated text to the agent."""
+
+    _TEXT_DOCUMENTS = {".pdf", ".docx", ".xlsx", ".xlsm", ".pptx"}
+    _SCRIPT_DOCUMENTS = {
+        ".doc", ".ppt", ".pptm", ".docm", ".xls", ".xlsb", ".odt", ".ods", ".odp"
+    }
+
+    def read(self, file_path: str, offset: int = 0, limit: int = 2000) -> ReadResult:
+        result = super().read(file_path, offset, limit)
+        if result.file_data is None or result.file_data["encoding"] != "base64":
+            return result
+        suffix = Path(file_path).suffix.lower()
+        if suffix in self._SCRIPT_DOCUMENTS:
+            return ReadResult(
+                error=f"{suffix} is not parsed by read_file; use execute with a suitable script or parser."
+            )
+        if suffix not in self._TEXT_DOCUMENTS:
+            return result
+        content = extract_text(self._resolve_path(file_path))
+        return slice_read_response(FileData(content=content, encoding="utf-8"), offset, limit)
 
 
 def _prepare_conn_string(settings: HarnessSettings) -> str:
@@ -283,7 +308,7 @@ def compose_backend(
     :date: 2026-10-19
     """
     # 第一步：实例化底层工作区物理文件系统后端（启用虚拟路径模式）
-    fs_backend = FilesystemBackend(root_dir=str(workspace_root), virtual_mode=True)
+    fs_backend = DocumentFilesystemBackend(root_dir=str(workspace_root), virtual_mode=True)
     if store is None:
         logger.debug("filesystem_backend_ready")
         return fs_backend
