@@ -36,13 +36,33 @@ def test_model_completed_reports_usage_without_stream_double_counting():
     usage = {"input_tokens": 10, "output_tokens": 5, "total_tokens": 15}
     message = AIMessage(content="answer", usage_metadata=usage)
     event = {"event": "on_chat_model_end", "data": {"output": message}}
-    kind, payload = _project(event, "root", ())
+    kind, payload = _project(event, "root", (), {})
     assert kind == "model.completed"
     assert payload["usage"] == usage
-    event = {"event": "on_chat_model_stream", "data": {"chunk": AIMessageChunk(content="answer", usage_metadata=usage)}}
-    kind, payload = _project(event, "root", ())
+    event = {
+        "event": "on_chat_model_stream",
+        "data": {"chunk": AIMessageChunk(content="answer", usage_metadata=usage)},
+    }
+    kind, payload = _project(event, "root", (), {})
     assert kind == "model.delta"
     assert "usage" not in payload
+
+
+def test_non_root_chain_error_projects_failed_phase():
+    from vertical_harness.engine.streaming import _project
+
+    event = {
+        "event": "on_chain_error",
+        "run_id": "child-run",
+        "name": "child-chain",
+        "metadata": {},
+        "data": {"error": RuntimeError("private")},
+    }
+    assert _project(event, "root-run", (), {}) == ("chain.failed", {})
+
+    event["metadata"] = {"lc_agent_name": "worker"}
+    event["name"] = "worker"
+    assert _project(event, "root-run", (), {}) == ("subagent.failed", {})
 
 
 class StreamingModel(FakeMessagesListChatModel):
@@ -52,7 +72,9 @@ class StreamingModel(FakeMessagesListChatModel):
     async def _astream(self, messages, stop=None, run_manager=None, **kwargs):
         message = self._generate(messages).generations[0].message
         if message.tool_calls:
-            yield ChatGenerationChunk(message=AIMessageChunk(content="", tool_calls=message.tool_calls))
+            yield ChatGenerationChunk(
+                message=AIMessageChunk(content="", tool_calls=message.tool_calls)
+            )
         else:
             for part in [message.content[:2], message.content[2:]]:
                 yield ChatGenerationChunk(message=AIMessageChunk(content=part))
@@ -65,9 +87,13 @@ def _call(name, args, call_id):
 
 def _settings(tmp_path):
     return HarnessSettings(
-        _env_file=None, model="test:model", workspace_root=tmp_path,
-        store_backend="memory", enable_memory=False,
-        enable_planning=False, enable_skill_gating=False,
+        _env_file=None,
+        model="test:model",
+        workspace_root=tmp_path,
+        store_backend="memory",
+        enable_memory=False,
+        enable_planning=False,
+        enable_skill_gating=False,
     )
 
 
@@ -93,23 +119,38 @@ def test_tokens_tools_progress_and_subagents(tmp_path, monkeypatch, delegate, to
 
     lookup.handle_tool_error = True
 
-    worker = StreamingModel(responses=[
-        _call("lookup", {"value": "private input"}, "lookup-call"),
-        AIMessage(content="worker answer" if delegate else "最终回答"),
-    ])
+    worker = StreamingModel(
+        responses=[
+            _call("lookup", {"value": "private input"}, "lookup-call"),
+            AIMessage(content="worker answer" if delegate else "最终回答"),
+        ]
+    )
     contribution = PluginContribution(tools=[ToolContribution(tool=lookup)])
     model = worker
     if delegate:
-        contribution = PluginContribution(subagents=[{
-            "name": "worker", "description": "Test worker", "system_prompt": "Look up.",
-            "model": worker, "tools": [lookup],
-        }])
-        model = StreamingModel(responses=[
-            _call("task", {"subagent_type": "worker", "description": "private task"}, "task-call"),
-            AIMessage(content="最终回答"),
-        ])
+        contribution = PluginContribution(
+            subagents=[
+                {
+                    "name": "worker",
+                    "description": "Test worker",
+                    "system_prompt": "Look up.",
+                    "model": worker,
+                    "tools": [lookup],
+                }
+            ]
+        )
+        model = StreamingModel(
+            responses=[
+                _call(
+                    "task", {"subagent_type": "worker", "description": "private task"}, "task-call"
+                ),
+                AIMessage(content="最终回答"),
+            ]
+        )
     plugin = SimpleNamespace(
-        manifest=PluginManifest(plugin_id="test.stream", version="0.1.0", description="Test streaming"),
+        manifest=PluginManifest(
+            plugin_id="test.stream", version="0.1.0", description="Test streaming"
+        ),
         build=lambda services: contribution,
     )
     monkeypatch.setattr(compose, "discover_plugins", lambda allowlist: [plugin])
@@ -118,10 +159,15 @@ def test_tokens_tools_progress_and_subagents(tmp_path, monkeypatch, delegate, to
     config = _config()
 
     async def collect():
-        return [event async for event in astream_agent(
-            agent, {"messages": [("user", "private prompt")]}, config=config,
-            context=RunContext(tenant_id="test", user_id="test"),
-        )]
+        return [
+            event
+            async for event in astream_agent(
+                agent,
+                {"messages": [("user", "private prompt")]},
+                config=config,
+                context=RunContext(tenant_id="test", user_id="test"),
+            )
+        ]
 
     events = asyncio.run(collect())
     assert events[0].type == "run.started"
@@ -131,18 +177,30 @@ def test_tokens_tools_progress_and_subagents(tmp_path, monkeypatch, delegate, to
     assert {event.run_id for event in events} == {str(config["run_id"])}
     assert {event.thread_id for event in events} == {"stream-thread"}
     tokens = [event for event in events if event.type == "model.delta"]
-    assert "".join(event.data["text"] for event in tokens if event.agent_name != "worker") == "最终回答"
+    assert (
+        "".join(event.data["text"] for event in tokens if event.agent_name != "worker")
+        == "最终回答"
+    )
     assert all(event.parent_ids and event.data["message_id"] for event in tokens)
-    lookup_events = [event for event in events if event.name == "lookup" and event.type.startswith("tool.")]
+    lookup_events = [
+        event for event in events if event.name == "lookup" and event.type.startswith("tool.")
+    ]
     assert [event.type for event in lookup_events] == [
-        "tool.started", "tool.failed" if tool_fails else "tool.completed",
+        "tool.started",
+        "tool.failed" if tool_fails else "tool.completed",
     ]
     assert lookup_events[0].operation_id == lookup_events[1].operation_id
-    assert any(event.type == "custom.progress" and event.data == {"value": {"step": "checked"}} for event in events)
+    assert any(
+        event.type == "custom.progress" and event.data == {"value": {"step": "checked"}}
+        for event in events
+    )
     if delegate:
         subagents = [event for event in events if event.type.startswith("subagent.")]
         assert [event.type for event in subagents] == ["subagent.started", "subagent.completed"]
-        assert subagents[0].operation_id in next(event for event in tokens if event.agent_name == "worker").parent_ids
+        assert (
+            subagents[0].operation_id
+            in next(event for event in tokens if event.agent_name == "worker").parent_ids
+        )
         assert subagents[0].seq < lookup_events[0].seq < subagents[1].seq
     encoded = "\n".join(event.model_dump_json() for event in events)
     assert "private" not in encoded
@@ -196,10 +254,16 @@ def test_failure_is_safe_and_still_raises():
 
 def test_no_checkpointer_and_text_blocks():
     async def answer(state):
-        return {"messages": [AIMessage(content=[
-            {"type": "reasoning", "reasoning": "private reasoning"},
-            {"type": "text", "text": "answer"},
-        ])]}
+        return {
+            "messages": [
+                AIMessage(
+                    content=[
+                        {"type": "reasoning", "reasoning": "private reasoning"},
+                        {"type": "text", "text": "answer"},
+                    ]
+                )
+            ]
+        }
 
     graph = StateGraph(MessagesState).add_node("answer", answer)
     graph.set_entry_point("answer")
@@ -212,9 +276,13 @@ def test_no_checkpointer_and_text_blocks():
 def test_invalid_thread_id_rejected_before_execution(thread_id):
     async def run():
         with pytest.raises(ValueError, match="thread_id"):
-            await anext(astream_agent(
-                None, None, config={"configurable": {"thread_id": thread_id}},
-            ))
+            await anext(
+                astream_agent(
+                    None,
+                    None,
+                    config={"configurable": {"thread_id": thread_id}},
+                )
+            )
 
     asyncio.run(run())
 
@@ -233,7 +301,9 @@ def test_close_and_cancel_stop_underlying_execution(cancel):
 
         graph = StateGraph(MessagesState).add_node("wait", wait)
         graph.set_entry_point("wait")
-        stream = astream_agent(graph.compile(checkpointer=InMemorySaver()), {"messages": []}, config=_config())
+        stream = astream_agent(
+            graph.compile(checkpointer=InMemorySaver()), {"messages": []}, config=_config()
+        )
         events = []
 
         async def consume():
@@ -256,5 +326,3 @@ def test_close_and_cancel_stop_underlying_execution(cancel):
         assert not any(event.type in {"run.completed", "run.failed"} for event in events)
 
     asyncio.run(run())
-
-

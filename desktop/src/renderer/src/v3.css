@@ -267,6 +267,29 @@
 .product-v3 .dir-empty-icon {color:var(--muted)}
 .product-v3 .dir-empty-box p {font-size:11px;line-height:1.6;color:var(--muted);max-width:260px}
 
+.capability-picker {position:relative;display:flex;align-items:center;gap:5px}
+.capability-chip {display:inline-flex;align-items:center;gap:5px;border:1px solid var(--line);border-radius:999px;padding:4px 8px;background:var(--surface);color:var(--heading);font-size:11px}
+.capability-menu {position:absolute;z-index:30;bottom:calc(100% + 8px);left:0;display:flex;flex-direction:column;min-width:190px;max-height:300px;overflow:auto;padding:5px;border:1px solid var(--line);border-radius:10px;background:var(--surface);box-shadow:0 8px 28px #0002}
+.capability-menu button {display:flex;align-items:center;justify-content:space-between;gap:15px;padding:8px;border:0;border-radius:6px;background:transparent;color:var(--heading);text-align:left}
+.capability-menu button:hover {background:var(--line)}
+.capability-menu small {color:var(--muted)}
+.capability-menu .capability-done {justify-content:center;margin-top:4px;background:var(--accent);color:white}
+.approval-scope {display:grid;grid-template-columns:auto 1fr;gap:5px 10px;padding:10px;border-radius:8px;background:var(--surface)}
+.approval-scope dt {color:var(--muted);font-size:11px}
+.approval-scope dd {margin:0;font-size:12px;overflow-wrap:anywhere}
+.plugin-card {margin:8px 0;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+.plugin-card>span {float:right;color:var(--muted);font-size:11px}
+.plugin-card p,.plugin-card li {font-size:12px;color:var(--muted);line-height:1.5}
+.plugin-card ul {padding-left:18px}
+.workflow-runs {display:flex;flex-direction:column;gap:8px;padding:6px 0}
+.workflow-card {align-self:flex-start;width:min(560px,90%);border:1px solid var(--line);border-radius:10px;background:var(--surface);overflow:hidden}
+.workflow-card-heading {display:flex;align-items:center;gap:8px;width:100%;padding:9px 11px;border:0;background:transparent;color:var(--heading);text-align:left}
+.workflow-card-heading span {margin-left:auto;color:var(--muted);font-size:11px}
+.workflow-card ol {margin:0;padding:0 14px 10px 36px}
+.workflow-card li {padding:5px 0;color:var(--heading);font-size:12px}
+.workflow-card li span+span {margin-left:10px;color:var(--muted)}
+.workflow-card li small {display:block;color:var(--muted)}
+
 @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 .spinning { animation: spin 1s linear infinite; }
 

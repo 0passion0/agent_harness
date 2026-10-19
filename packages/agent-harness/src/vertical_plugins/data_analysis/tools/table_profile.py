@@ -14,6 +14,8 @@ from openpyxl import load_workbook
 
 logger = logging.getLogger(__name__)
 
+# 支持的表文件后缀集合
+SUPPORTED_FORMATS: frozenset[str] = frozenset({".csv", ".parquet", ".xlsx"})
 # 列画像单页展示的最大列数
 PROFILE_PAGE_SIZE = 10
 # 限制单页上下文 Token 预算对应的字符大小上限

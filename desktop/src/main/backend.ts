@@ -5,7 +5,7 @@ import path from 'node:path'
 import type { Json } from '../shared/protocol'
 
 export type Interrupt = { id: string; value: { action_requests?: { name: string; args: Json }[]; [key: string]: Json | undefined } }
-export type EngineEvent = { type: string; run_id: string; thread_id: string; operation_id: string; name: string; agent_name: string | null; data: Record<string, Json> }
+export type EngineEvent = { type: string; run_id: string; thread_id: string; operation_id: string; name: string; agent_name: string | null; seq?: number; parent_ids?: string[]; node?: string | null; data: Record<string, Json> }
 export type EngineFrame =
   | { event: 'agent.event'; data: EngineEvent }
   | { event: 'run.cancelled'; data: { run_id: string; thread_id: string } }
@@ -21,7 +21,7 @@ export class Backend {
   private start(): void {
     const python = path.join(this.root, '.venv', 'Scripts', 'python.exe')
     if (!existsSync(python)) throw new Error('未找到项目 .venv，请先按项目说明安装 Python 依赖')
-    const child = spawn(python, ['-X', 'utf8', '-u', path.join(this.root, 'desktop', 'bridge.py')], { cwd: this.root, windowsHide: true, stdio: 'pipe' })
+    const child = spawn(python, ['-X', 'utf8', '-u', '-m', 'vertical_harness.desktop'], { cwd: this.root, windowsHide: true, stdio: 'pipe' })
     this.child = child
     createInterface({ input: child.stdout }).on('line', line => {
       const frame = JSON.parse(line)

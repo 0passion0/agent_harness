@@ -1,8 +1,7 @@
 import { expect, test } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { UserConfig } from '../../src/renderer/src/plugins/user_config'
+import { UserConfig, type UserSettingsPageProps } from '../../src/renderer/src/plugins/user_config'
 import { UsageStatsContent } from '../../src/renderer/src/plugins/user_config/UsageSettings'
-import type { UserSettingsPageProps } from '../../src/renderer/src/plugins/settings'
 import type { UsageModel, UsageStats } from '../../src/shared/protocol'
 
 const noop = async () => {}
@@ -10,7 +9,7 @@ const user = { userID: '42', realName: '测试用户', userName: 'test', userAva
 const props: UserSettingsPageProps = {
   initialTab: 'credits', application: {
     build_mode: 'production', projects: [], active_project_id: null, model: null,
-    exa: { configured: false }, user,
+    user, skills: [],
     runtimes: { python: '', node: '' }, plugins: [], permission_mode: 'ask', data_dir: 'data'
   }, config: null, busy: false, apply: noop, inspect: noop, save: noop, remove: noop,
   toggleSkill: noop, testMcp: noop, importSkills: noop, testProfile: async () => '',

@@ -23,7 +23,7 @@ describe('agent state', () => {
   })
 
   it('discards a question after cancellation', () => {
-    let state = reduceAgent(initialState, { event: 'interaction.request', session_id: 's', run_id: 'r', data: { plugin_id: 'data_analysis', interaction_id: 'i', kind: 'research_question', question: '为何？' } })
+    let state = reduceAgent(initialState, { event: 'interaction.request', session_id: 's', run_id: 'r', data: { plugin_id: 'research', interaction_id: 'i', kind: 'question', question: '为何？' } })
     state = reduceAgent(state, { event: 'run.finished', session_id: 's', run_id: 'r', data: { status: 'cancelled', snapshot: { session_id: 's', thread_id: 't', thread_ids: ['t'], messages: [], attachments: [], artifacts: [], runs: [], totals: {}, unsettled_history: false } } })
     expect(state.question).toBeNull()
     expect(state.phase).toBe('idle')
@@ -36,6 +36,11 @@ describe('agent state', () => {
     state = reduceAgent(state, { event: 'run.accepted', run_id: 'r' })
     expect(state.phase).toBe('idle')
     expect(state.lastRunSaved).toBe(true)
+  })
+  it('restores active workflow records from a reloaded snapshot', () => {
+    const record = { kind: 'workflow.node', seq: 2, operation_id: 'op', node: 'search', status: 'running' }
+    const snapshot = { session_id: 's', thread_id: 't', thread_ids: ['t'], messages: [], attachments: [], artifacts: [], runs: [], active_run: { id: 'r', started_at: 'now', records: [record] }, totals: {}, unsettled_history: false }
+    expect(reduceAgent(initialState, { event: 'ready', data: snapshot }).events).toEqual([record])
   })
   it('allows dismissing protocol errors without losing the conversation', () => {
     const snapshot = { session_id: 's', thread_id: 't', thread_ids: ['t'], messages: [], attachments: [], artifacts: [], runs: [], totals: {}, unsettled_history: false }
@@ -69,5 +74,11 @@ describe('stream event aggregation', () => {
     expect(result.stream).toHaveLength(900)
     expect(result.stream.startsWith('0123456789')).toBe(true)
     expect(result.events.length).toBe(800)
+  })
+
+  it('retains workflow event identity and hierarchy for expandable run cards', () => {
+    const record = { kind: 'workflow.node', seq: 4, operation_id: 'op-1', parent_ids: ['parent'], node: 'search', agent_name: 'Research', plugin_id: 'research', workflow_name: 'literature_search', status: 'running', summary: 'Searching' }
+    const state = reduceAgent(initialState, { event: 'run.event', session_id: 's', run_id: 'r', data: record })
+    expect(state.events).toContainEqual(record)
   })
 })

@@ -114,16 +114,17 @@ export type UsageStats = {
  * 会话上下文某一特定区块（如系统提示词、记忆、工具）的 Token 占用详情。
  */
 export type TokenSectionUsage = {
+  available?: boolean
   /** 区块名称（如 '系统提示词'、'技能 (Skills)'） */
   name: string
   /** 当前区块所占用的 Token 数量 */
-  tokens: number
+  tokens: number | null
   /** 当前区块对应的 UTF-8 字节大小 */
-  bytes: number
+  bytes: number | null
   /** 在当前已使用总 Token 中的占比（0.0 ~ 1.0） */
-  ratio_of_used: number
+  ratio_of_used: number | null
   /** 在模型最大允许上下文 Token 窗口中的占比（0.0 ~ 1.0） */
-  ratio_of_max: number
+  ratio_of_max: number | null
   /** 区块功能或构成的简要描述 */
   description: string
 }
@@ -172,7 +173,8 @@ export type Snapshot = {
   /** 该会话中生成的交付物与成果文件列表 */
   artifacts: ArtifactRef[]
   /** 每一轮运行的历史执行详情记录 */
-  runs: Array<{ requests: Json[]; tools: Record<string, Json>; elapsed: number }>
+  runs: Array<{ requests: Json[]; tools: Record<string, Json>; elapsed: number; id?: string; started_at?: string; finished_at?: string; status?: 'complete' | 'failed' | 'cancelled'; records?: RunRecord[]; user_message_id?: string }>
+  active_run?: { id: string; started_at: string; records: RunRecord[]; user_message_id?: string }
   /** 本会话总体的 Token 用量与估算数据 */
   totals: Record<string, Json>
   /** 是否有尚未归档沉淀的历史增量 */
@@ -199,6 +201,8 @@ export type PluginDescriptor = {
  * 运行时插件状态（扩展自插件描述符）。
  */
 export type AppPlugin = PluginDescriptor & {
+  version: string
+  workflows: Array<{ name: string; description: string }>
   /** 插件是否已在设置中开启 */
   enabled: boolean
   /** 插件必要配置是否已就绪 */
@@ -206,6 +210,8 @@ export type AppPlugin = PluginDescriptor & {
   /** 插件代码是否已成功载入后端进程 */
   loaded: boolean
 }
+
+export type SkillDescriptor = { id: string; name: string; description: string; source: string; plugin_id?: string; enabled: boolean }
 
 /**
  * 历史会话简略条目（用于侧边栏列表展示）。
@@ -245,6 +251,12 @@ export type UserProfile = {
  * 智能体运行时向用户发起的交互式问题（如需确认或需要补充材料）。
  */
 export type Question = {
+  request_id?: string
+  workflow_name?: string
+  purpose?: string
+  input_scope?: Json
+  planned_outputs?: Json
+  allowed_effects?: Json
   /** 交互请求全局唯一标识符 */
   interaction_id: string
   /** 发起提问的目标插件标识 */
@@ -259,6 +271,13 @@ export type Question = {
  * 单项工具调用或智能体流式执行事件记录。
  */
 export type RunRecord = {
+  seq?: number
+  operation_id?: string
+  parent_ids?: string[]
+  node?: string | null
+  agent_name?: string | null
+  plugin_id?: string
+  workflow_name?: string
   /** 事件类型（如 tool_start, tool_end, text, model_start 等） */
   kind: string
   /** 工具调用唯一标识 */
@@ -290,6 +309,7 @@ export type GlobalModel = {
  * 桌面应用全局生命周期运行状态。
  */
 export type ApplicationState = {
+  skills: SkillDescriptor[]
   /** 构建运行模式：开发环境 ('development') 或打包生产环境 ('production') */
   build_mode: 'development' | 'production'
   /** 用户本地已注册的项目工作区列表 */
@@ -299,7 +319,6 @@ export type ApplicationState = {
   /** 当前绑定的全局大模型信息 */
   model: GlobalModel | null
   /** Exa 联网搜索引擎配置状态 */
-  exa: { configured: boolean }
   /** 当前系统加载的插件列表及配置 */
   plugins: AppPlugin[]
   /** 当前登录的用户信息，未登录时为 null */
@@ -414,18 +433,14 @@ export type Command =
   | { id: string; method: 'session.resume'; params: { session_id: string } }
   | { id: string; method: 'plugin.snapshot'; params: { plugin_id: string } }
   | { id: string; method: 'plugin.set'; params: { plugin_id: string; enabled: 'true' | 'false' } }
-  | { id: string; method: 'plugin.files' | 'plugin.export'; params: { plugin_id: string } }
-  | { id: string; method: 'plugin.read'; params: { plugin_id: string; path: string } }
-  | { id: string; method: 'plugin.save'; params: { plugin_id: string; path: string; content: string } }
-  | { id: string; method: 'run.start'; params: { text: string } }
-  | { id: string; method: 'run.attachments'; params: { text: string; attachment_ids: string[] } }
+  | { id: string; method: 'run.start'; params: { text: string; selected_plugins?: string[]; selected_skills?: string[] } }
+  | { id: string; method: 'run.attachments'; params: { text: string; attachment_ids: string[]; selected_plugins?: string[]; selected_skills?: string[] } }
   | { id: string; method: 'run.stop'; params: { run_id: string } }
   | { id: string; method: 'interaction.answer'; params: { run_id: string; interaction_id: string; answer: string } }
   | { id: string; method: 'project.create'; params: { name: string } }
   | { id: string; method: 'project.select'; params: { project_id: string } }
-  | { id: string; method: 'model.test' | 'exa.clear'; params: Record<string, never> }
+  | { id: string; method: 'model.test'; params: Record<string, never> }
   | { id: string; method: 'model.configure'; params: { model_code: string } }
-  | { id: string; method: 'exa.configure'; params: { api_key: string } }
   | { id: string; method: 'runtime.configure'; params: ApplicationState['runtimes'] }
   | { id: string; method: 'permission.set'; params: { mode: ApplicationState['permission_mode'] } }
   | { id: string; method: 'config.inspect'; params: { scope: ConfigScope } }

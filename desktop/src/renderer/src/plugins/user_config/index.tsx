@@ -1,7 +1,7 @@
 /**
  * @file index.tsx
  * @description 全局与项目偏好设置总控组件。
- * 覆盖：全局模型代码与最大上下文 Token 预算配置、Exa 网络搜索密钥、内置科研数据分析能力、
+ * 覆盖：全局模型代码与最大上下文 Token 预算配置、
  * 插件开关、工具执行权限（只读/询问/完全）、脚本解释器路径、
  * 本机数据与日志目录、Agent 自定义指令与 Skills 目录导入编辑、以及 MCP 外部服务。
  * @author tongliga
@@ -10,16 +10,33 @@
 
 import { useEffect, useState } from 'react'
 import {
-  BrainCircuit, CheckCircle2, ChevronRight, Code2, Database, FolderOpen,
-  Globe2, Layers3, PlugZap, ShieldCheck, Sparkles, UserRound, Wallet, Wrench
+  BrainCircuit, CheckCircle2, ChevronRight, Database, FolderOpen, Layers3, PlugZap, ShieldCheck, UserRound, Wallet
 } from 'lucide-react'
-import type { ConfigScope, EnvironmentInfo } from '../../../../shared/protocol'
-import type { UserSettingsPageProps } from '../settings'
-import { PluginEditor } from './PluginEditor'
+import type { ApplicationState, ConfigScope, ConfigView, EnvironmentInfo } from '../../../../shared/protocol'
 import { UsageSettings } from './UsageSettings'
 
 /** 设置面板分类标签页类型 */
-type Tab = 'models' | 'tools' | 'agent' | 'mcp' | 'plugins' | 'profile' | 'credits' | 'usage'
+type Tab = 'models' | 'agent' | 'mcp' | 'plugins' | 'profile' | 'credits' | 'usage'
+
+export type UserSettingsPageProps = {
+  initialTab?: Tab
+  application: ApplicationState | null
+  config: ConfigView | null
+  busy: boolean
+  apply(method: 'model.test', params: Record<string, never>): Promise<void>
+  apply(method: 'model.configure', params: { model_code: string }): Promise<void>
+  apply(method: 'context.configure', params: { max_tokens: string }): Promise<void>
+  apply(method: 'permission.set', params: { mode: ApplicationState['permission_mode'] }): Promise<void>
+  inspect(scope: ConfigScope): Promise<void>
+  save(scope: ConfigScope, kind: 'agent' | 'mcp', content: string): Promise<void>
+  remove(kind: 'agent' | 'mcp'): Promise<void>
+  toggleSkill(scope: ConfigScope, id: string, enabled: boolean): Promise<void>
+  testMcp(scope: ConfigScope, id: string): Promise<void>
+  importSkills(scope: ConfigScope): Promise<void>
+  testProfile(): Promise<string>
+  readSkill(scope: ConfigScope, id: string): Promise<{ content: string; source: string } | null>
+  saveSkill(scope: ConfigScope, id: string, content: string): Promise<void>
+}
 
 /** 设置导航菜单分组配置 */
 const categories = [
@@ -27,7 +44,6 @@ const categories = [
     label: '基础设置',
     entries: [
       { id: 'models', label: '全局模型', icon: BrainCircuit },
-      { id: 'tools', label: '内置工具', icon: Wrench },
       { id: 'plugins', label: '插件与权限', icon: ShieldCheck }
     ]
   },
@@ -54,7 +70,7 @@ const categories = [
  * 第一步：根据 initialTab 初始化激活页签，同步外部传入的模型代码、Token 上限与解释器路径。
  * 第二步：若处于指令 (agent) 或服务 (mcp) 页签，自动拉取当前 scope 范围的配置文件内容。
  * 第三步：渲染左侧分类导航菜单，支持页面无缝切换。
- * 第四步：按所选标签页分流渲染对应的表单控件（全局模型、上下文预算、Exa 搜索、权限模式等）。
+ * 第四步：按所选标签页分流渲染对应的设置表单。
  *
  * @param props - 用户配置页面标准属性
  */
@@ -64,7 +80,6 @@ export function UserConfig({
 }: UserSettingsPageProps) {
   const [tab, setTab] = useState<Tab>(initialTab)
   const [scope, setScope] = useState<ConfigScope>('global')
-  const [exaKey, setExaKey] = useState('')
   const [modelCode, setModelCode] = useState(application?.model?.model ?? '')
   const [maxTokens, setMaxTokens] = useState(String(application?.max_context_tokens ?? 128000))
   const [pythonPath, setPythonPath] = useState('')
@@ -74,7 +89,6 @@ export function UserConfig({
   const [skill, setSkill] = useState<{ id: string; source: string; content: string } | null>(null)
   const [environment, setEnvironment] = useState<EnvironmentInfo | null>(null)
   const [feedback, setFeedback] = useState('')
-  const [pluginDirty, setPluginDirty] = useState(false)
   const [pluginPending, setPluginPending] = useState(false)
 
   // 同步外部模型的代码与最大 Token 预算
@@ -140,7 +154,6 @@ export function UserConfig({
 
   const title = ({
     models: '全局模型',
-    tools: '内置工具',
     agent: '指令与 Skills',
     mcp: 'MCP 服务',
     plugins: '插件与权限',
@@ -160,7 +173,7 @@ export function UserConfig({
           const Icon = item.icon
           return <button
             key={item.id}
-            disabled={pluginDirty || pluginPending}
+            disabled={pluginPending}
             className={tab === item.id ? 'settings-nav-item active' : 'settings-nav-item'}
             aria-current={tab === item.id ? 'page' : undefined}
             onClick={() => { setTab(item.id); setFeedback('') }}
@@ -183,9 +196,8 @@ export function UserConfig({
           <span className="settings-kicker">PREFERENCES / {title}</span>
           <h1>{title}</h1>
           <p>{
-            tab === 'models' ? '默认使用 Agnes，可填写 MedPeer 支持的模型 Code，所有项目共用。'
-            : tab === 'tools' ? '随桌面应用提供的 Agent 能力，无需逐一安装或启用。'
-            : tab === 'plugins' ? '管理插件启用状态、执行权限与本机工作目录。'
+            tab === 'models' ? '模型连接由当前 Python 后端提供，模型标识设置对所有项目生效。'
+            : tab === 'plugins' ? '管理已发现插件的启用状态、工作流与执行权限。'
             : tab === 'agent' ? '让 Agent 理解你的项目规则，按需加载技能。'
             : tab === 'profile' ? '查看当前登录的 MedPeer 账户信息和研值余额。'
             : tab === 'usage' ? '查看各模型已报告的 Token 消耗。'
@@ -227,26 +239,25 @@ export function UserConfig({
           <section className="pref-section">
             <div className="pref-section-heading">
               <div>
-                <h2>MedPeer 模型</h2>
-                <p>所有项目和任务使用统一的 MedPeer 模型</p>
+                <h2>模型配置</h2>
+                <p>使用当前 Python 后端配置的模型连接</p>
               </div>
-              <span className="pref-state ok"><CheckCircle2 size={14}/> 已就绪</span>
+              <span className="pref-state ok"><CheckCircle2 size={14}/> {application?.model ? '已选择' : '未选择'}</span>
             </div>
             <div className="pref-form">
               <label>
                 模型 Code
-                <input value={modelCode} disabled={busy || !application?.model} placeholder="agnes-3.0-flash" onChange={e => setModelCode(e.target.value)} />
+                <input value={modelCode} disabled={busy || !application?.model} placeholder="模型标识" onChange={e => setModelCode(e.target.value)} />
               </label>
             </div>
             <div className="pref-actions">
               <button disabled={busy || !modelCode.trim() || modelCode === application?.model?.model} onClick={() => void run(() => apply('model.configure', { model_code: modelCode }), '模型已保存，下一次任务生效')}>保存模型</button>
-              <button disabled={busy || !application?.model} onClick={() => setModelCode('agnes-3.0-flash')}>使用默认 Agnes</button>
               <button disabled={busy || !application?.model || modelCode !== application.model.model} onClick={() => void run(() => testProfile(), '模型连接测试成功')}>测试连接</button>
             </div>
-            <p className="pref-hint">默认 Code 为 agnes-3.0-flash。修改后请保存，再测试连接。</p>
+            <p className="pref-hint">修改模型标识后请保存，再测试连接。</p>
             <div className="pref-hint">
               <CheckCircle2 size={15}/>
-              <span>模型连接由 MedPeer 账户提供，无需配置提供商、接口地址或 API Key。</span>
+              <span>接口地址与凭据由 Python 后端配置，前端仅保存模型标识。</span>
             </div>
           </section>
 
@@ -283,68 +294,7 @@ export function UserConfig({
             </div>
             <div className="pref-feature-line">
               <CheckCircle2 size={17}/>
-              <div><strong>内置能力默认可用</strong><small>Exa 搜索、表格画像、Python 分析、报告交付由 Agent 按任务选择。</small></div>
-            </div>
-          </section>
-        </>}
-
-        {/* 内置工具 */}
-        {tab === 'tools' && <>
-          <section className="pref-section">
-            <div className="pref-section-heading">
-              <div>
-                <h2>Exa 网络搜索</h2>
-                <p>已集成到 Agent 的默认工具列表</p>
-              </div>
-              <span className={application?.exa.configured ? 'pref-state ok' : 'pref-state'}>
-                {application?.exa.configured ? '已就绪' : '等待配置状态'}
-              </span>
-            </div>
-            <div className="pref-tool-summary">
-              <div className="pref-icon blue"><Globe2 size={20}/></div>
-              <div>
-                <strong>联网资料检索</strong>
-                <small>自动获取网页标题、来源 URL 和有限摘要。默认即可使用，也可填写自己的 API Key。</small>
-              </div>
-            </div>
-            <div className="pref-form">
-              <label>
-                自定义 Exa API Key（可选）
-                <input type="password" value={exaKey} autoComplete="new-password" disabled={busy} placeholder="留空使用现有配置 · 填写可替换密钥" onChange={e => setExaKey(e.target.value)} />
-              </label>
-            </div>
-            <div className="pref-actions">
-              <button className="pref-primary" disabled={busy || !exaKey.trim()} onClick={() => void run(async () => {
-                await window.medpeer.command({ id: crypto.randomUUID(), method: 'exa.configure', params: { api_key: exaKey.trim() } })
-                setExaKey('')
-              }, 'Exa 自定义密钥已保存，搜索已就绪')}>保存自定义密钥</button>
-              {application?.exa.configured && <button disabled={busy} onClick={() => void run(() => window.medpeer.command({ id: crypto.randomUUID(), method: 'exa.clear', params: {} }), 'Exa 已恢复默认密钥')}>恢复默认密钥</button>}
-            </div>
-          </section>
-
-          <section className="pref-section">
-            <div className="pref-section-heading">
-              <div>
-                <h2>数据分析与研究报告</h2>
-                <p>原生包含，无需额外路由模型</p>
-              </div>
-              <span className="pref-state ok"><CheckCircle2 size={14}/> 默认开启</span>
-            </div>
-            <div className="pref-feature-line">
-              <Database size={18}/>
-              <div><strong>表格画像与质量检查</strong><small>CSV / Excel / Parquet 数据行数、缺失值、字段类型、分布统计。</small></div>
-            </div>
-            <div className="pref-feature-line">
-              <Code2 size={18}/>
-              <div><strong>可复现分析</strong><small>使用当前 Python 执行统计与绘图，记录脚本、执行证据与输出文件。</small></div>
-            </div>
-            <div className="pref-feature-line">
-              <Sparkles size={18}/>
-              <div><strong>科研报告交付</strong><small>基于真实计算结果生成 Markdown 报告及证据文件，可在任务右侧直接审查。</small></div>
-            </div>
-            <div className="pref-hint">
-              <ShieldCheck size={15}/>
-              <span>内置不意味着无条件执行：写入和脚本运行仍遵守“操作前询问”权限；在线搜索需有效密钥及网络。</span>
+              <div><strong>能力按需启用</strong><small>插件可在对话输入框中手动选择，也可由 Agent 在任务中申请授权。</small></div>
             </div>
           </section>
         </>}
@@ -356,14 +306,15 @@ export function UserConfig({
             {application?.plugins.map(plugin => <div className="pref-setting-row" key={plugin.id}>
               <div>
                 <strong>{plugin.name}</strong>
-                <small>{plugin.description} · {plugin.loaded ? '已加载' : plugin.enabled ? '已启用' : '已停用'}</small>
+                <small>{plugin.description} · v{plugin.version} · {plugin.enabled ? '已启用' : '已停用'}</small>
+                {plugin.workflows.map(workflow => <p className="pref-desc" key={workflow.name}>{workflow.name} · {workflow.description}</p>)}
               </div>
               <label className="pref-check">
                 <input
                   type="checkbox"
                   aria-label={`启用 ${plugin.name}`}
                   checked={plugin.enabled}
-                  disabled={busy || pluginPending || pluginDirty || !['data_analysis', 'exa'].includes(plugin.id)}
+                  disabled={busy || pluginPending}
                   onChange={e => {
                     const enabled = e.target.checked
                     setPluginPending(true)
@@ -375,11 +326,8 @@ export function UserConfig({
                 />
               </label>
             </div>)}
+            {!application?.plugins.length && <p className="pref-desc">未发现已安装的插件。</p>}
           </section>
-
-          {application?.build_mode === 'development' && (
-            <PluginEditor busy={busy || pluginPending} run={run} onDirty={setPluginDirty}/>
-          )}
 
           {/* 执行安全权限 */}
           <section className="pref-section">
@@ -470,7 +418,7 @@ export function UserConfig({
           </> : (
             <section className="pref-section">
               <h2>MCP 连接</h2>
-              <p className="pref-desc">仅用于外部服务。Exa / 数据分析 / 报告工具已经内置，无需额外配置 MCP。</p>
+              <p className="pref-desc">仅配置当前工作区需要的外部服务。</p>
               <textarea className="pref-editor" spellCheck={false} value={mcpContent} onChange={e => setMcpContent(e.target.value)}/>
               <div className="pref-actions">
                 <button className="pref-primary" disabled={busy} onClick={() => void save(scope, 'mcp', mcpContent)}>保存配置</button>

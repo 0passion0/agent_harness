@@ -8,10 +8,8 @@
  */
 
 import { useEffect, useReducer, useRef, useState } from 'react'
-import type { ApplicationState, AttachmentRef, ConfigScope, ConfigView, EventFrame, PluginDescriptor, SessionItem, Snapshot } from '../../../shared/protocol'
+import type { ApplicationState, AttachmentRef, ConfigScope, ConfigView, EventFrame, SessionItem, Snapshot } from '../../../shared/protocol'
 import { initialState, reduceAgent } from './agent-state'
-import type { PluginState } from '../plugins/types'
-import { pluginViews } from '../plugins'
 
 /**
  * 生成随机 UUID 请求标识符辅助函数。
@@ -37,8 +35,6 @@ export function useAgentController() {
   const [attachments, setAttachments] = useState<AttachmentRef[]>([])
   const [sessions, setSessions] = useState<SessionItem[]>([])
   const [sessionSearch, setSessionSearch] = useState('')
-  const [plugins, setPlugins] = useState<PluginDescriptor[]>([])
-  const [pluginStates, setPluginStates] = useState<Record<string, PluginState>>({})
   const [config, setConfig] = useState<ConfigView | null>(null)
   const [error, setError] = useState('')
 
@@ -48,7 +44,6 @@ export function useAgentController() {
   const sessionSearchQuery = useRef('')
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const sendPending = useRef(false)
-  const pluginList = useRef<PluginDescriptor[]>([])
   const activeSession = useRef<string | null>(null)
   const [sending, setSending] = useState(false)
 
@@ -86,26 +81,6 @@ export function useAgentController() {
     }, 220)
   }
 
-  /**
-   * 刷新指定会话的所有已加载插件的运行时状态。
-   *
-   * @param sessionId - 会话标识符
-   */
-  async function refreshPlugins(sessionId: string): Promise<void> {
-    const version = ++queryVersion.current
-    const entries = await Promise.all(pluginList.current.map(async descriptor => {
-      const result = await window.medpeer.command({
-        id: requestId(),
-        method: 'plugin.snapshot',
-        params: { plugin_id: descriptor.id }
-      }) as { plugin_id: string; state: PluginState }
-      return [result.plugin_id, result.state] as const
-    }))
-    if (version === queryVersion.current && activeSession.current === sessionId) {
-      setPluginStates(Object.fromEntries(entries))
-    }
-  }
-
   // 第二步：注册后端事件帧监听，建立高频帧 rAF 合并调度
   useEffect(() => {
     type RunFrame = Extract<EventFrame, { event: 'run.event' }>
@@ -137,10 +112,6 @@ export function useAgentController() {
       // 应用全量状态初始化
       if (event.event === 'app.ready') {
         setApplication(event.data)
-        queryVersion.current++
-        const descriptors = event.data.plugins.filter(plugin => plugin.loaded && Object.hasOwn(pluginViews, plugin.id))
-        setPlugins(descriptors)
-        pluginList.current = descriptors
         refreshList().catch(reason => setError(String(reason)))
         return
       }
@@ -148,22 +119,12 @@ export function useAgentController() {
       // 会话重置或切入新会话
       if (event.event === 'ready') {
         activeSession.current = event.data.session_id
-        const version = ++queryVersion.current
-        setPluginStates({})
-        window.medpeer.command({ id: requestId(), method: 'plugin.list', params: {} }).then(value => {
-          if (version !== queryVersion.current || activeSession.current !== event.data.session_id) return
-          const descriptors = (value as ApplicationState['plugins']).filter(plugin => plugin.enabled && plugin.loaded && Object.hasOwn(pluginViews, plugin.id))
-          pluginList.current = descriptors
-          setPlugins(descriptors)
-          return refreshPlugins(event.data.session_id)
-        }).catch(reason => setError(String(reason)))
         refreshList().catch(reason => setError(String(reason)))
       }
 
       // 单轮任务执行结束
       if (event.event === 'run.finished') {
         activeSession.current = event.data.snapshot.session_id
-        refreshPlugins(event.data.snapshot.session_id).catch(reason => setError(String(reason)))
         refreshList().catch(reason => setError(String(reason)))
       }
 
@@ -171,9 +132,6 @@ export function useAgentController() {
       if (event.event === 'backend.exited') {
         queryVersion.current++
         activeSession.current = null
-        setPlugins([])
-        pluginList.current = []
-        setPluginStates({})
       }
     })
 
@@ -202,10 +160,9 @@ export function useAgentController() {
   // 第三步：应用级别全局配置变更封装
   async function applyApplication(method: 'project.create', params: { name: string }): Promise<void>
   async function applyApplication(method: 'project.select', params: { project_id: string }): Promise<void>
-  async function applyApplication(method: 'model.test' | 'exa.clear', params: Record<string, never>): Promise<void>
+  async function applyApplication(method: 'model.test' | 'app.snapshot', params: Record<string, never>): Promise<void>
   async function applyApplication(method: 'model.configure', params: { model_code: string }): Promise<void>
   async function applyApplication(method: 'context.configure', params: { max_tokens: string }): Promise<void>
-  async function applyApplication(method: 'exa.configure', params: { api_key: string }): Promise<void>
   async function applyApplication(method: 'permission.set', params: { mode: ApplicationState['permission_mode'] }): Promise<void>
   async function applyApplication(method: string, params: object): Promise<void> {
     setError('')
@@ -245,9 +202,7 @@ export function useAgentController() {
         : { id: requestId(), method, params: { session_id: sessionId! } }) as Snapshot
       activeSession.current = snapshot.session_id
       queryVersion.current++
-      setPluginStates({})
       dispatch({ event: 'snapshot.loaded', data: snapshot })
-      await refreshPlugins(snapshot.session_id)
       await refreshList()
     } catch (reason) {
       setError(String(reason))
@@ -258,8 +213,8 @@ export function useAgentController() {
    * 向智能体提交新任务指令。
    * 支持纯文本提示词以及附加本地文件。
    */
-  async function send(): Promise<void> {
-    if (busy || sendPending.current || !project || !application?.model || !draft.trim()) return
+  async function send(selectedPlugins: string[], selectedSkills: string[]): Promise<boolean> {
+    if (busy || sendPending.current || !project || !application?.model || !draft.trim()) return false
     sendPending.current = true
     setSending(true)
     const id = requestId()
@@ -268,14 +223,16 @@ export function useAgentController() {
     setError('')
     try {
       await window.medpeer.command(selectedAttachments.length
-        ? { id, method: 'run.attachments', params: { text, attachment_ids: selectedAttachments.map(file => file.id) } }
-        : { id, method: 'run.start', params: { text } })
+        ? { id, method: 'run.attachments', params: { text, attachment_ids: selectedAttachments.map(file => file.id), selected_plugins: selectedPlugins, selected_skills: selectedSkills } }
+        : { id, method: 'run.start', params: { text, selected_plugins: selectedPlugins, selected_skills: selectedSkills } })
       dispatch({ event: 'run.accepted', run_id: id, text })
       setDraft(current => current === text ? '' : current)
       const submitted = new Set(selectedAttachments.map(item => item.id))
       setAttachments(current => current.filter(file => !submitted.has(file.id)))
+      return true
     } catch (reason) {
       setError(String(reason))
+      return false
     } finally {
       sendPending.current = false
       setSending(false)
@@ -359,6 +316,7 @@ export function useAgentController() {
         method: 'skill.set',
         params: { scope, skill_id: id, enabled: String(enabled) as 'true' | 'false' }
       }) as ConfigView)
+      await applyApplication('app.snapshot', {})
     } catch (reason) {
       setError(String(reason))
     }
@@ -379,8 +337,9 @@ export function useAgentController() {
    * 测试当前绑定模型的连通性与可用性。
    */
   async function testProfile(): Promise<string> {
-    const result = await window.medpeer.command({ id: requestId(), method: 'model.test', params: {} }) as { message: string; model: string }
-    return `${result.message} · ${result.model}`
+    const result = await window.medpeer.command({ id: requestId(), method: 'model.test', params: {} }) as ApplicationState
+    setApplication(result)
+    return `模型连接测试成功 · ${result.model!.model}`
   }
 
   /**
@@ -389,7 +348,10 @@ export function useAgentController() {
   async function importSkills(scope: ConfigScope): Promise<void> {
     try {
       const result = await window.medpeer.importSkill(scope)
-      if (result) setConfig(result)
+      if (result) {
+        setConfig(result)
+        await applyApplication('app.snapshot', {})
+      }
     } catch (reason) {
       setError(String(reason))
     }
@@ -475,9 +437,7 @@ export function useAgentController() {
       if (state.snapshot?.session_id === sessionId) {
         const snapshot = await window.medpeer.command({ id: requestId(), method: 'session.clear', params: {} }) as Snapshot
         activeSession.current = snapshot.session_id
-        setPluginStates({})
         dispatch({ event: 'snapshot.loaded', data: snapshot })
-        await refreshPlugins(snapshot.session_id)
       }
       await refreshList()
     } catch (reason) {
@@ -507,8 +467,6 @@ export function useAgentController() {
     attachments,
     setAttachments,
     sessions,
-    plugins,
-    pluginStates,
     config,
     error,
     clearError: () => { setError(''); dispatch({ event: 'error.clear' }) },

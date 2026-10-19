@@ -36,10 +36,14 @@ describe('desktop trust boundaries', () => {
   })
   it('accepts only declared IPC methods and exact fields', () => {
     expect(validateCommand({ id: '1', method: 'run.start', params: { text: 'hi' } }).method).toBe('run.start')
+    expect(validateCommand({ id: '1', method: 'run.start', params: { text: 'hi', selected_plugins: ['research.citations'], selected_skills: [] } }).method).toBe('run.start')
     for (const raw of [
       { id: '1', method: 'configure', params: {} },
       { id: '1', method: 'run.start', params: { text: 'hi', workspace: 'C:/' } },
-      { id: '1', method: 'run.start', params: { text: '  ' } }
+      { id: '1', method: 'run.start', params: { text: '  ' } },
+      { id: '1', method: 'run.start', params: { text: 'hi', selected_plugins: 'research.citations' } },
+      { id: '1', method: 'run.start', params: { text: 'hi', selected_skills: ['one', 'one'] } },
+      { id: '1', method: 'plugin.save', params: { plugin_id: 'research.citations', path: 'code.py', content: 'pass' } }
     ]) expect(() => validateCommand(raw)).toThrow()
     expect(validateCommand({ id: '1', method: 'interaction.answer', params: { run_id: '1', interaction_id: '2', answer: '研究问题的自由文本答复' } }).method).toBe('interaction.answer')
   })

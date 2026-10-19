@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { inflateRawSync } from 'node:zlib'
 import path from 'node:path'
 import { DesktopStore } from '../src/main/desktop-store'
 import { LocalStore } from '../src/main/local-store'
@@ -33,9 +32,8 @@ describe('DesktopStore', () => {
   it('persists settings, config, skills and usage with scoped paths', () => {
     const root = temp(); const workspace = path.join(root, 'workspace'); mkdirSync(workspace)
     const store = new DesktopStore(path.join(root, 'project'), workspace, path.join(root, 'account'))
-    store.saveSettings({ model_code: 'model-x', exa_api_key: 'secret' })
+    store.saveSettings({ model_code: 'model-x' })
     expect(store.readSettings().model_code).toBe('model-x')
-    expect(store.readSettingsView()).not.toHaveProperty('exa_api_key')
     store.saveConfig('project', 'agent', 'Follow the project instructions.')
     store.saveConfig('project', 'mcp', JSON.stringify({ mcpServers: { example: { transport: 'stdio', command: 'node' } } }))
     expect(() => store.saveConfig('project', 'mcp', '{"mcpServers":{"same":{"command":"a"},"same":{"command":"b"}}}')).toThrow(/duplicate key: same/)
@@ -68,38 +66,6 @@ describe('DesktopStore', () => {
     expect(() => readFileSync(path.join(outside, 'agent.md'), 'utf8')).toThrow()
   })
 
-  it('edits the installed data_analysis resource as an account draft and exports a real ZIP', () => {
-    const root = temp(); const workspace = path.join(root, 'workspace'); const source = path.join(root, 'plugin-source')
-    mkdirSync(workspace); mkdirSync(path.join(source, 'prompts'), { recursive: true }); mkdirSync(path.join(source, 'guides'))
-    writeFileSync(path.join(source, 'prompts', 'main.md'), 'original')
-    writeFileSync(path.join(source, 'guides', 'guide.md'), 'guide')
-    writeFileSync(path.join(source, 'module.py'), 'value = 1\n')
-    const account = path.join(root, 'account')
-    const store = new DesktopStore(path.join(root, 'project'), workspace, account, source)
-    expect(store.pluginFiles('data_analysis')).toEqual({ files: ['guides/guide.md', 'module.py', 'prompts/main.md'] })
-    expect(store.pluginDirectory('data_analysis')).toBe(source)
-    expect(() => store.savePlugin('data_analysis', 'module.py', 'def broken(:\n')).toThrow(/SyntaxError/)
-    store.savePlugin('data_analysis', 'prompts/main.md', 'edited')
-    expect(store.pluginDirectory('data_analysis')).toBe(path.join(account, 'plugins', 'data_analysis'))
-    expect(store.readPlugin('data_analysis', 'prompts/main.md')).toEqual({ content: 'edited' })
-    expect(readFileSync(path.join(source, 'prompts', 'main.md'), 'utf8')).toBe('original')
-    expect(readFileSync(path.join(account, 'plugins/data_analysis/guides/guide.md'), 'utf8')).toBe('guide')
-    const exported = store.exportPlugin('data_analysis')
-    const zip = readFileSync(exported.path)
-    expect(zip.readUInt32LE(0)).toBe(0x04034b50)
-    expect(zip.includes(Buffer.from('prompts/main.md'))).toBe(true)
-    const payloads: Buffer[] = []
-    let offset = 0
-    while (zip.readUInt32LE(offset) === 0x04034b50) {
-      const nameLength = zip.readUInt16LE(offset + 26); const extraLength = zip.readUInt16LE(offset + 28); const compressedLength = zip.readUInt32LE(offset + 18)
-      const start = offset + 30 + nameLength + extraLength
-      payloads.push(inflateRawSync(zip.subarray(start, start + compressedLength)))
-      offset = start + compressedLength
-    }
-    expect(Buffer.concat(payloads).toString()).toContain('edited')
-    expect(() => store.pluginFiles('user_config')).toThrow()
-  })
-
   it('requires published workspace artifact paths and retains their source run reference', () => {
     const root = temp(); const workspace = path.join(root, 'workspace'); mkdirSync(path.join(workspace, 'reports'), { recursive: true })
     writeFileSync(path.join(workspace, 'reports', 'result.csv'), 'x,y\n1,2\n')
@@ -125,5 +91,8 @@ describe('DesktopStore', () => {
     const stats = store.usageStats('2026-01', '')
     expect(stats).toMatchObject({ timezone: 'Asia/Shanghai', tracking_since: '2026-01-01', dates: ['2026-01-01'], model_names: ['m'], totals: { requests: 3, reported_requests: 2, jev_requests: 1, unpriced_requests: 0, input_tokens: 3, output_tokens: 5, total_tokens: 8, cache_read: null, reasoning: null, cost_estimate: { minimum_cny: '0.3', maximum_cny: '0.6', minimum_credits: '0.8', maximum_credits: '1', rate_dates: ['2026-01-01', '2026-01-02'] } } })
     expect(store.usageStats('2026-01', 'm').models).toHaveLength(2)
+    store.recordUsage('other-project', 's', { request_id: '4', requested_at: '2026-01-01T02:00:00+08:00', model: 'm', source: 'model', usage: { input_tokens: 100, output_tokens: 0, total_tokens: 100 }, cost_estimate: null })
+    store.recordUsage('p', 'other-session', { request_id: '5', requested_at: '2026-01-01T02:00:00+08:00', model: 'm', source: 'model', usage: { input_tokens: 200, output_tokens: 0, total_tokens: 200 }, cost_estimate: null })
+    expect(store.usageStats('', '', { projectId: 'p', sessionId: 's' }).totals).toMatchObject({ requests: 3, total_tokens: 8 })
   })
 })

@@ -1,16 +1,16 @@
 # MedPeer 桌面前端
 
-从 `D:\project\medpeer_agent_cli\desktop` 直接迁入的 Electron/React 工作台。渲染层、样式、预加载接口与原版保持一致；模型标识、停止操作及交互回复的竞态做了必要适配。`packages/` 下的现有后端不作修改，桌面连接代码位于本目录的 `bridge.py`、`runtime.py` 和 `src/main/`。
+桌面工作台的 Python JSON-RPC 后端作为 `vertical_harness.desktop` 随核心包安装；Electron 主进程使用仓库 `.venv` 启动该模块。页面保留现有风格，聊天内展示工作流、节点和工具状态；桌面专用运行配置和附件处理位于核心包的 `vertical_harness.desktop_runtime` 与 `vertical_harness.desktop_attachments`。
 
 ## 启动
 
-先按仓库根目录说明安装 `.venv` 及工作区 Python 依赖，并安装附件解析依赖：
+先按仓库根目录说明安装 `.venv` 及工作区 Python 依赖，再安装桌面插件与附件解析依赖。动态插件目录会加载已安装插件，数据分析插件需要其现有的 DuckDB 可选依赖：
 
 ```powershell
 uv pip install --python .venv\Scripts\python.exe -r desktop\requirements.txt
 ```
 
-仓库根目录 `.env` 使用当前后端的 `VA_MODEL`、`VA_API_KEY` 和 `VA_BASE_URL`。已配置 DeepSeek；密钥只由 Python 主进程读取，不写入前端代码。设置页可保存模型名称并实际测试连接。
+仓库根目录 `.env` 使用当前后端的 `VA_MODEL`、`VA_API_KEY` 和 `VA_BASE_URL`。密钥只由 Python 主进程读取，不写入前端代码。设置页可保存模型名称并实际测试连接。
 
 Windows 双击根目录 `start-desktop.bat`，或在此目录执行：
 
@@ -33,7 +33,7 @@ npm run dev
 
 全局/项目指令、Skills、MCP 配置与本地用量统计均有独立持久化。用量来自模型返回的 token 元数据，未定价的费用不作虚构；上下文窗口显示的是估算值。
 
-按本次范围，科研插件与 Exa 的后端能力暂不接入，保留原版页面和本地配置，状态不会显示为已加载。旧客户端历史、凭据和 CLI Checkpoint 不自动迁移；MedPeer 账户余额由 SSO 提供，不在本机扣费。
+后端通过已安装的插件 entry points 动态发现插件、工作流和 Skills。输入框按 `/` 后分别选择插件或技能；主动选择插件授权其在本轮使用，主智能体自行决定调用的插件需先弹窗确认。技能选择不授权插件执行；禁用插件的技能不可选。授权按用户、项目、会话和本轮运行约束，审批范围扩大时再次确认。旧客户端历史、凭据和 CLI Checkpoint 不自动迁移；MedPeer 账户余额由 SSO 提供，不在本机扣费。
 
 ## 检查
 
@@ -44,8 +44,7 @@ npm run typecheck
 npm test
 npm run build
 npm run test:smoke
-node scripts/check-renderer-parity.mjs D:\project\medpeer_agent_cli\desktop
-..\.venv\Scripts\python.exe -m pytest tests -q
+..\.venv\Scripts\python.exe -X utf8 -m pytest ..\tests\desktop -q -o addopts=''
 ```
 
 真实模型集成测试会调用已配置的 DeepSeek 接口：

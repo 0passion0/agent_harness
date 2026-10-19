@@ -37,6 +37,7 @@ from vertical_harness.engine.mcp import aopen_mcp_tools, mcp_skill_assets
 from vertical_harness.engine.memory import UserMemoryMiddleware
 from vertical_harness.engine.plugin_loader import discover_plugins
 from vertical_harness.engine.policy import (
+    PluginAuthorizationGateway,
     SupervisorPolicyMiddleware,
     build_workflow_interrupt_configs,
 )
@@ -173,6 +174,7 @@ class AgentComposer:
 
     settings: HarnessSettings
     workflows: dict[str, WorkflowContribution] = field(default_factory=dict)
+    workflow_plugins: dict[str, str] = field(default_factory=dict)
     eager_tools: list[BaseTool] = field(default_factory=list)
     gated_tools: list[BaseTool] = field(default_factory=list)
     plugin_middleware: list[AgentMiddleware[Any, Any, Any]] = field(default_factory=list)
@@ -182,6 +184,9 @@ class AgentComposer:
     skill_sources: list[str] = field(default_factory=lambda: ["/skills/"])
     instructions: list[str] = field(default_factory=lambda: [BASE_PROMPT])
     prompt_overrides: dict[str, str] = field(default_factory=dict)
+    auth_gateway: PluginAuthorizationGateway = field(default_factory=PluginAuthorizationGateway)
+    enforce_plugin_authorization: bool = False
+    selected_skill_ids: frozenset[str] | None = None
     _tool_names: set[str] = field(default_factory=set)
     _subagent_names: set[str] = field(default_factory=set)
     _skill_paths: set[str] = field(default_factory=set)
@@ -288,7 +293,10 @@ class AgentComposer:
         logger.debug(
             "plugin_registration_started", extra={"event_fields": {"plugin_id": manifest.plugin_id}}
         )
-        # 第一步：校验生命周期上下文要求并提取 PluginContribution
+        # 第一步：在授权网关中标记插件已安装并已启用（但尚未取得用户执行授权）
+        self.auth_gateway.register_plugin(manifest.plugin_id, enabled=True)
+
+        # 第二步：校验生命周期上下文要求并提取 PluginContribution
         if contribution is None and any(
             callable(getattr(plugin, hook, None)) for hook in ("open", "aopen")
         ):
@@ -299,7 +307,7 @@ class AgentComposer:
         if not isinstance(contributed, PluginContribution):
             raise TypeError(f"Plugin '{manifest.plugin_id}' must return PluginContribution")
 
-        # 第二步：应用可能的提示词覆盖并提取系统指令
+        # 第三步：应用可能的提示词覆盖并提取系统指令
         if manifest.plugin_id in self.prompt_overrides:
             contributed = contributed.model_copy(
                 update={"instructions": self.prompt_overrides[manifest.plugin_id]}
@@ -308,13 +316,13 @@ class AgentComposer:
         if instruction := contributed.format_system_instruction(manifest.plugin_id):
             self.instructions.append(instruction)
 
-        # 第三步：依次注册工作流、工具、中间件、子智能体与技能
+        # 第四步：依次注册工作流、工具、中间件、子智能体与技能
         for workflow in contributed.workflows:
             self._register_workflow(manifest.plugin_id, workflow)
 
         if not self.settings.supervisor_only:
             for tool_item in contributed.tools:
-                self._register_tool(tool_item)
+                self._register_tool(tool_item, plugin_id=manifest.plugin_id)
 
         for middleware in contributed.middleware:
             if middleware.name in _RESERVED_MIDDLEWARE_NAMES or any(
@@ -366,13 +374,15 @@ class AgentComposer:
         ):
             raise ValueError(f"Duplicate/reserved subagent name: {name}")
 
-        # 第二步：解析运行模式并转换为子智能体规范注册
+        # 第二步：解析运行模式并转换为子智能体规范注册，同时绑定至授权网关
         resolved_mode = workflow.resolve_mode(self.settings.workflow_mode)
         spec = workflow.to_subagent_spec(
             preferred_mode=self.settings.workflow_mode,
             durability_override=self.settings.durability,
         )
         self.workflows[name] = workflow
+        self.workflow_plugins[name] = plugin_id
+        self.auth_gateway.bind_workflow(name, plugin_id)
         self._register_subagent(spec)
 
         # 第三步：更新 HITL 中断审批配置
@@ -394,11 +404,13 @@ class AgentComposer:
             },
         )
 
-    def _register_tool(self, item: ToolContribution) -> None:
+    def _register_tool(self, item: ToolContribution, *, plugin_id: str | None = None) -> None:
         """注册单个 LangChain 工具，校验重名并配置 HITL 审批与技能门控。
 
         :param item: 插件工具贡献声明项。
         :type item: vertical_plugins.common.contracts.ToolContribution
+        :param plugin_id: 可选的所属插件唯一标识符，用于授权网关绑定。
+        :type plugin_id: str | None
         :return: 无返回值。
         :rtype: None
         :raises ValueError: 当工具重名或具有副作用的工具被配置为技能隐藏模式时抛出。
@@ -413,6 +425,8 @@ class AgentComposer:
         if name in self._tool_names:
             raise ValueError(f"Duplicate tool name: {name}")
         self._tool_names.add(name)
+        if plugin_id:
+            self.auth_gateway.bind_tool(name, plugin_id)
 
         # 第二步：校验审批要求并注入 HITL 中断配置
         if item.requires_approval:
@@ -469,6 +483,9 @@ class AgentComposer:
         :author: tongliga
         :date: 2026-10-19
         """
+        if (self.selected_skill_ids is not None and plugin_id != "desktop.runtime"
+                and f"{plugin_id}:{skill.relative_path}" not in self.selected_skill_ids):
+            return
         # 第一步：转换技能上传载荷并校验虚拟路径唯一性
         virtual_path, payload = skill.to_upload_payload(plugin_id)
         if virtual_path in self._skill_paths:
@@ -535,6 +552,7 @@ class AgentComposer:
                     )
                     if self.settings.supervisor_only
                     else frozenset(),
+                    auth_gateway=self.auth_gateway if self.enforce_plugin_authorization else None,
                 )
             )
 
@@ -580,6 +598,9 @@ def build_agent(
     mcp_tools: Iterable[ToolContribution] | None = None,
     prompt_overrides: dict[str, str] | None = None,
     plugins: Iterable[DomainPlugin] | None = None,
+    auth_gateway: PluginAuthorizationGateway | None = None,
+    enforce_plugin_authorization: bool = False,
+    selected_skill_ids: Iterable[str] | None = None,
     _contributions: Mapping[str, PluginContribution] | None = None,
 ) -> CompiledStateGraph[Any, RunContext, Any, Any]:
     """从独立分发的领域插件组装原生框架对象并构建 Deep Agent Supervisor。
@@ -596,6 +617,10 @@ def build_agent(
     :type prompt_overrides: dict[str, str] | None
     :param plugins: 可选的显式插件列表；默认自动从配置发现。
     :type plugins: collections.abc.Iterable[vertical_plugins.common.base.DomainPlugin] | None
+    :param auth_gateway: 可选的宿主插件授权网关实例。
+    :type auth_gateway: vertical_harness.engine.policy.PluginAuthorizationGateway | None
+    :param enforce_plugin_authorization: 是否在监督策略层强制启用插件执行授权校验。
+    :type enforce_plugin_authorization: bool
     :param _contributions: 内部使用：预构建的插件贡献声明字典。
     :type _contributions: collections.abc.Mapping[str, vertical_plugins.common.contracts.PluginContribution] | None
     :return: 编译完成的 Deep Agent LangGraph 状态图可运行对象。
@@ -638,6 +663,9 @@ def build_agent(
         settings=settings,
         instructions=[overrides.get("main", BASE_PROMPT)],
         prompt_overrides=overrides,
+        auth_gateway=auth_gateway if auth_gateway is not None else PluginAuthorizationGateway(),
+        enforce_plugin_authorization=enforce_plugin_authorization or (auth_gateway is not None),
+        selected_skill_ids=None if selected_skill_ids is None else frozenset(selected_skill_ids),
     )
     composer.register_plugins(
         discover_plugins(settings.enabled_plugins) if plugins is None else plugins,
@@ -736,6 +764,7 @@ def build_agent(
         "metadata": {
             **(agent.config or {}).get("metadata", {}),
             "harness_run_timeout_seconds": settings.run_timeout_seconds,
+            "harness_workflows": dict(composer.workflow_plugins),
         },
     }
     logger.info(
@@ -823,6 +852,9 @@ async def aopen_agent(
     checkpointer: BaseCheckpointSaver[Any] | bool | None = None,
     store: BaseStore | None = None,
     prompt_overrides: dict[str, str] | None = None,
+    plugins: Iterable[DomainPlugin] | None = None,
+    auth_gateway: PluginAuthorizationGateway | None = None,
+    selected_skill_ids: Iterable[str] | None = None,
 ) -> AsyncIterator[CompiledStateGraph[Any, RunContext, Any, Any]]:
     """以异步上下文管理器形式构建并持有智能体实例、MCP 工具连接及异步存储生命周期。
 
@@ -858,10 +890,10 @@ async def aopen_agent(
         )
 
         # 第二步：发现插件并挂载异步资源生命周期钩子
-        plugins = discover_plugins(settings.enabled_plugins)
+        active_plugins = list(plugins) if plugins is not None else discover_plugins(settings.enabled_plugins)
         services = BuildServices(settings.resolved_workspace_root, store, settings.plugin_config)
         contributions = {}
-        for plugin in plugins:
+        for plugin in active_plugins:
             if callable(hook := getattr(plugin, "aopen", None)):
                 contributions[plugin.manifest.plugin_id] = await stack.enter_async_context(
                     hook(services)
@@ -877,7 +909,10 @@ async def aopen_agent(
                 checkpointer=checkpointer,
                 mcp_tools=tools,
                 prompt_overrides=prompt_overrides,
-                plugins=plugins,
+                plugins=active_plugins,
+                auth_gateway=auth_gateway,
+                enforce_plugin_authorization=auth_gateway is not None,
+                selected_skill_ids=selected_skill_ids,
                 _contributions=contributions,
             )
         finally:

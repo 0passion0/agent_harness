@@ -14,7 +14,7 @@ it('starts the repository Python bridge, configures isolated paths and shuts dow
   try {
     expect(await backend.request('configure', {
       tenant_id: 'project', user_id: '7', workspace_root: path.join(temporary, 'workspace'), runtime_data_dir: temporary,
-      options: { model_code: 'test:中文模型', exa_api_key: '', exa_enabled: false, runtimes: { python: '', node: '' }, permission_mode: 'ask', max_context_tokens: 128000, agent_content: '', skills: [], mcp_servers: {}, analysis_enabled: false, analysis_plugin_dir: '' }
+      options: { model_code: 'test:中文模型', enabled_plugins: [], runtimes: { python: '', node: '' }, permission_mode: 'ask', max_context_tokens: 128000, agent_content: '', skills: [], mcp_servers: {} }
     })).toMatchObject({ model: 'test:中文模型' })
   } finally {
     await backend.close()

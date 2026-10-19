@@ -12,6 +12,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { AgentState } from '../state/agent-state'
 import type { ArtifactRef } from '../../../shared/protocol'
+import { WorkflowRuns } from './WorkflowRuns'
 import medpeerIcon from '../../../../../assets/medpeer.ico?url'
 
 /** 支持在对话流内直接预览的图片 MIME 格式列表 */
@@ -167,7 +168,7 @@ export function Conversation({ state, openArtifact }: { state: AgentState; openA
   // 流式生成或新消息到达时，若此前处于近底部则自动跟随向下滚动
   useEffect(() => {
     if (nearBottom) pane.current?.scrollTo({ top: pane.current.scrollHeight })
-  }, [state.snapshot, state.stream, nearBottom])
+  }, [state.snapshot, state.stream, state.runLog, nearBottom])
 
   return <div className="conversation-wrap">
     <div
@@ -182,21 +183,34 @@ export function Conversation({ state, openArtifact }: { state: AgentState; openA
       {/* 历史消息列表 */}
       {state.snapshot?.messages
         .filter(message => ['human', 'ai'].includes(message.type) && contentText(message.data.content))
-        .map((message, index) => <article className={`message ${message.type}`} key={index}>
-          {message.type === 'ai' && <img className="message-avatar" src={medpeerIcon} alt="MedPeer" />}
-          <div className="message-label">{message.type === 'human' ? '你' : 'MedPeer'}</div>
-          <div className="message-content">
-            <MessageMarkdown
-              content={message.type === 'human' && Array.isArray(message.data.content) ? message.data.content.slice(0, 1) : message.data.content}
-              openArtifact={openArtifact}
-            />
-          </div>
-        </article>)}
+        .map((message, index) => {
+          const messageId = typeof message.data.id === 'string' ? message.data.id : undefined
+          const runs = messageId ? state.snapshot?.runs.filter(run => run.user_message_id === messageId) ?? [] : []
+          const snapshotActiveRun = state.snapshot?.active_run
+          const activeRun = !state.pendingPrompt && messageId && snapshotActiveRun?.user_message_id === messageId ? snapshotActiveRun : undefined
+          return <article className={`message ${message.type}`} key={index}>
+            {message.type === 'ai' && <img className="message-avatar" src={medpeerIcon} alt="MedPeer" />}
+            <div className="message-label">{message.type === 'human' ? '你' : 'MedPeer'}</div>
+            <div className="message-content">
+              <MessageMarkdown
+                content={message.type === 'human' && Array.isArray(message.data.content) ? message.data.content.slice(0, 1) : message.data.content}
+                openArtifact={openArtifact}
+              />
+            </div>
+            {message.type === 'human' && (runs.length > 0 || activeRun) && <WorkflowRuns
+              records={activeRun ? state.runLog : []}
+              runs={runs}
+              activeRun={activeRun}
+              paused={state.phase === 'question' || (!state.runId && state.phase === 'idle')}
+            />}
+          </article>
+        })}
 
       {/* 待发送/已发送未决提示词气泡 */}
       {state.pendingPrompt && <article className="message human">
         <div className="message-label">你</div>
         <div className="message-content">{state.pendingPrompt}</div>
+        <WorkflowRuns records={state.runLog} />
       </article>}
 
       {/* 实时流式响应气泡 */}

@@ -28,11 +28,6 @@ def scan_numeric(manuscript_text: str, bibliography: list[str]) -> str:
     :raises Exception: 当比对计算或参数解析发生未预期异常时直接抛出并记录日志。
     :author: tongliga
     :date: 2026-10-19
-
-    .. code-block:: python
-
-        # 返回 JSON 字符串契约结构：
-        # '{"status": "passed", "cited_indices": [1, 2], "issues": [], "verified_scope": "..."}'
     """
     # 第一步：初始化计时器并记录启动调试日志
     started = perf_counter()
@@ -40,13 +35,7 @@ def scan_numeric(manuscript_text: str, bibliography: list[str]) -> str:
         "citation_scan_started", extra={"event_fields": {"bibliography_count": len(bibliography)}}
     )
     # 第二步：调用确定性比对纯函数执行核验
-    try:
-        result = evaluate_references(manuscript_text, bibliography)
-    except Exception as exc:
-        logger.error(
-            "citation_scan_failed", extra={"event_fields": {"error_type": type(exc).__name__}}
-        )
-        raise
+    result = evaluate_references(manuscript_text, bibliography)
     # 第三步：统计耗时指标并记录包含业务状态的结构化日志
     logger.info(
         "citation_scan_completed",
@@ -80,9 +69,7 @@ class ResearchCitationToolkit(BaseToolkit):
         :author: tongliga
         :date: 2026-10-19
         """
-        # 第一步：记录工具导出调用日志
-        logger.debug("research_citation_get_tools_called")
-        # 第二步：返回封装好的原生工具列表
+        # 第一步：返回封装好的原生工具列表
         return [scan_numeric]
 
 

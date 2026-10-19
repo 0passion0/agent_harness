@@ -7,20 +7,22 @@
  * @date 2026-10-16
  */
 
-import { useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 import {
   Activity, ArrowRight, Check, ChevronLeft, ChevronRight, CircleHelp,
   FileText, Folder, FolderOpen, Menu, Paperclip, PanelRightClose, PanelRightOpen,
   Send, Settings2, Shield, Sparkles, Square, X, House, History, Wrench, Plus
 } from 'lucide-react'
 import { useAgentController } from './state/use-agent-controller'
+import type { Json } from '../../shared/protocol'
 import { Conversation } from './components/Conversation'
 import { SessionSidebar } from './components/SessionSidebar'
-import { PluginSlot } from './components/PluginSlot'
+import { CapabilityPicker, isCapabilityShortcut } from './components/CapabilityPicker'
+import type { CapabilityPickerHandle } from './components/CapabilityPicker'
 import { RunDetails } from './components/RunDetails'
 import { ToolCard } from './components/ToolCard'
 import { WorkspaceDirectory } from './components/WorkspaceDirectory'
-import { settingsRegistry } from './plugins/settings'
+import { UserConfig } from './plugins/user_config'
 import { AttachmentChips } from './components/AttachmentChips'
 import { TokenWindowPopup } from './components/TokenWindowPopup'
 import { LoginScreen } from './features/auth/LoginScreen'
@@ -37,7 +39,7 @@ type Theme = 'light' | 'dark'
 type DetailTab = 'activity' | 'directory' | 'research' | 'files'
 
 /** 设置面板标签页类别 */
-type SettingsTab = 'models' | 'tools' | 'agent' | 'mcp' | 'plugins' | 'profile' | 'credits' | 'usage'
+type SettingsTab = 'models' | 'agent' | 'mcp' | 'plugins' | 'profile' | 'credits' | 'usage'
 
 /**
  * 首次进入或空任务时的引导快捷模板列表。
@@ -65,18 +67,26 @@ function savedTheme(): Theme {
  * 智能体提问与操作授权交互卡片组件。
  * 当智能体执行高危操作（如写文件、执行系统脚本）或需要用户补充关键上下文时暂停并呈现此组件。
  */
-function Decision({ kind, question, onAnswer, onStop }: {
+function Decision({ kind, question, purpose, inputScope, plannedOutputs, allowedEffects, onAnswer, onStop }: {
   /** 交互类别：approval 授权审批，或普通输入提问 */
   kind: string
   /** 提问内容或待授权操作说明 */
   question: string
+  purpose?: string
+  inputScope?: Json
+  plannedOutputs?: Json
+  allowedEffects?: Json
   /** 答复回调 */
   onAnswer(value: string): void
   /** 取消任务回调 */
   onStop(): void
 }) {
   const [answer, setAnswer] = useState('')
-  const approval = kind === 'approval'
+  const approval = kind === 'approval' || kind === 'plugin_authorization'
+  const describe = (value?: Json) => value == null ? '' : typeof value === 'string' ? value : JSON.stringify(value)
+  const scopes = [
+    ['可读取', inputScope], ['计划产出', plannedOutputs], ['允许的操作', allowedEffects]
+  ].filter(([, value]) => value != null) as Array<[string, Json]>
 
   return <section className="decision" aria-live="assertive">
     <div className="decision-heading">
@@ -85,6 +95,10 @@ function Decision({ kind, question, onAnswer, onStop }: {
       <span>任务已暂停</span>
     </div>
     <p>{question}</p>
+    {approval && (purpose || scopes.length > 0) && <dl className="approval-scope">
+      {purpose && <><dt>用途</dt><dd>{purpose}</dd></>}
+      {scopes.map(([label, value]) => <Fragment key={label}><dt>{label}</dt><dd>{describe(value)}</dd></Fragment>)}
+    </dl>}
     {approval ? <div className="decision-actions">
       <button className="primary-action" onClick={() => onAnswer('approve')}>
         <Check size={15} />允许这次操作
@@ -120,7 +134,7 @@ export default function App() {
   const c = useAgentController()
   const {
     state, application, project, workspace, draft, setDraft, attachments, setAttachments, sessions,
-    sessionSearch, searchSessions, plugins, pluginStates, config, error, clearError, busy,
+    sessionSearch, searchSessions, config, error, clearError, busy,
     chooseWorkspace, loadSession, send, stop, answer, openArtifact
   } = c
 
@@ -133,10 +147,23 @@ export default function App() {
   const [settingsTab, setSettingsTab] = useState<SettingsTab>('models')
   const [dragging, setDragging] = useState(false)
   const [detailWidth, setDetailWidth] = useState(340)
+  const [selectedPlugins, setSelectedPlugins] = useState<string[]>([])
+  const [selectedSkills, setSelectedSkills] = useState<string[]>([])
+  useEffect(() => {
+    setSelectedPlugins([])
+    setSelectedSkills([])
+  }, [project?.id, state.snapshot?.session_id])
+  const submitTask = async () => {
+    if (await send(selectedPlugins, selectedSkills)) {
+      setSelectedPlugins([])
+      setSelectedSkills([])
+    }
+  }
 
   const isResizing = useRef(false)
   const dragDepth = useRef(0)
   const composer = useRef<HTMLTextAreaElement>(null)
+  const capabilityPicker = useRef<CapabilityPickerHandle>(null)
   const search = useRef<HTMLInputElement>(null)
 
   // 处理任务详情面板宽度的鼠标拖拽调节事件
@@ -169,7 +196,6 @@ export default function App() {
   const title = sessions.find(item => item.id === state.snapshot?.session_id)?.title ??
     (state.snapshot?.messages.length ? '当前任务' : '新任务')
   const activityCount = Object.keys(state.tools).length
-  const UserConfig = settingsRegistry.user_config
 
   // 当前任务状态描述文本
   const status = state.phase === 'disconnected' ? '连接已断开'
@@ -449,6 +475,10 @@ export default function App() {
               key={state.question.interaction_id}
               kind={state.question.kind}
               question={state.question.question}
+              purpose={state.question.purpose}
+              inputScope={state.question.input_scope}
+              plannedOutputs={state.question.planned_outputs}
+              allowedEffects={state.question.allowed_effects}
               onAnswer={value => void answer(state.runId!, state.question!.interaction_id, value)}
               onStop={() => void stop()}
             />}
@@ -478,9 +508,19 @@ export default function App() {
                 placeholder={!connected ? '本地服务未连接…' : !modelReady ? '先登录 MedPeer…' : !project ? '先选择项目…' : '描述你希望完成的任务…'}
                 onChange={event => setDraft(event.target.value)}
                 onKeyDown={event => {
+                  if (isCapabilityShortcut(event) && !draft.trim()) {
+                    event.preventDefault()
+                    capabilityPicker.current?.open()
+                    return
+                  }
+                  if (event.key === 'Escape' && capabilityPicker.current?.isOpen()) {
+                    event.preventDefault()
+                    capabilityPicker.current.close()
+                    return
+                  }
                   if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
                     event.preventDefault()
-                    if (!sendDisabled) void send()
+                    if (!sendDisabled) void submitTask()
                   }
                 }}
               />
@@ -500,20 +540,31 @@ export default function App() {
                     <Sparkles size={13}/>{application?.model?.model ?? '未连接模型'}
                   </span>
                   <span className="context-sep" />
+                  <CapabilityPicker
+                    ref={capabilityPicker}
+                    application={application}
+                    plugins={selectedPlugins}
+                    skills={selectedSkills}
+                    setPlugins={setSelectedPlugins}
+                    setSkills={setSelectedSkills}
+                    disabled={busy || !canCompose}
+                    onEscape={() => composer.current?.focus()}
+                  />
+                  <span className="context-sep" />
                   <button
                     className="composer-tool-hint"
                     disabled={!canCompose}
-                    onClick={() => openSettings('tools')}
-                    title="Exa 搜索、数据分析、报告工具默认可用"
+                    onClick={() => openSettings('plugins')}
+                    title="管理插件"
                   >
-                    <Wrench size={14} />内置工具
+                    <Wrench size={14} />插件
                   </button>
                 </div>
                 <div className="composer-actions">
                   <TokenWindowPopup report={state.snapshot?.token_usage} onOpenSettings={() => openSettings('models')} />
                   {busy ? <button className="submit-task stop-task" aria-label="停止任务" disabled={state.phase === 'stopping'} onClick={() => void stop()}>
                     <Square size={15} fill="currentColor" />
-                  </button> : <button className="submit-task" aria-label="提交任务" disabled={sendDisabled} onClick={() => void send()}>
+                  </button> : <button className="submit-task" aria-label="提交任务" disabled={sendDisabled} onClick={() => void submitTask()}>
                     <Send size={16} />
                   </button>}
                 </div>
@@ -572,21 +623,12 @@ export default function App() {
           ) : (
             <section className="detail-section">
               <h3>研究扩展</h3>
-              {plugins.length ? <PluginSlot
-                plugins={plugins}
-                states={pluginStates}
-                question={null}
-                events={state.events}
-                saved={state.lastRunSaved}
-                runId={state.runId}
-                answer={answer}
-                open={openArtifact}
-              /> : (
-                <p className="detail-empty">当前任务没有扩展详情；内置搜索与数据分析工具仍可正常使用。</p>
-              )}
-              <button className="detail-link" onClick={() => openSettings('tools')}>
-                查看内置工具 <ArrowRight size={14} />
-              </button>
+              {(application?.plugins ?? []).map(plugin => <article className="plugin-card" key={plugin.id}>
+                <strong>{plugin.name}</strong><span>{plugin.loaded ? '已加载' : plugin.enabled ? '已启用' : '已停用'}</span>
+                <p>{plugin.description}</p>
+                {plugin.workflows.length > 0 && <ul>{plugin.workflows.map(workflow => <li key={workflow.name}><strong>{workflow.name}</strong> · {workflow.description}</li>)}</ul>}
+              </article>)}
+              {!application?.plugins.length && <p className="detail-empty">尚未发现可用插件。</p>}
             </section>
           )}
         </div>

@@ -21,6 +21,10 @@ from vertical_harness.engine.memory import (
     run_memory_worker,
 )
 from vertical_harness.engine.policy import (
+    PluginApprovalRecord,
+    PluginAuthorizationGateway,
+    PluginAuthState,
+    PluginExecutionRequest,
     SupervisorPolicyMiddleware,
     SupervisorStage,
     build_workflow_interrupt_configs,
@@ -51,6 +55,10 @@ __all__ = [
     "AgentComposer",
     "CheckpointSummary",
     "ConsolidatedMemory",
+    "PluginApprovalRecord",
+    "PluginAuthState",
+    "PluginAuthorizationGateway",
+    "PluginExecutionRequest",
     "StreamEvent",
     "SupervisorPolicyMiddleware",
     "SupervisorStage",

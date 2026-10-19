@@ -1,6 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { deflateRawSync } from 'node:zlib'
-import { copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, statSync, unlinkSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -9,19 +8,12 @@ import { writeAtomic } from './local-store'
 
 type DesktopSettings = {
   model_code: string
-  exa_api_key: string
   runtimes: { python: string; node: string }
   permission_mode: 'read_only' | 'ask' | 'full'
   max_context_tokens: number
   plugins: Record<string, boolean>
 }
 type UsageRecord = { request_id: string; requested_at: string; model: string; source: 'model' | 'jev'; usage: { input_tokens: number; output_tokens: number; total_tokens: number; input_token_details?: { cache_read?: number }; output_token_details?: { reasoning?: number } } | null; cost_estimate: { minimum_cny: string; maximum_cny: string; minimum_credits: string; maximum_credits: string; rate_dates: string[] } | null }
-const editableSuffixes = new Set(['.py', '.md', '.json', '.yaml', '.yml', '.txt'])
-const crc32 = (data: Buffer): number => {
-  let crc = 0xffffffff
-  for (const byte of data) { crc ^= byte; for (let bit = 0; bit < 8; bit++) crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0) }
-  return (crc ^ 0xffffffff) >>> 0
-}
 const decimalSum = (values: string[]): string => {
   const places = Math.max(...values.map(value => value.split('.')[1]?.length ?? 0))
   const factor = 10n ** BigInt(places)
@@ -35,7 +27,7 @@ const decimalSum = (values: string[]): string => {
   return `${total < 0n ? '-' : ''}${digits.slice(0, -places)}${fraction ? `.${fraction}` : ''}`
 }
 
-const defaults: DesktopSettings = { model_code: '', exa_api_key: '', runtimes: { python: '', node: '' }, permission_mode: 'ask', max_context_tokens: 128000, plugins: {} }
+const defaults: DesktopSettings = { model_code: '', runtimes: { python: '', node: '' }, permission_mode: 'ask', max_context_tokens: 128000, plugins: {} }
 const within = (root: string, candidate: string): string => {
   const resolvedRoot = path.resolve(root)
   const resolved = path.resolve(candidate)
@@ -61,7 +53,6 @@ const runProjectPython = (script: string, input: string, args: string[] = []): v
   if (result.error) throw result.error
   if (result.status !== 0) throw new Error(result.stderr)
 }
-const validatePython = (source: string, filename: string): void => runProjectPython('import sys; compile(sys.stdin.read(), sys.argv[1], "exec")', source, [filename])
 const validateJsonDuplicates = (source: string): void => runProjectPython(
   'import json, sys\ndef unique(pairs):\n result = {}\n for key, value in pairs:\n  if key in result: raise ValueError("duplicate key: " + key)\n  result[key] = value\n return result\njson.loads(sys.stdin.read(), object_pairs_hook=unique)',
   source
@@ -72,15 +63,13 @@ export class DesktopStore {
   readonly directory: string
   readonly workspace: string
   readonly accountDirectory: string
-  private readonly pluginSourceDirectory: string
   private readonly attachmentManifest: string
   private readonly artifactManifest: string
 
-  constructor(directory: string, workspace: string, accountDirectory: string, pluginSourceDirectory = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../resources/plugin_sources/data_analysis')) {
+  constructor(directory: string, workspace: string, accountDirectory: string) {
     this.directory = path.resolve(directory)
     this.workspace = path.resolve(workspace)
     this.accountDirectory = path.resolve(accountDirectory)
-    this.pluginSourceDirectory = path.resolve(pluginSourceDirectory)
     mkdirSync(this.directory, { recursive: true })
     mkdirSync(this.workspace, { recursive: true })
     mkdirSync(this.accountDirectory, { recursive: true })
@@ -261,7 +250,6 @@ export class DesktopStore {
   }
 
   readSettings(): DesktopSettings { return this.readJson<DesktopSettings>(path.join(this.accountDirectory, 'settings.json'), defaults) }
-  readSettingsView(): Omit<DesktopSettings, 'exa_api_key'> & { exa_configured: boolean } { const { exa_api_key, ...settings } = this.readSettings(); return { ...settings, exa_configured: Boolean(exa_api_key) } }
   saveSettings(patch: Partial<DesktopSettings>): void { atomicJson(path.join(this.accountDirectory, 'settings.json'), { ...this.readSettings(), ...patch, runtimes: { ...this.readSettings().runtimes, ...patch.runtimes } }) }
 
   recordUsage(projectId: string, sessionId: string, record: UsageRecord): void {
@@ -271,8 +259,8 @@ export class DesktopStore {
     atomicJson(file, [...records, { ...record, project_id: projectId, session_id: sessionId }])
   }
 
-  usageStats(period: string, model: string): UsageStats {
-    const all = this.readJson<Array<UsageRecord & { project_id: string; session_id: string }>>(path.join(this.accountDirectory, 'usage.json'), [])
+  usageStats(period: string, model: string, session?: { projectId: string; sessionId: string }): UsageStats {
+    const all = this.readJson<Array<UsageRecord & { project_id: string; session_id: string }>>(path.join(this.accountDirectory, 'usage.json'), []).filter(item => !session || (item.project_id === session.projectId && item.session_id === session.sessionId))
     const dates = all.map(item => new Date(item.requested_at).toLocaleDateString('en-CA', { timeZone: 'Asia/Shanghai' }))
     const selected = all.filter((item, i) => dates[i].startsWith(period) && (!model || item.model === model))
     const summarize = (items: typeof all) => {
@@ -286,55 +274,6 @@ export class DesktopStore {
     const modelRows = group(selected, item => `${item.model}\0${item.source}`).map(({ id, items }) => { const [name, source] = id.split('\0'); return { model: name, source: source as 'model' | 'jev', ...summarize(items) } })
     const dailyRows = group(selected, item => `${new Date(item.requested_at).toLocaleDateString('en-CA', { timeZone: 'Asia/Shanghai' })}\0${item.model}\0${item.source}`).reverse()
     return { timezone: 'Asia/Shanghai', today: new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Shanghai' }), tracking_since: dates.length ? [...dates].sort()[0] : null, dates: [...new Set(dates)].sort(), model_names: [...new Set(all.map(v => v.model))].sort(), totals: summarize(selected), models: modelRows, daily: dailyRows.map(({ id, items }) => { const [date, name, source] = id.split('\0'); return { date, model: name, source: source as 'model' | 'jev', ...summarize(items) } }) } as UsageStats
-  }
-
-  pluginFiles(pluginId: string): { files: string[] } { return { files: this.pluginRoot(pluginId).files } }
-  pluginDirectory(pluginId: string): string { return this.pluginRoot(pluginId).root }
-  readPlugin(pluginId: string, relativePath: string): { content: string } { const target = this.pluginPath(pluginId, relativePath); return { content: readFileSync(target, 'utf8') } }
-  savePlugin(pluginId: string, relativePath: string, content: string): Record<string, never> {
-    const target = this.pluginPath(pluginId, relativePath)
-    if (path.extname(target) === '.json') JSON.parse(content)
-    if (path.extname(target) === '.py') validatePython(content, relativePath)
-    const draft = path.join(this.accountDirectory, 'plugins', pluginId)
-    if (!existsSync(draft)) {
-      const { root, files } = this.pluginRoot(pluginId)
-      mkdirSync(draft, { recursive: true })
-      for (const name of files) { const destination = within(draft, path.join(draft, name)); mkdirSync(path.dirname(destination), { recursive: true }); copyFileSync(within(root, path.join(root, name)), destination) }
-    }
-    const draftTarget = within(draft, path.join(draft, relativePath))
-    writeAtomic(draftTarget, content)
-    return {}
-  }
-  exportPlugin(pluginId: string): { path: string } {
-    const { files } = this.pluginRoot(pluginId)
-    const entries = files.map(name => {
-      const data = readFileSync(this.pluginPath(pluginId, name))
-      if (path.extname(name) === '.py') validatePython(data.toString('utf8'), name)
-      const compressed = deflateRawSync(data)
-      const filename = Buffer.from(name.replaceAll('\\', '/'))
-      return { filename, data, compressed, crc: crc32(data) }
-    })
-    const locals: Buffer[] = [], central: Buffer[] = []
-    let offset = 0
-    for (const entry of entries) {
-      const local = Buffer.alloc(30 + entry.filename.length)
-      local.writeUInt32LE(0x04034b50, 0); local.writeUInt16LE(20, 4); local.writeUInt16LE(0x0800, 6); local.writeUInt16LE(8, 8)
-      local.writeUInt32LE(entry.crc, 14); local.writeUInt32LE(entry.compressed.length, 18); local.writeUInt32LE(entry.data.length, 22); local.writeUInt16LE(entry.filename.length, 26); entry.filename.copy(local, 30)
-      locals.push(local, entry.compressed)
-      const directory = Buffer.alloc(46 + entry.filename.length)
-      directory.writeUInt32LE(0x02014b50, 0); directory.writeUInt16LE(20, 4); directory.writeUInt16LE(20, 6); directory.writeUInt16LE(0x0800, 8); directory.writeUInt16LE(8, 10)
-      directory.writeUInt32LE(entry.crc, 16); directory.writeUInt32LE(entry.compressed.length, 20); directory.writeUInt32LE(entry.data.length, 24); directory.writeUInt16LE(entry.filename.length, 28); directory.writeUInt32LE(offset, 42); entry.filename.copy(directory, 46)
-      central.push(directory); offset += local.length + entry.compressed.length
-    }
-    const centralSize = central.reduce((total, item) => total + item.length, 0)
-    const end = Buffer.alloc(22); end.writeUInt32LE(0x06054b50, 0); end.writeUInt16LE(entries.length, 8); end.writeUInt16LE(entries.length, 10); end.writeUInt32LE(centralSize, 12); end.writeUInt32LE(offset, 16)
-    const exports = path.join(this.accountDirectory, 'exports')
-    mkdirSync(exports, { recursive: true })
-    const file = path.join(exports, `data_analysis-${randomUUID()}.zip`)
-    const temporary = `${file}.tmp`
-    writeFileSync(temporary, Buffer.concat([...locals, ...central, end]), { mode: 0o600 })
-    renameSync(temporary, file)
-    return { path: file }
   }
 
   private artifactRefs(): ArtifactRef[] {
@@ -353,16 +292,6 @@ export class DesktopStore {
   private configWriteDir(scope: ConfigScope): string { if (scope === 'global') return path.join(this.accountDirectory, 'config'); if (scope === 'project') return path.join(this.directory, 'config'); throw new Error('Invalid config scope') }
   private validateSkillId(id: string): void { if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(id) || id.length > 64) throw new Error('Invalid skill ID') }
   private skillId(content: string, expected: string): void { this.validateSkillId(expected); const match = content.match(/^---\s*\r?\n([\s\S]*?)\r?\n---/); if (!match) throw new Error('Skill frontmatter is required'); const id = match[1].match(/^name:\s*([A-Za-z0-9_-]+)\s*$/m)?.[1]; if (id !== expected) throw new Error('Skill name must match its directory') }
-  private pluginRoot(pluginId: string): { root: string; files: string[] } {
-    if (pluginId !== 'data_analysis') throw new Error(`Plugin ${pluginId} has no locally editable source`)
-    const draft = path.join(this.accountDirectory, 'plugins', pluginId)
-    const root = existsSync(draft) ? draft : this.pluginSourceDirectory
-    if (!existsSync(root)) throw new Error('Plugin source is not installed')
-    const files = readdirSync(root, { recursive: true, withFileTypes: true }).filter(item => item.isFile() && editableSuffixes.has(path.extname(item.name)) && !item.parentPath.split(path.sep).includes('__pycache__')).map(item => path.relative(root, path.join(item.parentPath, item.name)).replaceAll('\\', '/')).sort()
-    if (!files.length) throw new Error('Plugin source has no editable files')
-    return { root, files }
-  }
-  private pluginPath(pluginId: string, relative: string): string { const { root, files } = this.pluginRoot(pluginId); if (!files.includes(relative)) throw new Error('Plugin file is not editable'); return within(root, path.join(root, relative)) }
   private validateMcp(value: unknown): { mcpServers: Record<string, Json> } {
     if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).length !== 1 || !('mcpServers' in value) || !value.mcpServers || typeof value.mcpServers !== 'object' || Array.isArray(value.mcpServers)) throw new Error('Invalid MCP configuration')
     const servers = value.mcpServers as Record<string, Json>

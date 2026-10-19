@@ -7,6 +7,7 @@ import logging
 import math
 from collections.abc import AsyncIterator
 from contextlib import aclosing
+from datetime import UTC, datetime
 from typing import Any, Literal
 from uuid import uuid4
 
@@ -59,6 +60,7 @@ def _project(
     event: dict[str, Any],
     root_id: str,
     interrupts: tuple[Interrupt, ...],
+    workflows: dict[str, str],
 ) -> tuple[str, dict[str, JsonValue]] | None:
     """只输出明确允许的字段；不转发原始 state、工具参数、工具结果或模型配置。
 
@@ -110,10 +112,12 @@ def _project(
         return "tool.failed" if failed else "tool.completed", {}
 
     # 第三步：针对执行链生命周期与根调用状态进行投影
-    if kind in {"on_chain_start", "on_chain_end"}:
+    if kind in {"on_chain_start", "on_chain_end", "on_chain_error"}:
         if event["run_id"] == root_id:
             if kind == "on_chain_start":
                 return "run.started", {}
+            if kind == "on_chain_error":
+                return None
             output = data.get("output")
             output = output if isinstance(output, dict) else {}
             interrupts = interrupts or output.get("__interrupt__", ())
@@ -128,8 +132,37 @@ def _project(
             text = messages[-1].text if messages and isinstance(messages[-1], BaseMessage) else ""
             return "run.completed", {"output": text}
         agent_name = event.get("metadata", {}).get("lc_agent_name")
+        workflow_name = agent_name if agent_name in workflows else None
+        if workflow_name is not None:
+            phase = {
+                "on_chain_start": "running",
+                "on_chain_end": "completed",
+                "on_chain_error": "failed",
+            }[kind]
+            plugin_id = workflows[workflow_name]
+            if event["name"] == workflow_name:
+                return "custom.progress", {
+                    "kind": "workflow",
+                    "plugin_id": plugin_id,
+                    "workflow_name": workflow_name,
+                    "status": phase,
+                }
+            node = event.get("metadata", {}).get("langgraph_node")
+            if isinstance(node, str) and event["name"] == node:
+                return "custom.progress", {
+                    "kind": "workflow.node",
+                    "plugin_id": plugin_id,
+                    "workflow_name": workflow_name,
+                    "node": node,
+                    "status": phase,
+                    "summary": f"{node} {phase}",
+                }
         prefix = "subagent" if agent_name and event["name"] == agent_name else "chain"
-        phase = "started" if kind == "on_chain_start" else "completed"
+        phase = {
+            "on_chain_start": "started",
+            "on_chain_end": "completed",
+            "on_chain_error": "failed",
+        }[kind]
         return f"{prefix}.{phase}", {}
     return None
 
@@ -247,6 +280,8 @@ async def astream_agent(
     root_id = str(run_id)
     seq = 0
     interrupts: tuple[Interrupt, ...] = ()
+    model_started: dict[str, str] = {}
+    workflows = (agent.config or {}).get("metadata", {}).get("harness_workflows", {})
     source = agent.astream_events(
         inputs,
         config=run_config,
@@ -265,11 +300,27 @@ async def astream_agent(
                     chunk = raw["data"].get("chunk")
                     if isinstance(chunk, dict) and "__interrupt__" in chunk:
                         interrupts = tuple(chunk["__interrupt__"])
-                projected = _project(raw, root_id, interrupts)
+                projected = _project(raw, root_id, interrupts, workflows)
                 if projected is None:
                     continue
                 event_type, data = projected
                 metadata = raw.get("metadata", {})
+                if event_type in {"model.started", "model.completed"}:
+                    model = (
+                        metadata.get("ls_model_name")
+                        or metadata.get("model_name")
+                        or metadata.get("model")
+                    )
+                    if model is not None:
+                        data["model"] = str(model)
+                    if event_type == "model.started":
+                        requested_at = datetime.now(UTC).isoformat()
+                        model_started[raw["run_id"]] = requested_at
+                    else:
+                        data["requested_at"] = model_started.pop(
+                            raw["run_id"],
+                            datetime.now(UTC).isoformat(),
+                        )
                 seq += 1
                 yield StreamEvent(
                     type=event_type,

@@ -41,7 +41,7 @@ vi.mock('../../src/renderer/src/state/use-agent-controller', () => ({
 
 vi.mock('../../src/renderer/src/components/Conversation', () => ({ Conversation: () => null }))
 vi.mock('../../src/renderer/src/components/SessionSidebar', () => ({ SessionSidebar: () => null }))
-vi.mock('../../src/renderer/src/components/PluginSlot', () => ({ PluginSlot: () => null }))
+vi.mock('../../src/renderer/src/components/CapabilityPicker', () => ({ CapabilityPicker: () => null }))
 vi.mock('../../src/renderer/src/components/RunDetails', () => ({ RunDetails: () => null }))
 vi.mock('../../src/renderer/src/components/ToolCard', () => ({ ToolCard: () => null }))
 vi.mock('../../src/renderer/src/components/AttachmentChips', () => ({ AttachmentChips: () => null }))
@@ -98,9 +98,9 @@ describe('app file drag handling', () => {
     panel.props.onDragEnterCapture(directory)
     expect(hooks.setters[6]).toHaveBeenLastCalledWith(false)
     panel.props.onDragLeaveCapture(directory)
-    expect(hooks.setters[11]).toHaveBeenLastCalledWith(true)
+    expect(hooks.setters[13]).toHaveBeenLastCalledWith(true)
     panel.props.onDragLeaveCapture(directory)
-    expect(hooks.setters[11]).toHaveBeenLastCalledWith(false)
+    expect(hooks.setters[13]).toHaveBeenLastCalledWith(false)
     expect(hooks.setters[6]).toHaveBeenLastCalledWith(false)
   })
 

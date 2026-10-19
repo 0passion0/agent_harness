@@ -93,7 +93,7 @@ export function RunDetails({ state }: { state: AgentState }) {
     <h3>本轮事件日志 · {state.runLog.length}</h3>
     {state.runLog.map((record, index) => <details className="run-log-entry" key={index}>
       <summary>
-        {index + 1}. {eventLabels[record.kind]}（{record.kind}）
+        {index + 1}. {eventLabels[record.kind] ?? record.kind}
         {record.name && <> · {record.name}</>}
         {record.model && <> · {String(record.model)}</>}
         {record.status && <> · {record.status}</>}
@@ -120,7 +120,7 @@ export function RunDetails({ state }: { state: AgentState }) {
       {run.requests.map((request, requestIndex) => {
         const record = request as { [key: string]: Json }
         return <details key={requestIndex}>
-          <summary>请求 {String(record.index)} · {String(record.model)} · {String(record.status)}</summary>
+          <summary>请求 {requestIndex + 1} · {String(record.model ?? record.name)} · {String(record.status ?? record.kind)}</summary>
           {record.input !== undefined && <>
             <h4>模型输入</h4>
             <pre>{JSON.stringify(record.input, null, 2)}</pre>

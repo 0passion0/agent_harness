@@ -99,7 +99,7 @@ export function reduceAgent(state: AgentState, action: Action): AgentState {
     // 会话完全就绪或加载了新的会话快照
     case 'ready':
     case 'snapshot.loaded':
-      return { ...initialState, phase: 'idle', snapshot: action.data }
+      return { ...initialState, phase: 'idle', snapshot: action.data, events: action.data.active_run?.records ?? [] }
 
     // 用户提交的任务被后端受理接受
     case 'run.accepted':

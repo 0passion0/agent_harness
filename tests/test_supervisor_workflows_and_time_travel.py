@@ -590,7 +590,10 @@ def test_plugin_authorization_gateway_lifecycle_and_security(tmp_path: Path) -> 
     assert len(composer.uploads) == 2
     assert gateway.is_installed("data_analysis") is True
     assert gateway.is_enabled("data_analysis") is True
-    assert gateway.is_authorized("data_analysis", thread_id="t-1", user_id="u-1", tenant_id="org-1") is False
+    assert (
+        gateway.is_authorized("data_analysis", thread_id="t-1", user_id="u-1", tenant_id="org-1")
+        is False
+    )
     assert gateway.get_state("data_analysis", thread_id="t-1") == PluginAuthState.DISCOVERED
 
     # 2. 未授权直接调用工作流或伪造 approved=True 参数必须被拦截
@@ -614,15 +617,17 @@ def test_plugin_authorization_gateway_lifecycle_and_security(tmp_path: Path) -> 
             ),
         )
 
-    unauth_res = policy.wrap_tool_call(
-        _make_call(
-            "data_analysis_workflow",
-            {"file_path": "cohort.csv", "research_question": "描述统计"},
-        ),
-        lambda req: ToolMessage(content="should-not-run", tool_call_id="call-auth-1"),
-    )
-    assert isinstance(unauth_res, ToolMessage) and unauth_res.status == "error"
-    assert "not authorized by user" in str(unauth_res.content)
+    with pytest.raises(PermissionError, match="not authorized by user"):
+        gateway.verify_execution(
+            plugin_id="data_analysis",
+            workflow_name="data_analysis_workflow",
+            user_id="u-1",
+            tenant_id="org-1",
+            thread_id="t-1",
+            run_id="",
+            input_data={"file_path": "cohort.csv"},
+            effect=SideEffect.WRITE,
+        )
 
     # 伪造 approved=True 必须被拦截
     spoof_res = policy.wrap_tool_call(
@@ -659,15 +664,17 @@ def test_plugin_authorization_gateway_lifecycle_and_security(tmp_path: Path) -> 
     assert gateway.get_state("data_analysis", thread_id="t-1") == PluginAuthState.AUTHORIZED
 
     # 尝试扩大输入数据范围（访问未授权的 secret.csv）必须被拒绝
-    scope_res = policy.wrap_tool_call(
-        _make_call(
-            "data_analysis_workflow",
-            {"file_path": "secret.csv", "research_question": "描述统计"},
-        ),
-        lambda req: ToolMessage(content="should-not-run", tool_call_id="call-auth-1"),
-    )
-    assert isinstance(scope_res, ToolMessage) and scope_res.status == "error"
-    assert "expands beyond approved scope" in str(scope_res.content)
+    with pytest.raises(PermissionError, match="expands beyond approved scope"):
+        gateway.verify_execution(
+            plugin_id="data_analysis",
+            workflow_name="data_analysis_workflow",
+            user_id="u-1",
+            tenant_id="org-1",
+            thread_id="t-1",
+            run_id="",
+            input_data={"file_path": "secret.csv"},
+            effect=SideEffect.WRITE,
+        )
 
     # 在已批准范围内执行：成功推进至 running 并在单次任务完成后消耗授权
     ok_res = policy.wrap_tool_call(
@@ -679,7 +686,10 @@ def test_plugin_authorization_gateway_lifecycle_and_security(tmp_path: Path) -> 
     )
     assert isinstance(ok_res, ToolMessage) and ok_res.status != "error"
     assert gateway.get_state("data_analysis", thread_id="t-1") == PluginAuthState.COMPLETED
-    assert gateway.is_authorized("data_analysis", thread_id="t-1", user_id="u-1", tenant_id="org-1") is False
+    assert (
+        gateway.is_authorized("data_analysis", thread_id="t-1", user_id="u-1", tenant_id="org-1")
+        is False
+    )
 
     # 5. 用户拒绝后状态为 cancelled，且立即终止不允许在同一会话反复重试
     reject_req = gateway.request_execution(
@@ -692,7 +702,9 @@ def test_plugin_authorization_gateway_lifecycle_and_security(tmp_path: Path) -> 
         thread_id="t-reject",
     )
     gateway.reject_request(reject_req.request_id, reason="User declined citation audit")
-    assert gateway.get_state("research.citations", thread_id="t-reject") == PluginAuthState.CANCELLED
+    assert (
+        gateway.get_state("research.citations", thread_id="t-reject") == PluginAuthState.CANCELLED
+    )
 
     rejected_call = policy.wrap_tool_call(
         _make_call(
@@ -754,7 +766,8 @@ def test_plugin_authorization_gateway_lifecycle_and_security(tmp_path: Path) -> 
     assert len(demo_contrib.workflows) == 1
     assert demo_contrib.workflows[0].name == "minimal_demo"
     demo_runtime = demo_plugin.create_runtime(workspace_root=tmp_path)
-    demo_out = demo_runtime.invoke({"messages": [HumanMessage(content="run demo")]}, thread_id="demo-t")
+    demo_out = demo_runtime.invoke(
+        {"messages": [HumanMessage(content="run demo")]}, thread_id="demo-t"
+    )
     assert demo_out["structured_response"] == {"status": "ok", "tag": "default-tag"}
     assert tuple(demo_runtime.get_progress("demo-t").completed_nodes) == ("step_one", "step_two")
-
