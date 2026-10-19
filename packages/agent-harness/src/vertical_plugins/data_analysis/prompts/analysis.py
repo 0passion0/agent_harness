@@ -9,8 +9,15 @@ from __future__ import annotations
 # 插件注入给主智能体的简明引导说明（仅在插件启用时提示，执行必须经用户授权）
 DATA_ANALYSIS_INSTRUCTIONS = (
     "When a user requests tabular data profiling, statistical analysis, or a Chinese research report "
-    "for files in `{workspace_root}`, read the `scientific-data-analysis` skill and request user "
-    "authorization before invoking `data_analysis_workflow`."
+    "for files in `{workspace_root}`, read the `data-analysis-scientific-data-analysis` skill. "
+    "Use the task tool with subagent_type='data_analysis_workflow' and a JSON description containing "
+    "the input fields. The host gateway obtains any required authorization before execution; "
+    "do not stop at a chat-only approval question. When table contents must be inspected first, "
+    "request task_type='profile' with file_path and sheet_name when known, then use the returned "
+    "columns to plan analysis. Use workspace-relative paths or paths prefixed with /workspace/. "
+    "Supported analyses are descriptive, correlation, and group_comparison. "
+    "Logistic regression, Firth, MICE, and restricted cubic splines are not implemented; "
+    "state that limitation rather than promising to execute them."
 )
 
 # 分析计划与结果解释统一提示词

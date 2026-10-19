@@ -79,7 +79,11 @@ BASE_PROMPT = (
 SUPERVISOR_PROMPT = (
     "You are a workflow supervisor agent. Delegate domain workflows only to registered "
     "workflow subagents, monitor task progress, and validate structured outputs before "
-    "finalizing. Do not fabricate workflow execution results."
+    "finalizing. Read relevant enabled plugin skills before choosing a workflow. "
+    "When execution is requested and inputs are available, dispatch the matching workflow "
+    "using the task tool. If authorization is required, the host gateway requests approval "
+    "before execution; submit the workflow task to trigger that approval instead of asking "
+    "for approval only in chat. Do not fabricate workflow execution results."
 )
 
 # 保留的内置子智能体名称，插件不得覆盖
@@ -485,9 +489,6 @@ class AgentComposer:
         :author: tongliga
         :date: 2026-10-19
         """
-        if (self.selected_skill_ids is not None and plugin_id != "desktop.runtime"
-                and f"{plugin_id}:{skill.relative_path}" not in self.selected_skill_ids):
-            return
         # 第一步：转换技能上传载荷并校验虚拟路径唯一性
         virtual_path, payload = skill.to_upload_payload(plugin_id)
         if virtual_path in self._skill_paths:
@@ -495,6 +496,14 @@ class AgentComposer:
         # 第二步：加入上传队列与路径记录集合
         self._skill_paths.add(virtual_path)
         self.uploads.append((virtual_path, payload))
+        if (
+            self.selected_skill_ids is not None
+            and f"{plugin_id}:{skill.relative_path}" in self.selected_skill_ids
+        ):
+            self.instructions.append(
+                f"The user selected skill `{virtual_path}` for this turn. "
+                "Read it and apply it when handling their request."
+            )
         logger.debug(
             "skill_registered",
             extra={"event_fields": {"plugin_id": plugin_id, "skill_path": virtual_path}},
