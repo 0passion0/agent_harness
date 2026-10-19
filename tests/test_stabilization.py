@@ -481,11 +481,11 @@ def test_graph_dependencies_and_reserved_middleware_fail_early(tmp_path):
 
 
 def test_citation_huge_numbers_are_explicit_invalid_input():
-    from vertical_plugins.research_citation import build_citation_workflow, scan_numeric
+    from vertical_plugins.research_citation import CitationAuditWorkflow, scan_numeric
 
     payload = {"manuscript_text": "[" + "9" * 5000 + "]", "bibliography": ["ref"]}
     assert "at most 9 digits" in scan_numeric.invoke(payload)
-    result = build_citation_workflow().invoke(payload)
+    result = CitationAuditWorkflow().compile().invoke(payload)
     assert result["structured_response"]["status"] == "invalid_input"
     assert "at most 9 digits" in result["structured_response"]["error"]
 

@@ -1,4 +1,4 @@
-"""数据分析报告文件的生成、校验及原子发布模块。"""
+"""数据分析报告文件的生成、产物一致性校验及原子发布模块。"""
 
 from __future__ import annotations
 
@@ -10,18 +10,22 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlsplit
 
+from vertical_plugins.data_analysis.prompts.report import CORE_REPORT_SECTIONS
+
 logger = logging.getLogger(__name__)
 
-# 规范化中文科研报告必须具备的七大核心二级标题
-REPORT_SECTIONS: tuple[str, ...] = (
-    "研究问题",
-    "数据说明",
-    "分析方法",
-    "结果",
-    "讨论与局限",
-    "结论",
-    "复现信息",
+# 兼容新老报告标题的章节等价组：(主推荐标题, 兼容旧标题)
+REQUIRED_SECTION_ALIASES: tuple[tuple[str, ...], ...] = (
+    ("研究目标", "研究问题"),
+    ("数据概况", "数据说明"),
+    ("分析方法",),
+    ("分析结果", "结果"),
+    ("讨论与局限",),
+    ("结论",),
 )
+
+# 保持向后兼容导出的章节名称元组
+REPORT_SECTIONS: tuple[str, ...] = CORE_REPORT_SECTIONS
 
 
 def validate_report(
@@ -30,19 +34,19 @@ def validate_report(
     run_dir: Path,
     executions: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    """核查报告结构、本地引用与实际成功执行凭证。
+    """核查报告核心章节结构、本地证据文件引用、产物一致性与真实执行哈希凭证。
 
-    :param markdown: 包含七个必需二级标题的完整 Markdown 报告。
+    :param markdown: 包含核心二级标题的完整中文 Markdown 报告。
     :type markdown: str
     :param evidence_files: 相对任务目录的凭证路径列表（含代码与 JSON 结果）。
     :type evidence_files: list[str]
-    :param run_dir: 当前科研会话的绝对输出根目录。
+    :param run_dir: 当前分析会话的绝对输出根目录。
     :type run_dir: pathlib.Path
     :param executions: 记录的脚本执行凭证与产物哈希列表。
     :type executions: list[dict[str, typing.Any]]
     :return: 包含报告 SHA256 和各凭证 SHA256 的校验记录字典。
     :rtype: dict[str, typing.Any]
-    :raises ValueError: 报告缺失必需二级标题、缺少实体内容、凭证越界或与真实执行不匹配。
+    :raises ValueError: 报告缺失核心二级标题、缺少实质内容、凭证越界或与真实执行产物不一致时抛出。
     :author: tongliga
     :date: 2026-10-19
     """
@@ -51,20 +55,32 @@ def validate_report(
     )
     resolved_run_dir = run_dir.resolve()
 
-    # 第一步：提取所有二级标题，核查是否完整包含七个必需段落且每个段落均有实质内容
+    # 第一步：提取所有二级标题与对应正文，核查核心段落存在且均有实质内容
+    sections = {
+        title.strip(): body.strip()
+        for title, body in re.findall(
+            r"^##\s+(.+?)\s*\n(.*?)(?=^##\s|\Z)", markdown, re.MULTILINE | re.DOTALL
+        )
+    }
     headings = set(re.findall(r"^##\s+(.+?)\s*$", markdown, re.MULTILINE))
-    missing = set(REPORT_SECTIONS) - headings
-    if missing:
-        raise ValueError(f"Missing report sections: {', '.join(sorted(missing))}")
-    sections = dict(
-        re.findall(r"^##\s+(.+?)\s*\n(.*?)(?=^##\s|\Z)", markdown, re.MULTILINE | re.DOTALL)
-    )
-    if any(not sections.get(name, "").strip() for name in REPORT_SECTIONS):
+    missing_groups: list[str] = []
+    matched_titles: list[str] = []
+    for alias_group in REQUIRED_SECTION_ALIASES:
+        matched = next((name for name in alias_group if name in headings), None)
+        if matched is None:
+            missing_groups.append(alias_group[0])
+        else:
+            matched_titles.append(matched)
+
+    if missing_groups:
+        raise ValueError(f"Missing report sections: {', '.join(missing_groups)}")
+    if any(not sections.get(name, "").strip() for name in matched_titles):
         raise ValueError("Every required report section must contain substantive content")
 
     # 第二步：核查所有证据文件，限制在任务目录内，确认非空并计算 SHA256 摘要
     hashes: dict[str, str] = {}
     paths: dict[str, Path] = {}
+    json_payloads: dict[str, Any] = {}
     for name in evidence_files:
         path = (resolved_run_dir / name).resolve()
         if Path(name).is_absolute() or not path.is_relative_to(resolved_run_dir):
@@ -72,8 +88,10 @@ def validate_report(
         if not path.is_file() or path.stat().st_size == 0:
             raise ValueError(f"Missing or empty evidence file: {name}")
         if path.suffix == ".json":
-            # JSON 解码接受有限实数；禁止 NaN 或 Infinity
-            json.dumps(json.loads(path.read_text(encoding="utf-8")), allow_nan=False)
+            loaded_json = json.loads(path.read_text(encoding="utf-8"))
+            # JSON 解码仅接受有限实数；禁止 NaN 或 Infinity
+            json.dumps(loaded_json, allow_nan=False)
+            json_payloads[name] = loaded_json
         paths[name] = path
         with path.open("rb") as source:
             hashes[name] = hashlib.file_digest(source, "sha256").hexdigest()
@@ -99,7 +117,7 @@ def validate_report(
             )
     if verified_scripts != scripts or verified_results != results:
         raise ValueError(
-            "Evidence must match successful run_python executions; rerun edited scripts/results"
+            "Evidence must match successful analysis executions; rerun edited scripts/results"
         )
 
     # 第五步：核对 Markdown 中的本地引用，确保所有证据文件均在报告中以相对链接引用
@@ -133,7 +151,7 @@ def save_report(
     run_dir: Path,
     executions: list[dict[str, Any]],
 ) -> Path:
-    """校验并发布 Markdown 报告及其关联执行证据记录。
+    """校验并原子发布 Markdown 报告及其关联执行证据记录。
 
     :param markdown: 完整报告正文 Markdown。
     :type markdown: str
@@ -179,7 +197,9 @@ def save_report(
 
 
 __all__ = [
+    "CORE_REPORT_SECTIONS",
     "REPORT_SECTIONS",
+    "REQUIRED_SECTION_ALIASES",
     "save_report",
     "validate_report",
 ]

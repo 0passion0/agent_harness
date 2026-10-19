@@ -114,7 +114,13 @@ def test_debug_covers_real_execution_and_subagents(
     callback = WorkflowLoggingHandler()
     run_config = {"configurable": {"thread_id": "test-thread"}, "callbacks": [callback]}
     with log_context("test-run"), open_store(config) as store:
-        agent = build_agent(config, store=store)
+        from vertical_plugins.research_citation import ResearchCitationPlugin
+
+        agent = build_agent(
+            config,
+            store=store,
+            plugins=None if delegate else [ResearchCitationPlugin(include_tools=True)],
+        )
         inputs = {"messages": [{"role": "user", "content": "private prompt"}]}
         context = RunContext(tenant_id="private tenant", user_id="private user")
         if async_mode:

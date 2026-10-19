@@ -1,9 +1,9 @@
-"""领域插件公共层导出：抽象基类、清单、贡献、服务及运行上下文契约。
+"""领域插件公共层导出：抽象基类、工作流基类、清单、贡献、服务及运行上下文契约。
 
 公共层不导入任何业务插件，亦不依赖宿主 `vertical_harness`。
 """
 
-from vertical_plugins.common.base import DomainPlugin
+from vertical_plugins.common.base import DomainPlugin, WorkflowPlugin
 from vertical_plugins.common.contracts import (
     BuildServices,
     Exposure,
@@ -26,14 +26,34 @@ from vertical_plugins.common.contracts import (
     WorkflowOutputState,
 )
 from vertical_plugins.common.prompts import format_plugin_instruction
+from vertical_plugins.common.workflow import (
+    AuthorizationGuardProtocol,
+    BaseWorkflow,
+    HookAuditEntry,
+    NodeObservation,
+    PluginRuntime,
+    WorkflowContext,
+    WorkflowHooks,
+    WorkflowNodeEvent,
+    WorkflowPlan,
+    WorkflowProgressSummary,
+    WorkflowStep,
+    extract_json_payload,
+    extract_message_text,
+)
 
 __all__ = [
+    "AuthorizationGuardProtocol",
+    "BaseWorkflow",
     "BuildServices",
     "DomainPlugin",
     "Exposure",
+    "HookAuditEntry",
+    "NodeObservation",
     "PluginContribution",
     "PluginIdStr",
     "PluginManifest",
+    "PluginRuntime",
     "RunContext",
     "SemVerStr",
     "SideEffect",
@@ -42,11 +62,20 @@ __all__ = [
     "SubAgentContextMode",
     "SubAgentSpec",
     "ToolContribution",
+    "WorkflowContext",
     "WorkflowContribution",
+    "WorkflowHooks",
     "WorkflowInputState",
     "WorkflowInternalState",
     "WorkflowMode",
     "WorkflowNameStr",
+    "WorkflowNodeEvent",
     "WorkflowOutputState",
+    "WorkflowPlan",
+    "WorkflowPlugin",
+    "WorkflowProgressSummary",
+    "WorkflowStep",
+    "extract_json_payload",
+    "extract_message_text",
     "format_plugin_instruction",
 ]

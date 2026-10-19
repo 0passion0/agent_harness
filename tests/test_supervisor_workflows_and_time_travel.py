@@ -14,6 +14,7 @@ from langchain_core.messages import AIMessage, AnyMessage, HumanMessage, ToolMes
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
+from langgraph.graph.state import CompiledStateGraph
 from pydantic import BaseModel, ValidationError
 
 import vertical_plugins.research_citation as research_citation
@@ -46,13 +47,12 @@ from vertical_harness.engine import compose
 from vertical_plugins.research_citation import (
     CITATION_WORKFLOW_NAME,
     CheckStatus,
+    CitationAuditWorkflow,
     CitationInputState,
     CitationInternalState,
     CitationOutputState,
     InternalState,
     ReferenceCheckResult,
-    build_citation_workflow,
-    build_citation_workflow_contribution,
 )
 
 
@@ -102,8 +102,10 @@ def test_workflow_contract_requires_distinct_three_layer_schemas() -> None:
             graph_id="bad_input_workflow",
         )
 
-    # 3. 验证 CompiledSubAgent 与 AsyncSubAgent 双模式规范转换
-    contribution = build_citation_workflow_contribution()
+    # 3. 验证 CompiledSubAgent 与 AsyncSubAgent 双模式规范转换与三阶段声明
+    wf_instance = CitationAuditWorkflow()
+    assert wf_instance.run().node_names == ("validate_input", "check_citations", "build_report")
+    contribution = wf_instance.to_workflow_contribution()
     compiled_spec = contribution.to_subagent_spec(preferred_mode=WorkflowMode.COMPILED)
     assert compiled_spec["name"] == CITATION_WORKFLOW_NAME
     assert "runnable" in compiled_spec
@@ -118,13 +120,14 @@ def test_workflow_contract_requires_distinct_three_layer_schemas() -> None:
 
     graphs = discover_workflow_graphs(["research.citations"])
     assert CITATION_WORKFLOW_NAME in graphs
-    assert graphs[CITATION_WORKFLOW_NAME] is research_citation.graph
+    assert isinstance(graphs[CITATION_WORKFLOW_NAME], CompiledStateGraph)
+    assert isinstance(research_citation.graph, CompiledStateGraph)
 
 
 def test_citation_workflow_input_isolation_and_output_filtering() -> None:
     """验证 Citation 工作流入口参数校验、InternalState 注入隔离与 output_schema 输出过滤。"""
     checkpointer = InMemorySaver()
-    workflow = build_citation_workflow(checkpointer=checkpointer)
+    workflow = CitationAuditWorkflow(checkpointer=checkpointer).compile()
 
     # 尝试恶意注入 InternalState 专有字段 validated_input / evaluation_result
     malicious_forged_result = {
@@ -164,7 +167,7 @@ def test_citation_workflow_input_isolation_and_output_filtering() -> None:
     assert snapshot.values["validated_input"] == payload
     assert snapshot.values["evaluation_result"]["status"] == "issues"
 
-    # 4. 非法输入在入口节点被拦截并直接路由至 finalize_output，不触发未捕获异常
+    # 4. 非法输入在入口节点被拦截并在末节点输出结构化错误，不触发未捕获异常
     bad_output = workflow.invoke(
         {"messages": [HumanMessage(content="not a json payload")]},
         config={"configurable": {"thread_id": "invalid-input-thread"}},
@@ -547,3 +550,211 @@ def test_async_time_travel_helpers(tmp_path: Path, monkeypatch: pytest.MonkeyPat
             assert res2["messages"][-1].content == "Async forked turn complete."
 
     asyncio.run(_run())
+
+
+def test_plugin_authorization_gateway_lifecycle_and_security(tmp_path: Path) -> None:
+    """验证 P5 插件授权状态机、伪造参数拦截、用户拒绝终止及范围/副作用扩展重审。"""
+    from vertical_harness import (
+        AgentComposer,
+        BaseWorkflow,
+        BuildServices,
+        PluginAuthorizationGateway,
+        PluginAuthState,
+        PluginManifest,
+        WorkflowPlan,
+        WorkflowPlugin,
+    )
+    from vertical_plugins.data_analysis import DataAnalysisPlugin
+    from vertical_plugins.research_citation import ResearchCitationPlugin
+
+    # 1. 初始化阶段：插件已安装且已启用，但未获得用户执行授权；默认只暴露 SKILL.md，不暴露工具包
+    settings = HarnessSettings(
+        _env_file=None,
+        model="test:auth-model",
+        workspace_root=tmp_path,
+        enabled_plugins=["data_analysis", "research.citations"],
+    )
+    gateway = PluginAuthorizationGateway()
+    composer = AgentComposer(
+        settings=settings,
+        auth_gateway=gateway,
+        enforce_plugin_authorization=True,
+    )
+    composer.register_plugins(
+        [DataAnalysisPlugin(), ResearchCitationPlugin()],
+        BuildServices(workspace_root=tmp_path),
+    )
+
+    assert len(composer.eager_tools) == 0
+    assert len(composer.gated_tools) == 0
+    assert len(composer.uploads) == 2
+    assert gateway.is_installed("data_analysis") is True
+    assert gateway.is_enabled("data_analysis") is True
+    assert gateway.is_authorized("data_analysis", thread_id="t-1", user_id="u-1", tenant_id="org-1") is False
+    assert gateway.get_state("data_analysis", thread_id="t-1") == PluginAuthState.DISCOVERED
+
+    # 2. 未授权直接调用工作流或伪造 approved=True 参数必须被拦截
+    policy = SupervisorPolicyMiddleware(
+        workflows=composer.workflows,
+        auth_gateway=gateway,
+    )
+
+    def _make_call(subagent_type: str, desc_dict: dict[str, Any], thread_id: str = "t-1") -> Any:
+        return SimpleNamespace(
+            tool_call={
+                "name": "task",
+                "args": {"subagent_type": subagent_type, "description": json.dumps(desc_dict)},
+                "id": "call-auth-1",
+            },
+            state={"messages": []},
+            config={"configurable": {"thread_id": thread_id}},
+            runtime=SimpleNamespace(
+                context=RunContext(tenant_id="org-1", user_id="u-1"),
+                config={"configurable": {"thread_id": thread_id}},
+            ),
+        )
+
+    unauth_res = policy.wrap_tool_call(
+        _make_call(
+            "data_analysis_workflow",
+            {"file_path": "cohort.csv", "research_question": "描述统计"},
+        ),
+        lambda req: ToolMessage(content="should-not-run", tool_call_id="call-auth-1"),
+    )
+    assert isinstance(unauth_res, ToolMessage) and unauth_res.status == "error"
+    assert "not authorized by user" in str(unauth_res.content)
+
+    # 伪造 approved=True 必须被拦截
+    spoof_res = policy.wrap_tool_call(
+        _make_call(
+            "data_analysis_workflow",
+            {"file_path": "cohort.csv", "research_question": "描述统计", "approved": True},
+        ),
+        lambda req: ToolMessage(content="should-not-run", tool_call_id="call-auth-1"),
+    )
+    assert isinstance(spoof_res, ToolMessage) and spoof_res.status == "error"
+    assert "Spoofed authorization" in str(spoof_res.content)
+
+    # 3. 发起授权请求并验证用户确认摘要包含插件名、目的、输入范围与计划输出文件
+    req = gateway.request_execution(
+        plugin_id="data_analysis",
+        workflow_name="data_analysis_workflow",
+        purpose="对 cohort.csv 执行描述性统计并生成中文报告",
+        input_scope=["cohort.csv"],
+        planned_outputs=["artifacts/report.md", "artifacts/analysis_summary.json"],
+        allowed_effects=[SideEffect.READ, SideEffect.WRITE],
+        user_id="u-1",
+        tenant_id="org-1",
+        thread_id="t-1",
+    )
+    assert req.state == PluginAuthState.PENDING_APPROVAL
+    prompt_summary = req.format_confirmation_prompt()
+    assert "data_analysis" in prompt_summary
+    assert "cohort.csv" in prompt_summary
+    assert "artifacts/report.md" in prompt_summary
+
+    # 4. 用户批准后推进至 authorized -> running -> completed；超出输入范围或跨任务复用必须重审
+    approval = gateway.approve_request(req.request_id, user_id="u-1", tenant_id="org-1")
+    assert approval.active is True
+    assert gateway.get_state("data_analysis", thread_id="t-1") == PluginAuthState.AUTHORIZED
+
+    # 尝试扩大输入数据范围（访问未授权的 secret.csv）必须被拒绝
+    scope_res = policy.wrap_tool_call(
+        _make_call(
+            "data_analysis_workflow",
+            {"file_path": "secret.csv", "research_question": "描述统计"},
+        ),
+        lambda req: ToolMessage(content="should-not-run", tool_call_id="call-auth-1"),
+    )
+    assert isinstance(scope_res, ToolMessage) and scope_res.status == "error"
+    assert "expands beyond approved scope" in str(scope_res.content)
+
+    # 在已批准范围内执行：成功推进至 running 并在单次任务完成后消耗授权
+    ok_res = policy.wrap_tool_call(
+        _make_call(
+            "data_analysis_workflow",
+            {"file_path": "cohort.csv", "research_question": "描述统计"},
+        ),
+        lambda req: ToolMessage(content='{"status": "passed"}', tool_call_id="call-auth-1"),
+    )
+    assert isinstance(ok_res, ToolMessage) and ok_res.status != "error"
+    assert gateway.get_state("data_analysis", thread_id="t-1") == PluginAuthState.COMPLETED
+    assert gateway.is_authorized("data_analysis", thread_id="t-1", user_id="u-1", tenant_id="org-1") is False
+
+    # 5. 用户拒绝后状态为 cancelled，且立即终止不允许在同一会话反复重试
+    reject_req = gateway.request_execution(
+        plugin_id="research.citations",
+        workflow_name="citation_audit",
+        purpose="核查文稿引用",
+        input_scope=["paper.md"],
+        user_id="u-1",
+        tenant_id="org-1",
+        thread_id="t-reject",
+    )
+    gateway.reject_request(reject_req.request_id, reason="User declined citation audit")
+    assert gateway.get_state("research.citations", thread_id="t-reject") == PluginAuthState.CANCELLED
+
+    rejected_call = policy.wrap_tool_call(
+        _make_call(
+            "citation_audit",
+            {"manuscript_text": "[1]", "bibliography": ["Ref 1"]},
+            thread_id="t-reject",
+        ),
+        lambda req: ToolMessage(content="should-not-run", tool_call_id="call-auth-1"),
+    )
+    assert isinstance(rejected_call, ToolMessage) and rejected_call.status == "error"
+    assert "rejected by user" in str(rejected_call.content)
+    with pytest.raises(PermissionError, match="already rejected by user"):
+        gateway.request_execution(
+            plugin_id="research.citations",
+            workflow_name="citation_audit",
+            purpose="再次尝试请求",
+            user_id="u-1",
+            tenant_id="org-1",
+            thread_id="t-reject",
+        )
+
+    # 6. 验证新增第三个最小化 WorkflowPlugin 子类无需复制图编译、Skill 发现与运行管理逻辑（P9 #15）
+    class MinimalDemoWorkflow(BaseWorkflow):
+        plugin_id = "demo.minimal"
+        workflow_name = "minimal_demo"
+        description = "Minimal demo workflow for template pattern verification"
+
+        def run(self) -> WorkflowPlan:
+            return self.pipeline(
+                self.step("step_one", self.step_one, editable_fields=("tag",)),
+                self.step("step_two", self.step_two),
+            )
+
+        def step_one(self, state: dict[str, Any]) -> dict[str, Any]:
+            tag = state.get("tag", "default-tag")
+            return {"validated_input": {"tag": tag}}
+
+        def step_two(self, state: dict[str, Any]) -> dict[str, Any]:
+            tag = (state.get("validated_input") or {}).get("tag", "default-tag")
+            payload = {"status": "ok", "tag": tag}
+            return {
+                "messages": [AIMessage(content=json.dumps(payload))],
+                "structured_response": payload,
+            }
+
+    class MinimalDemoPlugin(WorkflowPlugin):
+        workflow_cls = MinimalDemoWorkflow
+
+        @property
+        def manifest(self) -> PluginManifest:
+            return PluginManifest(
+                plugin_id="demo.minimal",
+                version="0.1.0",
+                description="Minimal demo plugin",
+            )
+
+    demo_plugin = MinimalDemoPlugin()
+    demo_contrib = demo_plugin.build(BuildServices(workspace_root=tmp_path))
+    assert len(demo_contrib.workflows) == 1
+    assert demo_contrib.workflows[0].name == "minimal_demo"
+    demo_runtime = demo_plugin.create_runtime(workspace_root=tmp_path)
+    demo_out = demo_runtime.invoke({"messages": [HumanMessage(content="run demo")]}, thread_id="demo-t")
+    assert demo_out["structured_response"] == {"status": "ok", "tag": "default-tag"}
+    assert tuple(demo_runtime.get_progress("demo-t").completed_nodes) == ("step_one", "step_two")
+

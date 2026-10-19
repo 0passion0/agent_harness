@@ -1,7 +1,6 @@
 """科研数据分析、表格画像与报告交付的 LangChain 原生工具与 Toolkit 模块。
 
-本模块定义的工具既可供主智能体（Supervisor）在日常监控与直接交互中调用，
-也可由 LangGraph 工作流内部节点直接复用。
+本模块移除已废弃的 `data_analysis_get_node_prompt` 间接层，仅保留面向内部工作流与受控授权场景的原子工具。
 """
 
 from __future__ import annotations
@@ -19,7 +18,6 @@ from pydantic import ConfigDict, Field
 
 from vertical_plugins.data_analysis.models.profile import TableProfileInput
 from vertical_plugins.data_analysis.models.report import ReportValidationInput
-from vertical_plugins.data_analysis.prompts import NODE_PROMPTS_MAP, get_node_prompt
 from vertical_plugins.data_analysis.tools.reports import save_report
 from vertical_plugins.data_analysis.tools.table_profile import profile_table
 
@@ -27,16 +25,31 @@ logger = logging.getLogger(__name__)
 
 
 def _resolve_target_path(path_str: str, root_dir: Path) -> Path:
-    """将虚拟路径或相对路径解析为物理路径。"""
+    """将虚拟路径或相对路径解析为受限于工作区内的物理路径。
+
+    :param path_str: 原始路径字符串。
+    :type path_str: str
+    :param root_dir: 工作区根目录。
+    :type root_dir: pathlib.Path
+    :return: 解析后的绝对路径。
+    :rtype: pathlib.Path
+    :raises ValueError: 当路径越出工作区边界时抛出。
+    :author: tongliga
+    :date: 2026-10-19
+    """
+    # 第一步：剥离虚拟前缀并解析为绝对路径
     cleaned = path_str.removeprefix("/workspace/").lstrip("/")
     candidate = Path(cleaned)
-    if candidate.is_absolute():
-        return candidate.resolve()
-    return (root_dir / candidate).resolve()
+    resolved_root = root_dir.resolve()
+    resolved = candidate.resolve() if candidate.is_absolute() else (resolved_root / candidate).resolve()
+    # 第二步：校验工作区边界
+    if not resolved.is_relative_to(resolved_root):
+        raise ValueError(f"Path escapes workspace root ({resolved_root}): {path_str}")
+    return resolved
 
 
 class DataAnalysisToolkit(BaseToolkit):
-    """遵循 LangChain 标准 BaseToolkit 规范的科研数据分析工具包。"""
+    """遵循 LangChain 标准 BaseToolkit 规范的科研数据分析内部工具包。"""
 
     workspace_root: Path = Field(
         default_factory=lambda: Path("./.agent-workspace").resolve(),
@@ -45,8 +58,19 @@ class DataAnalysisToolkit(BaseToolkit):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     def __init__(self, workspace_root: Path | None = None, **kwargs: Any) -> None:
-        """初始化科研数据分析工具包。"""
+        """初始化科研数据分析工具包。
+
+        :param workspace_root: 工作区根目录。
+        :type workspace_root: pathlib.Path | None
+        :param kwargs: 透传给 BaseToolkit 的参数。
+        :type kwargs: typing.Any
+        :return: 无返回值。
+        :rtype: None
+        :author: tongliga
+        :date: 2026-10-19
+        """
         super().__init__(**kwargs)
+        # 第一步：规范化保存工作区根目录
         resolved_root = (
             workspace_root or kwargs.get("workspace_root") or Path("./.agent-workspace")
         ).resolve()
@@ -55,33 +79,12 @@ class DataAnalysisToolkit(BaseToolkit):
     def get_tools(self) -> list[BaseTool]:
         """导出当前工具包内的所有 LangChain 原生工具实例。
 
-        :return: 包含 get_node_prompt、inspect_table、ask_researcher 与 finalize_report 的工具列表。
+        :return: 包含 inspect_table、ask_researcher 与 finalize_report 的工具列表。
         :rtype: list[langchain_core.tools.BaseTool]
         :author: tongliga
         :date: 2026-10-19
         """
         root = self.workspace_root
-
-        @tool(
-            "data_analysis_get_node_prompt",
-            description=(
-                "按节点名称查询工作流中特定节点的系统提示词与执行规范。\n"
-                f"可用节点：{list(NODE_PROMPTS_MAP.keys())}"
-            ),
-        )
-        def read_node_prompt(node_name: str) -> str:
-            """查询指定分析工作流节点的系统提示词与执行规范。
-
-            :param node_name: 节点名称（如 'parse_and_validate_input', 'profile_table', 'validate_report', 'finalize_output'）。
-            :type node_name: str
-            :return: 该节点的系统提示词规范文本。
-            :rtype: str
-            :author: tongliga
-            :date: 2026-10-19
-            """
-            logger.info("read_node_prompt_called", extra={"event_fields": {"node_name": node_name}})
-            # 第一步：调用 prompts 模块中的映射查询函数
-            return get_node_prompt(node_name)
 
         @tool(
             "data_analysis_inspect_table",
@@ -106,16 +109,6 @@ class DataAnalysisToolkit(BaseToolkit):
             :author: tongliga
             :date: 2026-10-19
             """
-            logger.info(
-                "inspect_table_called",
-                extra={
-                    "event_fields": {
-                        "file_path": file_path,
-                        "sheet_name": sheet_name,
-                        "column_offset": column_offset,
-                    }
-                },
-            )
             # 第一步：解析物理文件路径
             target = _resolve_target_path(file_path, root)
             # 第二步：调用 profile_table 算法全量扫描并提取分页
@@ -142,9 +135,6 @@ class DataAnalysisToolkit(BaseToolkit):
             :author: tongliga
             :date: 2026-10-19
             """
-            logger.info(
-                "ask_researcher_called", extra={"event_fields": {"question_len": len(question)}}
-            )
             # 第一步：触发 LangGraph 人机协同中断等待回复
             reply = interrupt({"kind": "research_question", "question": question})
             return str(reply) if reply is not None else ""
@@ -161,7 +151,7 @@ class DataAnalysisToolkit(BaseToolkit):
         ) -> Command:
             """校验完整科研报告与执行凭证并发布交付。
 
-            :param markdown: 包含七个指定二级标题的完整中文 Markdown 报告正文。
+            :param markdown: 包含核心二级标题的完整中文 Markdown 报告正文。
             :type markdown: str
             :param evidence_files: 相对工作区的脚本与 JSON 结果凭证路径列表。
             :type evidence_files: list[str]
@@ -172,10 +162,6 @@ class DataAnalysisToolkit(BaseToolkit):
             :author: tongliga
             :date: 2026-10-19
             """
-            logger.info(
-                "finalize_report_called",
-                extra={"event_fields": {"evidence_files_count": len(evidence_files)}},
-            )
             # 第一步：提取状态中保存的真实科学计算执行记录
             state = getattr(runtime, "state", {}) or {}
             executions = state.get("analysis_executions", [])
@@ -192,7 +178,7 @@ class DataAnalysisToolkit(BaseToolkit):
                 }
             )
 
-        return [read_node_prompt, inspect_table, ask_researcher, finalize_report]
+        return [inspect_table, ask_researcher, finalize_report]
 
 
 __all__ = [

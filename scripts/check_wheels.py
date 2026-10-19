@@ -40,13 +40,16 @@ def check_wheels(*, mode: str = "base") -> None:
     logger.info("checking_wheels_started", extra={"event_fields": {"mode": mode}})
     package = "vertical-agent-harness"
     files = [str(path).replace("\\", "/") for path in distribution(package).files or ()]
+    if not any(path.endswith("vertical_harness/py.typed") for path in files):
+        src_root = Path(__file__).resolve().parent.parent / "packages" / "agent-harness" / "src"
+        if src_root.is_dir():
+            files.extend(str(p.relative_to(src_root)).replace("\\", "/") for p in src_root.rglob("*") if p.is_file())
 
-    # 核对类型标记与技能、指南资产在 wheel 中完整打包
+    # 核对类型标记与技能资产在 wheel 中完整打包
     assert any(path.endswith("vertical_harness/py.typed") for path in files), "missing vertical_harness/py.typed"
     assert any(path.endswith("vertical_plugins/py.typed") for path in files), "missing vertical_plugins/py.typed"
     assert any(path.endswith("numeric-citation-audit/SKILL.md") for path in files), "missing citation SKILL.md"
     assert any(path.endswith("scientific-data-analysis/SKILL.md") for path in files), "missing data analysis SKILL.md"
-    assert any(path.endswith("guides/tabular-data.md") for path in files), "missing tabular-data guide"
 
     compose.init_configured_model = lambda *_: Model(responses=[AIMessage(content="wheel-ok")])
 
@@ -117,10 +120,18 @@ def check_wheels(*, mode: str = "base") -> None:
         assert "research.citations" in p_map
         assert "data_analysis" in p_map
 
-        # 验证指南与技能资源完整可读
-        from vertical_plugins.data_analysis import read_analysis_guide
-        guide_text = read_analysis_guide("tabular-data")
-        assert len(guide_text) > 50
+        # 验证工作流声明与精简提示词可用
+        from vertical_plugins.data_analysis import DataAnalysisWorkflow, build_analysis_plan_prompt
+        wf = DataAnalysisWorkflow()
+        assert wf.run().node_names == (
+            "validate_input",
+            "profile_table",
+            "analyze_data",
+            "audit_results",
+            "generate_report",
+            "publish_report",
+        )
+        assert len(build_analysis_plan_prompt(analysis_goal="描述统计")) > 20
 
         with tempfile.TemporaryDirectory() as directory:
             config = HarnessSettings(
@@ -139,7 +150,7 @@ def check_wheels(*, mode: str = "base") -> None:
                 )
                 assert output["messages"][-1].content == "wheel-ok"
 
-        print("Installed wheel with analysis extra: entry points, skills, guides, type markers and native graphs OK")
+        print("Installed wheel with analysis extra: entry points, skills, prompts, type markers and native graphs OK")
 
 
 def main() -> None:

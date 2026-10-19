@@ -89,8 +89,16 @@ def test_citation_parser_and_toolkit_integration(tmp_path: Path):
     composer.register_plugin(plugin, BuildServices(workspace_root=tmp_path))
     assert len(composer.workflows) == 1
     assert "citation_audit" in composer.workflows
-    assert len(composer.gated_tools) == 1
+    assert len(composer.gated_tools) == 0
+    assert len(composer.eager_tools) == 0
     assert composer.uploads[0][0] == "/skills/research-citations-numeric-citation-audit/SKILL.md"
+
+    with_tools_composer = AgentComposer(settings=settings)
+    with_tools_composer.register_plugin(
+        ResearchCitationPlugin(include_tools=True),
+        BuildServices(workspace_root=tmp_path),
+    )
+    assert len(with_tools_composer.gated_tools) == 1
 
 
 def test_plugin_contract():
