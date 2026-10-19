@@ -9,6 +9,7 @@
 
 import { useState } from 'react'
 import { ArrowRight, LockKeyhole } from 'lucide-react'
+import '../boot/loading.css'
 import './auth.css'
 
 /**
@@ -48,11 +49,15 @@ export function LoginScreen({ theme }: LoginScreenProps) {
 
   return <div className={`app product-v2 product-v3 ${theme}`}>
     <main className="auth-page">
+      <div className="boot-ambient-glow" aria-hidden="true" />
       <section className="auth-panel" aria-labelledby="login-title">
-        <div className="auth-logo">
-          <LockKeyhole size={25} aria-hidden="true" />
+        <div className="boot-logo-wrapper" style={{ margin: '0 auto 20px' }}>
+          <div className="boot-logo-ring" aria-hidden="true" />
+          <div className="boot-logo-core" aria-hidden="true">
+            <LockKeyhole size={28} />
+          </div>
         </div>
-        <p className="auth-eyebrow">MEDPEER WORKSPACE</p>
+        <span className="boot-eyebrow">MEDPEER WORKSPACE</span>
         <h1 id="login-title">登录 MedPeer</h1>
         <p className="auth-description">
           登录后进入科研工作台。账号信息将保存在本机，敏感凭据由系统凭据管理器保管。

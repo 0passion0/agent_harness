@@ -1,12 +1,16 @@
 /* Authentication is a standalone screen and account overlay. */
-.product-v3 .auth-page {min-width:0;min-height:100%;height:100%;display:grid;place-items:center;overflow-y:auto;padding:28px;background:radial-gradient(ellipse 520px 390px at 50% 42%,var(--soft),transparent 82%),var(--bg)}
-.product-v3 .auth-panel {width:min(100%,430px);padding:42px 39px;border:1px solid var(--line);border-radius:20px;background:var(--panel);box-shadow:var(--float-shadow);text-align:center}
+.product-v3 .auth-page {position:relative;min-width:0;min-height:100%;height:100%;display:grid;place-items:center;overflow:hidden;padding:28px;background:radial-gradient(ellipse 680px 520px at 50% 46%,var(--soft),transparent 85%),var(--bg)}
+.product-v3.dark .auth-page {background:radial-gradient(ellipse 720px 560px at 50% 46%,rgba(97,88,219,.12),transparent 85%),var(--bg)}
+.product-v3 .auth-panel {position:relative;z-index:2;width:min(100%,440px);padding:44px 40px;border:1px solid var(--line);border-radius:24px;background:var(--panel);box-shadow:0 20px 60px rgba(32,33,59,.08),0 2px 8px rgba(32,33,59,.03);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);text-align:center}
+.product-v3.dark .auth-panel {background:rgba(27,28,50,.88);border-color:rgba(60,58,94,.8);box-shadow:0 24px 70px rgba(0,0,0,.45)}
 .product-v3 .auth-logo {display:grid;place-items:center;margin:0 auto 21px;width:52px;height:52px;border-radius:16px;background:var(--soft);color:var(--accent)}
 .product-v3 .auth-eyebrow {letter-spacing:.16em;color:var(--accent);font-size:10px;font-weight:750;margin:0 0 12px}
-.product-v3 .auth-panel h1 {font-size:27px;line-height:1.3;margin:0;color:var(--heading)}
-.product-v3 .auth-description {margin:17px auto 24px;max-width:320px;line-height:1.8;color:var(--muted);font-size:13px}
-.product-v3 .auth-submit {width:100%;min-height:44px;display:flex;align-items:center;justify-content:center;gap:8px}
-.product-v3 .auth-error {font-size:12px;line-height:1.6;overflow-wrap:anywhere;color:#b9454b;margin:15px 0 0}
+.product-v3 .auth-panel h1 {font-size:26px;font-weight:650;letter-spacing:-.02em;line-height:1.3;margin:0;color:var(--heading)}
+.product-v3 .auth-description {margin:15px auto 24px;max-width:320px;line-height:1.75;color:var(--muted);font-size:13px}
+.product-v3 .auth-submit {width:100%;min-height:44px;display:flex;align-items:center;justify-content:center;gap:8px;border-radius:12px;font-size:13px;font-weight:600;box-shadow:0 4px 14px rgba(97,88,219,.28);transition:all .18s ease}
+.product-v3 .auth-submit:hover:not(:disabled) {transform:translateY(-1px);box-shadow:0 6px 20px rgba(97,88,219,.36)}
+.product-v3 .auth-submit:active:not(:disabled) {transform:translateY(0)}
+.product-v3 .auth-error {font-size:12px;line-height:1.6;overflow-wrap:anywhere;color:#c43d3d;margin:15px 0 0;padding:10px 12px;border-radius:10px;background:rgba(220,68,68,.08);border:1px solid rgba(220,68,68,.2)}
 .product-v3 .auth-notice {font-size:11px;line-height:1.6;color:var(--muted);margin:17px 0 0}
 .product-v3 .account-menu-wrap {position:relative;margin-top:7px}
 .product-v3 .rail-avatar {display:grid;place-items:center;width:32px;height:32px;margin:0;padding:0;border:0;border-radius:50%;overflow:hidden;background:var(--soft);color:var(--accent);font-size:13px;font-weight:700;cursor:pointer}

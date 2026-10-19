@@ -9,8 +9,8 @@
 
 import { useEffect, useRef, useState } from 'react'
 import {
-  Activity, ArrowRight, ChevronLeft, ChevronRight, CircleHelp,
-  FileText, Folder, FolderOpen, Menu, Paperclip, PanelRightClose, PanelRightOpen,
+  Activity, ArrowRight, BookOpen, ChevronLeft, ChevronRight, CircleHelp,
+  Compass, FileCheck2, FileText, Folder, FolderOpen, Menu, Paperclip, PanelRightClose, PanelRightOpen,
   Send, Settings2, Sparkles, Square, X, House, History, Wrench, Plus
 } from 'lucide-react'
 import { useAgentController } from './state/use-agent-controller'
@@ -27,6 +27,7 @@ import { UserConfig } from './plugins/user_config'
 import { AttachmentChips } from './components/AttachmentChips'
 import { TokenWindowPopup } from './components/TokenWindowPopup'
 import { LoginScreen } from './features/auth/LoginScreen'
+import { LoadingScreen } from './features/boot/LoadingScreen'
 import { AccountMenu } from './features/auth/AccountMenu'
 import './settings.css'
 import './v2.css'
@@ -46,9 +47,9 @@ type SettingsTab = 'models' | 'agent' | 'mcp' | 'plugins' | 'profile' | 'credits
  * 首次进入或空任务时的引导快捷模板列表。
  */
 const starters = [
-  { title: '梳理资料', note: '从文献和文件中整理事实与证据', text: '请梳理当前项目中的研究资料，明确关键结论、对应证据和待核实内容。' },
-  { title: '制定方案', note: '把研究问题拆解为可执行的步骤', text: '针对当前项目，先给出分步骤的研究计划、所需数据和预期产出，等待我确认后执行。' },
-  { title: '审查结果', note: '找出漏洞、局限及下一步工作', text: '请审查当前项目已有成果，找出方法、证据和结论方面的不足，提出修订建议。' }
+  { icon: BookOpen, title: '梳理资料', note: '从文献和文件中整理事实与证据', text: '请梳理当前项目中的研究资料，明确关键结论、对应证据和待核实内容。' },
+  { icon: Compass, title: '制定方案', note: '把研究问题拆解为可执行的步骤', text: '针对当前项目，先给出分步骤的研究计划、所需数据和预期产出，等待我确认后执行。' },
+  { icon: FileCheck2, title: '审查结果', note: '找出漏洞、局限及下一步工作', text: '请审查当前项目已有成果，找出方法、证据和结论方面的不足，提出修订建议。' }
 ]
 
 /**
@@ -204,8 +205,13 @@ export default function App() {
     setView('settings')
   }
 
-  // 若未登录则直接展示全屏登录页面
-  if (application && !application.user) {
+  // 1. 若应用尚未从主进程与后端获取到全量状态，展示极简美全屏等待加载界面
+  if (application === null) {
+    return <LoadingScreen theme={theme} error={error} onRetry={() => void c.retryStartup?.()} />
+  }
+
+  // 2. 若未登录则直接展示全屏登录页面
+  if (!application.user) {
     return <LoginScreen theme={theme} />
   }
 
@@ -381,6 +387,12 @@ export default function App() {
           ) : (
             <section className="task-empty">
               <div className="empty-inner">
+                {canCompose && (
+                  <div className="empty-brand-badge">
+                    <Sparkles size={13} />
+                    <span>MEDPEER RESEARCH ASSISTANT</span>
+                  </div>
+                )}
                 <h1>{!connected ? '工作台暂不可用' : !modelReady ? '登录 MedPeer' : !project ? '选择一个项目' : '从一个任务开始'}</h1>
                 <p>{!connected ? '本地服务尚未就绪。检查启动日志与 Python 环境。' : !modelReady ? '登录 MedPeer 账户以使用内置模型。' : !project ? '在左侧创建项目，或打开已有的本地文件夹。' : '描述目标即可开始。执行过程和交付文件会保留在当前项目下。'}</p>
                 {!modelReady && connected ? (
@@ -393,13 +405,26 @@ export default function App() {
                   </button>
                 ) : canCompose && (
                   <div className="starter-list">
-                    {starters.map(item => <button key={item.title} onClick={() => {
-                      setDraft(item.text)
-                      requestAnimationFrame(() => composer.current?.focus())
-                    }}>
-                      <span><strong>{item.title}</strong><small>{item.note}</small></span>
-                      <ArrowRight size={16} />
-                    </button>)}
+                    {starters.map(item => {
+                      const Icon = item.icon
+                      return (
+                        <button key={item.title} className="starter-card" onClick={() => {
+                          setDraft(item.text)
+                          requestAnimationFrame(() => composer.current?.focus())
+                        }}>
+                          <div className="starter-icon-wrap">
+                            <Icon size={18} />
+                          </div>
+                          <span className="starter-body">
+                            <strong>{item.title}</strong>
+                            <small>{item.note}</small>
+                          </span>
+                          <span className="starter-arrow">
+                            <ArrowRight size={15} />
+                          </span>
+                        </button>
+                      )
+                    })}
                   </div>
                 )}
               </div>

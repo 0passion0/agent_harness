@@ -81,6 +81,28 @@ export function useAgentController() {
     }, 220)
   }
 
+  /**
+   * 初始化或重新加载后端应用与会话快照数据。
+   */
+  async function retryStartup(): Promise<void> {
+    setError('')
+    try {
+      const [appValue, sessionValue] = await Promise.all([
+        window.medpeer.command({ id: requestId(), method: 'app.snapshot', params: {} }),
+        window.medpeer.command({ id: requestId(), method: 'session.snapshot', params: {} })
+      ])
+      const data = appValue as ApplicationState
+      const snapshot = sessionValue as Snapshot
+      setApplication(data)
+      activeSession.current = snapshot.session_id
+      dispatch({ event: 'app.ready', data })
+      dispatch({ event: 'snapshot.loaded', data: snapshot })
+      await refreshList()
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason))
+    }
+  }
+
   // 第二步：注册后端事件帧监听，建立高频帧 rAF 合并调度
   useEffect(() => {
     type RunFrame = Extract<EventFrame, { event: 'run.event' }>
@@ -136,18 +158,7 @@ export function useAgentController() {
     })
 
     // 初始化时主动拉取应用快照与当前会话快照
-    void Promise.all([
-      window.medpeer.command({ id: requestId(), method: 'app.snapshot', params: {} }),
-      window.medpeer.command({ id: requestId(), method: 'session.snapshot', params: {} })
-    ]).then(([appValue, sessionValue]) => {
-      const data = appValue as ApplicationState
-      const snapshot = sessionValue as Snapshot
-      setApplication(data)
-      activeSession.current = snapshot.session_id
-      dispatch({ event: 'app.ready', data })
-      dispatch({ event: 'snapshot.loaded', data: snapshot })
-      return refreshList()
-    }).catch(reason => setError(String(reason)))
+    void retryStartup()
 
     return () => {
       unsubscribe()
@@ -494,6 +505,7 @@ export function useAgentController() {
     deleteSession,
     exportSession,
     sessionSearch,
-    searchSessions
+    searchSessions,
+    retryStartup
   }
 }
