@@ -72,7 +72,7 @@ class ResearchCitationPlugin(WorkflowPlugin):
         plugin_id="research.citations",
         api_version=1,
         version="0.1.0",
-        description="Deterministic in-text reference checks for research manuscripts",
+        description="学术文稿正文引用与参考文献的确定性核查",
     )
     workflow_cls = CitationAuditWorkflow
     instructions_template = CITATION_INSTRUCTIONS

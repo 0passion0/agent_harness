@@ -89,7 +89,7 @@ class DataAnalysisPlugin(WorkflowPlugin):
         plugin_id="data_analysis",
         api_version=1,
         version="0.1.0",
-        description="Scientific tabular data analysis, table profiling, execution evidence, and reporting",
+        description="科研数据表格分析，包含数据画像、执行凭证与报告生成",
     )
     workflow_cls = DataAnalysisWorkflow
     instructions_template = DATA_ANALYSIS_INSTRUCTIONS
