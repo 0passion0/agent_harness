@@ -1,5 +1,18 @@
+/**
+ * @file commands.ts
+ * @description 桌面端 IPC 指令校验、权限鉴权与安全辅助函数模块。
+ * 包含受信任渲染进程发送方断言、JSON-RPC 命令协议严格白名单校验、
+ * 物理文件路径数组断言及虚拟成果文件路径打开等能力。
+ * @author tongliga
+ * @date 2026-10-16
+ */
+
 import type { Command } from '../shared/protocol'
 
+/**
+ * 允许前端调用的合法 JSON-RPC 方法名及其必填参数字段白名单映射表。
+ * 参数键不在白名单中的请求将被直接拦截，防止参数注入。
+ */
 const methods: Record<string, string[]> = {
   'usage.stats': ['period', 'model'],
   'protocol.hello': [], 'session.snapshot': [], 'session.list': [], 'session.token_usage': [], 'session.search': ['query'], 'session.clear': [], 'plugin.list': [], 'app.snapshot': [], 'app.environment': [],
@@ -114,4 +127,15 @@ export async function resolveAndOpenArtifact(
 }
 
 
-export function validateCommand(raw: unknown): Command { assertCommand(raw); return raw }
+/**
+ * 校验原始命令对象合法性并强转为类型安全的 Command 协议对象。
+ *
+ * @param raw - 待校验的原始命令对象
+ * @returns 校验通过的合法 Command 对象
+ * @throws Error 当命令不符合协议规范时抛出
+ */
+export function validateCommand(raw: unknown): Command {
+  assertCommand(raw)
+  return raw
+}
+

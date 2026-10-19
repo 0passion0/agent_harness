@@ -1,3 +1,11 @@
+/**
+ * @file agent-state.test.ts
+ * @description 客户端 Agent 状态机单元测试。
+ * 验证应用就绪（app.ready）、会话就绪（ready）以及运行确认（run.accepted）等事件在状态规约函数 reduceAgent 中的正确转移。
+ * @author tongliga
+ * @date 2026-10-16
+ */
+
 import { expect, test } from 'vitest'
 import { initialState, reduceAgent } from './agent-state'
 import type { ApplicationState } from '../../../shared/protocol'

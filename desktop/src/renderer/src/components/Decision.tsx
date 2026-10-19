@@ -1,37 +1,100 @@
+/**
+ * @file Decision.tsx
+ * @description 用户决策交互卡片组件。
+ * 负责在 Agent 运行过程中需要用户介入时，呈现不同类型的决策界面：
+ * 1. 插件首次授权（plugin_authorization）：展示插件信息、作用范围并提供持久化授权确认；
+ * 2. 危险操作授权（approval）：展示待执行操作详情并提供允许/拒绝选项；
+ * 3. 单选或文本补充问答（question）：提供选项单选及自定义文本输入回复。
+ * @author tongliga
+ * @date 2026-10-16
+ */
+
 import { Fragment, useId, useState } from 'react'
 import { ArrowRight, Check, LockKeyhole, MessageCircle, Puzzle, Shield } from 'lucide-react'
-import type { Json } from '../../../shared/protocol'
+import type { Json, Question } from '../../../shared/protocol'
 import './Decision.css'
 import { ApprovalContent, ReadableValue } from './ApprovalContent'
-import type { Question } from '../../../shared/protocol'
 
-export function Decision({ kind, question, actionRequests, options = [], pluginId, pluginName, purpose, inputScope, plannedOutputs, allowedEffects, onAnswer, onStop }: {
+/**
+ * 决策组件属性接口。
+ */
+export interface DecisionProps {
+  /** 决策交互类型（'plugin_authorization' | 'approval' | 'question' 等） */
   kind: string
+  /** 提示问题或授权标题文本 */
   question: string
+  /** 待审批的具体操作请求列表 */
   actionRequests?: Question['action_requests']
+  /** 候选单选选项列表（适用于选择题模式） */
   options?: string[]
+  /** 待授权插件的唯一标识符 */
   pluginId?: string
+  /** 待授权插件的展示名称 */
   pluginName?: string
+  /** 插件调用目的或任务说明 */
   purpose?: string
+  /** 本次任务涉及的输入范围 */
   inputScope?: Json
+  /** 本次任务预计生成的文件或产出 */
   plannedOutputs?: Json
+  /** 允许的作用域/副作用类别（例如 read、write、external） */
   allowedEffects?: Json
+  /** 用户提交答复或确认/拒绝决策时的回调函数 */
   onAnswer(value: string): void | Promise<void>
+  /** 用户点击取消任务时的回调函数 */
   onStop(): void
-}) {
+}
+
+/**
+ * 用户交互决策卡片组件。
+ *
+ * 第一步：根据 kind 判断当前决策形态（插件授权、普通操作授权或提问回答）。
+ * 第二步：规范化输入作用域、副作用等详情字段，以便展示审查明细。
+ * 第三步：渲染卡片头部（图标、标题与状态标识）。
+ * 第四步：根据形态渲染主体表单（插件详情折叠块、操作审批项或单选/自定义输入框）。
+ * 第五步：提供防止重复提交的安全提交逻辑与取消任务入口。
+ *
+ * @param props - 决策组件属性
+ */
+export function Decision({
+  kind,
+  question,
+  actionRequests,
+  options = [],
+  pluginId,
+  pluginName,
+  purpose,
+  inputScope,
+  plannedOutputs,
+  allowedEffects,
+  onAnswer,
+  onStop
+}: DecisionProps) {
   const [answer, setAnswer] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [selected, setSelected] = useState<number | null>(null)
   const titleId = useId()
+
+  // 判定当前决策的形态分类
   const plugin = kind === 'plugin_authorization'
   const approval = kind === 'approval' || plugin
   const hasOptions = !approval && options.length > 0
   const response = hasOptions && selected !== null && selected < options.length ? options[selected] : answer.trim()
+
+  // 副作用标识映射为通俗易懂的中文说明
   const effects: Record<string, string> = { read: '读取文件', write: '创建或修改文件', external: '访问外部服务' }
   const scopes = [
-    ['本次输入', inputScope], ['计划产出', plannedOutputs],
+    ['本次输入', inputScope],
+    ['计划产出', plannedOutputs],
     ['本次操作', Array.isArray(allowedEffects) ? allowedEffects.map(value => effects[String(value)] ?? value) : allowedEffects]
   ].filter(([, value]) => value != null && (!Array.isArray(value) || value.length > 0)) as Array<[string, Json]>
+
+  /**
+   * 提交当前决策结果。
+   * 防御性防止重复点击，执行完成后无论成功与否均重置 submitting 状态。
+   *
+   * @param value - 提交的操作值（如 'approve'、'reject' 或文本选项）
+   */
   async function submit(value: string) {
     if (submitting) return
     setSubmitting(true)
