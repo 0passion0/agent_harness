@@ -506,18 +506,39 @@ export default function App() {
                 disabled={busy || !canCompose}
                 rows={2}
                 placeholder={!connected ? '本地服务未连接…' : !modelReady ? '先登录 MedPeer…' : !project ? '先选择项目…' : '描述你希望完成的任务…'}
-                onChange={event => setDraft(event.target.value)}
+                onChange={event => {
+                  const val = event.target.value
+                  setDraft(val)
+                  // 若用户键入以 '/' 开头的斜杠指令，自动唤起命令与扩展能力浮层
+                  if (val.startsWith('/')) {
+                    if (!capabilityPicker.current?.isOpen()) {
+                      capabilityPicker.current?.open(val.slice(1))
+                    }
+                  } else if (!val.trim() && capabilityPicker.current?.isOpen()) {
+                    capabilityPicker.current?.close()
+                  }
+                }}
                 onKeyDown={event => {
+                  // 第一步：若能力选择浮层已开启，优先交由浮层处理方向键、回车与退出
+                  if (capabilityPicker.current?.isOpen()) {
+                    if (event.key === 'ArrowDown' || event.key === 'ArrowUp' || event.key === 'Enter') {
+                      if (capabilityPicker.current.handleKeyDown?.(event)) {
+                        return
+                      }
+                    }
+                    if (event.key === 'Escape') {
+                      event.preventDefault()
+                      capabilityPicker.current.close()
+                      if (draft.startsWith('/')) setDraft('')
+                      return
+                    }
+                  }
+                  // 第二步：空输入框键入 '/' 快捷唤起能力浮层
                   if (isCapabilityShortcut(event) && !draft.trim()) {
-                    event.preventDefault()
-                    capabilityPicker.current?.open()
+                    capabilityPicker.current?.open('')
                     return
                   }
-                  if (event.key === 'Escape' && capabilityPicker.current?.isOpen()) {
-                    event.preventDefault()
-                    capabilityPicker.current.close()
-                    return
-                  }
+                  // 第三步：普通回车触发任务提交
                   if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
                     event.preventDefault()
                     if (!sendDisabled) void submitTask()
@@ -549,13 +570,44 @@ export default function App() {
                     setSkills={setSelectedSkills}
                     disabled={busy || !canCompose}
                     onEscape={() => composer.current?.focus()}
+                    externalQuery={draft.startsWith('/') ? draft.slice(1) : ''}
+                    onSelectPrompt={prompt => {
+                      setDraft(prompt)
+                      requestAnimationFrame(() => composer.current?.focus())
+                    }}
+                    onCapabilityApplied={() => {
+                      if (draft.startsWith('/')) {
+                        setDraft('')
+                      }
+                      requestAnimationFrame(() => composer.current?.focus())
+                    }}
+                    onClearSession={() => {
+                      setView('task')
+                      void loadSession('session.clear')
+                      if (draft.startsWith('/')) setDraft('')
+                    }}
+                    onToggleDetail={() => {
+                      setDetailTab('activity')
+                      setDetailOpen(true)
+                      if (draft.startsWith('/')) setDraft('')
+                    }}
+                    onOpenSettings={tab => {
+                      openSettings(tab as SettingsTab)
+                      if (draft.startsWith('/')) setDraft('')
+                    }}
                   />
                   <span className="context-sep" />
                   <button
                     className="composer-tool-hint"
                     disabled={!canCompose}
-                    onClick={() => openSettings('plugins')}
-                    title="管理插件"
+                    onClick={() => {
+                      if (capabilityPicker.current?.isOpen()) {
+                        capabilityPicker.current.close()
+                      } else {
+                        capabilityPicker.current?.open()
+                      }
+                    }}
+                    title="选择扩展插件与技能 (/)"
                   >
                     <Wrench size={14} />插件
                   </button>

@@ -20,6 +20,7 @@ from deepagents import (
 from deepagents.backends.protocol import BackendProtocol
 from deepagents.middleware import SkillsMiddleware
 from deepagents.middleware.subagents import SubAgentMiddleware
+from dotenv import load_dotenv
 from langchain.agents.middleware import (
     AgentMiddleware,
     InterruptOnConfig,
@@ -27,6 +28,7 @@ from langchain.agents.middleware import (
     TodoListMiddleware,
 )
 from langchain_core.tools import BaseTool
+from langchain_exa import ExaSearchResults
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph.state import CompiledStateGraph
@@ -667,6 +669,10 @@ def build_agent(
         enforce_plugin_authorization=enforce_plugin_authorization or (auth_gateway is not None),
         selected_skill_ids=None if selected_skill_ids is None else frozenset(selected_skill_ids),
     )
+    if not settings.supervisor_only:
+        load_dotenv(".env")
+        xa_tool = ExaSearchResults()
+        composer.eager_tools.append(xa_tool)
     composer.register_plugins(
         discover_plugins(settings.enabled_plugins) if plugins is None else plugins,
         services,

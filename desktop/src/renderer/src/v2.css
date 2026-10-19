@@ -81,7 +81,7 @@
 .product-v2 .primary-action:hover:not(:disabled) {background:var(--accent-hover);color:var(--accent-on);}
 .product-v2 .empty-cta {margin-top:25px;}
 .product-v2 .task-bottom {width:100%;flex:none;margin:0 auto;padding:14px max(24px, calc((100% - 830px)/2)) 17px;}
-.product-v2 .task-composer {border:1px solid var(--line-strong);background:var(--panel);border-radius:13px;box-shadow:0 3px 20px #172d4410;overflow:hidden;transition:border-color .15s;}
+.product-v2 .task-composer {border:1px solid var(--line-strong);background:var(--panel);border-radius:13px;box-shadow:0 3px 20px #172d4410;position:relative;overflow:visible;transition:border-color .15s;}
 .product-v2.dark .task-composer {box-shadow:0 3px 20px #0003;}
 .product-v2 .task-composer:focus-within {border-color:var(--accent);}
 .product-v2 .task-composer textarea {width:100%;min-height:76px;max-height:220px;resize:vertical;display:block;padding:15px 17px 8px;background:transparent;color:var(--text);border:0;outline:none;box-shadow:none;font-size:13px;line-height:1.65;}
