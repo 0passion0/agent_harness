@@ -16,7 +16,7 @@ from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command, Interrupt
 from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter
 
-from vertical_harness.plugins.contracts import RunContext
+from vertical_plugins.common.contracts import RunContext
 
 logger = logging.getLogger(__name__)
 _JSON = TypeAdapter(JsonValue)
@@ -178,7 +178,7 @@ async def ainvoke_agent(
     :param config: 调用方传入的检查点与回调配置。
     :type config: langchain_core.runnables.RunnableConfig
     :param context: 可信身份与租户上下文。
-    :type context: vertical_harness.plugins.contracts.RunContext | None
+    :type context: vertical_plugins.common.contracts.RunContext | None
     :param durability: 检查点持久化同步级别。
     :type durability: typing.Literal['sync', 'async', 'exit']
     :param timeout_seconds: 覆盖默认调用超时的秒数。
@@ -224,7 +224,7 @@ async def astream_agent(
     :param config: 必须包含 thread_id 的 RunnableConfig 字典。
     :type config: langchain_core.runnables.RunnableConfig
     :param context: 可信运行时身份。
-    :type context: vertical_harness.plugins.contracts.RunContext | None
+    :type context: vertical_plugins.common.contracts.RunContext | None
     :param durability: 检查点持久化同步级别。
     :type durability: typing.Literal['sync', 'async', 'exit']
     :param timeout_seconds: 执行超时秒数。

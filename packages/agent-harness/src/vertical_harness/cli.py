@@ -29,9 +29,10 @@ from vertical_harness.engine import (
     atime_travel_invoke,
 )
 from vertical_harness.engine.memory import run_memory_worker
+from vertical_harness.engine.plugin_loader import discover_plugins
 from vertical_harness.logging import configure_logging, log_context
 from vertical_harness.observability import tracing_session
-from vertical_harness.plugins import BuildServices, RunContext, discover_plugins
+from vertical_plugins.common.contracts import BuildServices, RunContext
 
 logger = logging.getLogger(__name__)
 

@@ -16,8 +16,9 @@ from langgraph.store.memory import InMemoryStore
 from vertical_harness.config import HarnessSettings
 from vertical_harness.engine.callbacks import WorkflowLoggingHandler
 from vertical_harness.engine.compose import BASE_PROMPT, aopen_agent
+from vertical_harness.engine.plugin_loader import discover_plugins
 from vertical_harness.evaluation.scoring import input_payload, normalize_outputs
-from vertical_harness.plugins import BuildServices, RunContext, discover_plugins
+from vertical_plugins.common.contracts import BuildServices, RunContext
 
 logger = logging.getLogger(__name__)
 

@@ -13,6 +13,7 @@ from langsmith import Client, tracing_context
 from langsmith.utils import LangSmithConflictError
 
 from vertical_harness.config import HarnessSettings
+from vertical_harness.engine.plugin_loader import discover_plugins
 from vertical_harness.evaluation.config import EvaluationSettings
 from vertical_harness.evaluation.feedback import USER_FEEDBACK_KEY, promote_feedback
 from vertical_harness.evaluation.scoring import (
@@ -22,7 +23,7 @@ from vertical_harness.evaluation.scoring import (
     make_judge,
     normalize_outputs,
 )
-from vertical_harness.plugins import BuildServices, discover_plugins
+from vertical_plugins.common.contracts import BuildServices
 
 logger = logging.getLogger(__name__)
 

@@ -1,17 +1,17 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:9b3583f8db670ecbbcc08a005baca56c0fbf7325227e997d49edf502e4e9a00f",
+  "pageVersion": "sha256:cccd50ce9d789b2ca5f7b7ab889922d58a6074581b20662dd3e9d05f44279a4e",
   "claims": [
     {
       "id": "claim_6e3958e5511f4b6e81aa066e5db6a45e",
       "statement": "extract_cited_indices 解析方括号内的单序号、逗号列表与区间数字引用（跨度限制 MAX_CITATION_SPAN <= 1000 以防 DoS），evaluate_references 对超出文献总数的引用标记 IssueKind.OUT_OF_RANGE，对文献存在但正文未出现的条目标记 IssueKind.UNCITED。",
       "evidence": [
         {
-          "resource": "repo://packages/research-citation/src/research_citation/checker/evaluator.py#L19-L90",
-          "version": "repo-lines-v1:sha256:e914969dc013e0a7cc8acffbe885848c32421297f32a7c6fe3900cc6097c36d1:eyJzZWxlY3RlZExpbmVDb3VudCI6NzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdkMWEwZGI4MDM1NTk5OGY1MzY2YzAyNjgxZDExOWZmN2MwMjA1MDhkYTUxYjdmNGQ1ZGFlZjk0M2QxZjY2YTIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU2ZmI2ZjQ2N2RlMGMyZDRlMmEwZGFlY2RhYmE5OTliZDI3NDYwMzUwM2ZmZGFlODlhOTM4MjQwM2U1MjQ4NTQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRmNTIxOGRkNWVjM2EwZmIyNjRhNzQ1MDYyMjc0YzhhYTE0M2NjYTVmNjFlMWU3ZDdkY2IyMTBiMzJiYTEzMjQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImIxZGJmYTk1NTE0NGQyNWUxYjM1YzU3OGFmOThiY2UzMzc5MzA0NzkzMWQ1YzU5NWI3ZTE5YmU3YTk4MjYyYWMifQ"
+          "resource": "repo://packages/agent-harness/src/vertical_plugins/research_citation/checker/evaluator.py#L19-L90",
+          "version": "repo-lines-v1:sha256:9679665ba14acf478510796044deadff50465c8b38abfd7bb165462aa42e20bb:eyJzZWxlY3RlZExpbmVDb3VudCI6NzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdkMWEwZGI4MDM1NTk5OGY1MzY2YzAyNjgxZDExOWZmN2MwMjA1MDhkYTUxYjdmNGQ1ZGFlZjk0M2QxZjY2YTIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU2ZmI2ZjQ2N2RlMGMyZDRlMmEwZGFlY2RhYmE5OTliZDI3NDYwMzUwM2ZmZGFlODlhOTM4MjQwM2U1MjQ4NTQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRmNTIxOGRkNWVjM2EwZmIyNjRhNzQ1MDYyMjc0YzhhYTE0M2NjYTVmNjFlMWU3ZDdkY2IyMTBiMzJiYTEzMjQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImIxZGJmYTk1NTE0NGQyNWUxYjM1YzU3OGFmOThiY2UzMzc5MzA0NzkzMWQ1YzU5NWI3ZTE5YmU3YTk4MjYyYWMifQ"
         },
         {
-          "resource": "repo://packages/research-citation/src/research_citation/checker/parser.py#L14-L75",
+          "resource": "repo://packages/agent-harness/src/vertical_plugins/research_citation/checker/parser.py#L14-L75",
           "version": "repo-lines-v1:sha256:949d402a3d4f7190b625d6eef83bfeed2c541ecf4f10840e98ce9a2fb86117e3:eyJzZWxlY3RlZExpbmVDb3VudCI6NjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFhMjkwOTI2MDczMjVlOGI0NzFmNzg0ZTJjNjg2NzlmMDFiYmEyNDA0NjFkMWRkOGVmNDUwMjI0MWEwOWEzMWQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUyNGYyYzE4OWIzYTVhOGUxM2U5NWVjMjM3ZmNlYmRkNWVhM2IzZGZjNjY4MjMzZWUxMWY4YzQ2YjgxMDk5MTciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjM1YmY0NDU1M2YxNTk1NGMzMjBmY2RkODE4MGMxYzg1ODEzNTJhZmQxYTBkZTU4MWI4OWM3ZDdhYmNkM2ZmOWYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjgzOWNlNTUxZjJmZmY0OWVjYjQwNDU1ODRiMmI0OGRhMWUwYzY5ZTcxNDkyNWRiMTdjMDNlMzY3ODVmMGNkMzYifQ"
         }
       ]
@@ -21,7 +21,7 @@
       "statement": "AuditFinding 模型通过 require_evidence_for_verification 校验器约束：当结论状态为 FindingStatus.VERIFIED 时必须至少包含一条不可变的 EvidenceRef 证据，否则抛出 ValueError。",
       "evidence": [
         {
-          "resource": "repo://packages/research-citation/src/research_citation/models/audit.py#L46-L75",
+          "resource": "repo://packages/agent-harness/src/vertical_plugins/research_citation/models/audit.py#L46-L75",
           "version": "repo-lines-v1:sha256:3d4927cf7e712d8b1c71992537864e1501a160732cb0481f2b98178e530b10de:eyJzZWxlY3RlZExpbmVDb3VudCI6MzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU3MDZmM2Y3OTQyOWJjZDMwOGIzMWU3M2EwMGVkM2IxZTA1ZjYzOWI0YTFjMmE3MzA4NTRkOWMwZmJjOGRkYWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE2OWYwYzg3ODA1NjdjNDg5YmRkYzc0ZTVjYTQ3YmIxMGM1M2RjNmQ3MTRmZDY2OTVjMGIwMmMxMDhjNTAzNmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhkZWQ1MmEyNmQxNDRiNTAxYjIwNGMyZTdiNDllOWFlMTllN2UxZmE2ZTBhMDRjNTYxYzlmNjBmNjk1NThlZGMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjI4YjFlNjllMzBkMjRjYjQxZDhkZWY4Yzg5OWQzOTRmZTQwNTcyZjIxMzY0MGEzZjdmMGY4MTk3YmEzZDVmMzkifQ"
         }
       ]
@@ -31,18 +31,18 @@
       "statement": "ResearchCitationPlugin 通过 ResearchCitationToolkit 与 ToolContribution.from_toolkit 将 scan_numeric 声明为 Exposure.SKILL 门控工具，并通过 _load_skill_asset 读取缓存 numeric-citation-audit/SKILL.md 技能资产。",
       "evidence": [
         {
-          "resource": "repo://packages/research-citation/src/research_citation/checker/tools.py#L16-L65",
-          "version": "repo-lines-v1:sha256:957d67a3d0962c18d9a68d4098733ee53fa7439adf7449603ccdf35170dd485a:eyJzZWxlY3RlZExpbmVDb3VudCI6NTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZjMmY4MDJlMmY5MmI2NTAxMGFjNmFmMTRkMjViMTI5ZjQxY2M4YzBkZjQyNjQ2OTdiNDc2ZTg0M2E3ZmVkNDgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdlYjcwMjU3NTkzZGEwNmY2ODJhM2RkZGE1NGE5ZDI2MGQ0ZmM1MTRmNjQ1MjM3ZjVjYTc0YjA4ZjhkYTYxYTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRmNTIxOGRkNWVjM2EwZmIyNjRhNzQ1MDYyMjc0YzhhYTE0M2NjYTVmNjFlMWU3ZDdkY2IyMTBiMzJiYTEzMjQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRiNGYxODhiMDVmZWI5MTQzNzk3ZjYxNGZhZGNiY2YzZWE2NGY1NGUyZWVmNDI4ODdjMjNmOGYzMjM1ZTQ5OTAifQ"
+          "resource": "repo://packages/agent-harness/src/vertical_plugins/research_citation/__init__.py#L36-L155",
+          "version": "repo-lines-v1:sha256:803898c587daf0fd08be6a41630d646aae7f6c7dfb0de93de00027c66176d69d:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIwLCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiIyYzNkZDEyYTgwNjIzOGY3ZTk3YmRhNWExNDgwYzM2ZGU5NDBjOGFjMTlhYTIzMDZlYWM3NWFiN2JmYjdhOTQ3IiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiJlZDRkNzdhMGE1NDM2YmYyMmIwZDhjN2ZmMjBmN2ZmNzdjNGYxY2IzMmM2YThjOTFkNTAyZDgyY2E2NjY3NmI0IiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiJiNWY0MDUwNzhhYTY2NTA4ZjljYTAyYjkzYTc5Yjc0YzA3ZDUzYWEwMWVlOWJmMzQzNWUyNDQwYzRlY2Y3OWFjIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiI1MzVlM2ExYzUyNTA1MjE5YWQ2YmFjZjM5YmY0YzFjZjJkMjU1NTQ5ODFhZjdhZDJkOGU3Y2Q2ZjM4YzcyOTA0In0"
         },
         {
-          "resource": "repo://packages/research-citation/src/research_citation/plugin.py#L36-L110",
-          "version": "repo-lines-v1:sha256:030e53027058493d4f35cf8d4c7a8ed4773bb2ac89e7575242cb0b61d956fab7:eyJzZWxlY3RlZExpbmVDb3VudCI6NzUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhhNmM4ZTc2ZjQ4NGM4NzZlN2RkNTRlMTUzMTRiYTlkZWRiNmNlNmNkMTE5MzkyMzExOGU5NzYwMWQ1YjZlMDQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQwZmFkNjNiNWE1ZDU5YzcxZmFjNmVmMDRhMDMyZTQ5YzllZmQwYWJmYzBlMjljZGE4NDU1MzgyNGNjM2VhZmEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRmNTIxOGRkNWVjM2EwZmIyNjRhNzQ1MDYyMjc0YzhhYTE0M2NjYTVmNjFlMWU3ZDdkY2IyMTBiMzJiYTEzMjQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc4ZGUxZDE2ZTRjOWY2MjcyMGZmMTBkMjNlNDAyNThjYmJlNWY3MTg4Nzg2MDA1MzM5OGFmOGY3ZDc4ZGEyZTMifQ"
+          "resource": "repo://packages/agent-harness/src/vertical_plugins/research_citation/checker/tools.py#L16-L65",
+          "version": "repo-lines-v1:sha256:957d67a3d0962c18d9a68d4098733ee53fa7439adf7449603ccdf35170dd485a:eyJzZWxlY3RlZExpbmVDb3VudCI6NTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZjMmY4MDJlMmY5MmI2NTAxMGFjNmFmMTRkMjViMTI5ZjQxY2M4YzBkZjQyNjQ2OTdiNDc2ZTg0M2E3ZmVkNDgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdlYjcwMjU3NTkzZGEwNmY2ODJhM2RkZGE1NGE5ZDI2MGQ0ZmM1MTRmNjQ1MjM3ZjVjYTc0YjA4ZjhkYTYxYTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRmNTIxOGRkNWVjM2EwZmIyNjRhNzQ1MDYyMjc0YzhhYTE0M2NjYTVmNjFlMWU3ZDdkY2IyMTBiMzJiYTEzMjQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRiNGYxODhiMDVmZWI5MTQzNzk3ZjYxNGZhZGNiY2YzZWE2NGY1NGUyZWVmNDI4ODdjMjNmOGYzMjM1ZTQ5OTAifQ"
         }
       ]
     }
   ],
   "verification": {
     "by": "openwiki/0.7.2",
-    "at": "2026-10-19T02:30:03.285Z"
+    "at": "2026-10-19T05:51:52.758Z"
   }
 }

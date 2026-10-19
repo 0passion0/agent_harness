@@ -1,14 +1,14 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:8fbcb882e80a58a739c182c937fc475d678f0d84e0acd5fd40c8832a6d08c8b3",
+  "pageVersion": "sha256:7259e106b115d3883a8ded9dd80742b5814d37b2fcd32d236203caafb9ca0615",
   "claims": [
     {
       "id": "claim_23a03da13b1b4c58b070571a35c8ed53",
-      "statement": "README.md 规定仓库采用双独立 Python distribution：通用 vertical-agent-harness 与演示插件 vertical-plugin-research-citation，并支持同时以可编辑模式 pip install 安装。",
+      "statement": "README.md 规定仓库采用 vertical-agent-harness 单一 Python distribution 发行，包含主智能体包 vertical_harness 与业务插件包 vertical_plugins，并支持基础安装以及包含 duckdb/openpyxl 的 analysis 可选依赖组安装。",
       "evidence": [
         {
-          "resource": "repo://README.md#L1-L19",
-          "version": "repo-lines-v1:sha256:609c96b5e771bc28edd2a7676f9c4d2c4eef8ad4d20f62ff025680ccd20b5b02:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc3NzJmMTlhNDY3OWQxNzRkMGVlZTU5NzJjNjg5MjMwYmM3ZjBkNmIzODA5YTdhNWViZmZjY2EyNzBjNjBiMDEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ3YzA2YzU2MWQ1YzMyNzM0MzY4NTI2OGE0NmIzMzkxZjM5OThlZWU4OTBkMmJlNTFmMGQyMWNjNGE1M2FlNmQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjI3MjMyZjk1NzkyMjg1ZmU3OWVhNWVmMWIzNWM4OTlkMTJlZDU3NDkwNmUxNWRhZjRkN2VjNGY0N2JkY2NkZGIifQ"
+          "resource": "repo://README.md#L1-L22",
+          "version": "repo-lines-v1:sha256:bf20e8f70ceb20c4bd8cd8805cc9ea1efefd11533479f4f04a6034a1742830c6:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc3NzJmMTlhNDY3OWQxNzRkMGVlZTU5NzJjNjg5MjMwYmM3ZjBkNmIzODA5YTdhNWViZmZjY2EyNzBjNjBiMDEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ3YzA2YzU2MWQ1YzMyNzM0MzY4NTI2OGE0NmIzMzkxZjM5OThlZWU4OTBkMmJlNTFmMGQyMWNjNGE1M2FlNmQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjI3MjMyZjk1NzkyMjg1ZmU3OWVhNWVmMWIzNWM4OTlkMTJlZDU3NDkwNmUxNWRhZjRkN2VjNGY0N2JkY2NkZGIifQ"
         }
       ]
     },
@@ -17,7 +17,7 @@
       "statement": "cli.py 的 _build_parser 函数定义命令行 --list-plugins、--list-workflows、--history、--thread-id、--checkpoint-id、--fork-thread-id、--update-state、--as-node、--durability、--tenant-id、--user-id 以及 --task-tier 选项，默认 task-tier 为 TaskTier.QUALITY.value (quality)。",
       "evidence": [
         {
-          "resource": "repo://packages/agent-harness/src/vertical_harness/cli.py#L81-L180",
+          "resource": "repo://packages/agent-harness/src/vertical_harness/cli.py#L82-L181",
           "version": "repo-lines-v1:sha256:e8cc8f98d038201ade157eac36f1e374a07ac9d9244acc1c179c302150611165:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAwLCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiJiZjVjZDFiMDJhMjgzODVjOTJjNmE4OWUxOGE5NTI2ODYzYWI2N2QxODgxOTEyOGJhY2QyOWZiMWE5YTUwNmFmIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiIwMWJhNDcxOWM4MGI2ZmU5MTFiMDkxYTdjMDUxMjRiNjRlZWVjZTk2NGUwOWMwNThlZjhmOTgwNWRhY2E1NDZiIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI0ZmJkMDA5MzE0YmMyNzA4NDE2NzM0YTAyYWU1ZmYzOWExZTQ4YTA1MGJlOTFmNDNiMmZhYTkyMDAyYzYyYmZjIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiI0NjM2Mjg2MjAwZWM3NzBiMDE2MWNjODlkYzAxZDhkMWMxNTZlNzk0NWE5YTdkMGIwZTZjNWE5MTU4MWQ0MTdjIn0"
         }
       ]
@@ -27,7 +27,7 @@
       "statement": "packages/agent-harness/pyproject.toml 声明命令行脚本入口 vertical-agent 指向 vertical_harness.cli:main。",
       "evidence": [
         {
-          "resource": "repo://packages/agent-harness/pyproject.toml#L27-L30",
+          "resource": "repo://packages/agent-harness/pyproject.toml#L28-L31",
           "version": "repo-lines-v1:sha256:0e36826b929b60d9de4273cbcf284abf4f61b106b9320eb41ef2ccd5ea5d6a38:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNGVhYjRlYzYzZGU1MTdkYTRjZDhlNWM4MzA3ZmIyYzc3MzdkMzkxOTBhYjY5ZjMyYTVlOWVmODFlYTQ0MTZkZSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDFiYTQ3MTljODBiNmZlOTExYjA5MWE3YzA1MTI0YjY0ZWVlY2U5NjRlMDljMDU4ZWY4Zjk4MDVkYWNhNTQ2YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNTA0MDFkNzNkZjc0ZTFmZTg1ZGE0ZDYyMjM3ZjM0Yjg5ZDcyNWM4OGYwMzUyYzhjYWZjMDg3NTAwZDRkYzFlNSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZGU0MjRjYzFmY2Y3OTNlMjk3N2IzNTNjYTY1MTRkZDAyYmJlOGZkNWZlY2E2MmJiMGVjMWMxM2QyNzEzM2RhZCJ9"
         }
       ]
@@ -35,6 +35,6 @@
   ],
   "verification": {
     "by": "openwiki/0.7.2",
-    "at": "2026-10-19T02:30:03.285Z"
+    "at": "2026-10-19T05:51:52.758Z"
   }
 }

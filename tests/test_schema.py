@@ -5,17 +5,6 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from research_citation import (
-    CheckStatus,
-    IssueKind,
-    ReferenceCheckInput,
-    ReferenceCheckResult,
-    ResearchCitationPlugin,
-    ResearchCitationToolkit,
-    evaluate_references,
-    extract_cited_indices,
-    scan_numeric,
-)
 from vertical_harness import (
     AgentComposer,
     BuildServices,
@@ -28,6 +17,17 @@ from vertical_harness import (
     ToolContribution,
 )
 from vertical_harness.cli import main as cli_main
+from vertical_plugins.research_citation import (
+    CheckStatus,
+    IssueKind,
+    ReferenceCheckInput,
+    ReferenceCheckResult,
+    ResearchCitationPlugin,
+    ResearchCitationToolkit,
+    evaluate_references,
+    extract_cited_indices,
+    scan_numeric,
+)
 
 
 def test_schema_rejects_extras():
@@ -116,7 +116,7 @@ def test_verified_finding_requires_evidence():
     :return: None
     :raises AssertionError: 当缺少证据的已核实结论未触发 ValidationError 时触发断言失败。
     """
-    from research_citation import AuditFinding
+    from vertical_plugins.research_citation import AuditFinding
 
     # 状态为 'verified' 但证据列表为空，必须校验失败并抛出异常
     with pytest.raises(ValidationError):

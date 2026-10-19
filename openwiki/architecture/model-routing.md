@@ -10,8 +10,8 @@ sources:
     resource: repo://packages/agent-harness/src/vertical_harness/engine/routing.py
 verified:
   - by: openwiki/0.7.2
-    at: 2026-10-19T02:30:03.285Z
-generated: { by: "antigravity", at: "2026-10-19T02:30:03.285Z" }
+    at: 2026-10-19T05:51:52.758Z
+generated: { by: "antigravity", at: "2026-10-19T05:32:42.641Z" }
 ---
 
 # 动态模型路由与模型适配
@@ -67,7 +67,7 @@ class ModelRouterMiddleware(AgentMiddleware[Any, Any, Any]):
 
 模型路由所依赖的决策信号必须由宿主可信环境注入，而不是依赖大模型生成的自由文本或简单的消息计数：
 
-- **RunContext 强契约与 TaskTier 枚举**：在 [packages/agent-harness/src/vertical_harness/plugins/contracts.py](../../packages/agent-harness/src/vertical_harness/plugins/contracts.py) 中定义了不可变数据类 `RunContext`，包含 `tenant_id`、`user_id` 与 `task_tier: Literal["economy", "quality"] = "quality"`；在 [config/settings.py](../../packages/agent-harness/src/vertical_harness/config/settings.py) 中定义了对应的 `TaskTier(StrEnum)`（`ECONOMY = "economy"`、`QUALITY = "quality"`）。
+- **RunContext 强契约与 TaskTier 枚举**：在 [packages/agent-harness/src/vertical_plugins/common/contracts.py](../../packages/agent-harness/src/vertical_plugins/common/contracts.py) 中定义了不可变数据类 `RunContext`，包含 `tenant_id`、`user_id` 与 `task_tier: Literal["economy", "quality"] = "quality"`；在 [config/settings.py](../../packages/agent-harness/src/vertical_harness/config/settings.py) 中定义了对应的 `TaskTier(StrEnum)`（`ECONOMY = "economy"`、`QUALITY = "quality"`）。
 - **调用时注入**：在 CLI（如 [cli.py](../../packages/agent-harness/src/vertical_harness/cli.py) 的 `_invoke_prompt`）或桌面前端运行时（[desktop/runtime.py](../../desktop/runtime.py)）中调用 `agent.invoke()` 或 `agent.astream()` 时，作为 `context` 参数传入，供底层 LangGraph runtime 及中间件读取。
 
 ## 3. 模型初始化与配置映射

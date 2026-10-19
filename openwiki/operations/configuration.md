@@ -6,10 +6,10 @@ tags: [operations, configuration, pydantic-settings, environment-variables, depl
 sources:
   - id: openwiki-source-20e6f612e4230e00fcfd13ac
     resource: repo://packages/agent-harness/src/vertical_harness/config/settings.py
+generated: { by: "antigravity", at: "2026-10-19T05:32:42.641Z" }
 verified:
   - by: openwiki/0.7.2
-    at: 2026-10-19T02:30:03.285Z
-generated: { by: "antigravity", at: "2026-10-19T02:30:03.285Z" }
+    at: 2026-10-19T05:51:52.758Z
 ---
 
 # 环境变量配置与运维部署
@@ -54,7 +54,7 @@ class HarnessSettings(BaseSettings):
 | `VA_WORKFLOW_MODE` | `Literal["compiled", "async"]` (`compiled`) | 工作流插件接入模式：`compiled`（本地预编译图）或 `async`（Agent Protocol `graph_id`） |
 | `VA_SUPERVISOR_ONLY` | `bool` (`false`) | 是否启用纯监督者模式（仅委派工作流，屏蔽直接业务工具与 general-purpose 子智能体） |
 | `VA_MEMORY_ROUTE` | `MemoryRouteStr` (`/memories/`) | 长期记忆在虚拟文件系统中的路由前缀（正则 `^/[a-zA-Z0-9_\-]+/$`） |
-| `VA_ENABLED_PLUGINS` | JSON 字符串 (`'["research.citations"]'`) | 启用的插件白名单列表 |
+| `VA_ENABLED_PLUGINS` | JSON 字符串 (`'["data_analysis", "research.citations"]'`) | 启用的插件白名单列表 |
 | `VA_MCP_SERVERS` | JSON 字符串 (可选) | MCP 服务名到连接参数映射（支持 `stdio` 与 `streamable_http` 传输） |
 | `VA_ENABLE_PLANNING` | `bool` (`true`) | 是否启用 `TodoListMiddleware` 规划任务清单 |
 | `VA_ENABLE_SKILL_GATING`| `bool` (`true`) | 是否启用技能门控（未激活技能时隐藏工具） |

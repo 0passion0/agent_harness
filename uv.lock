@@ -13,8 +13,6 @@ resolution-markers = [
 [manifest]
 members = [
     "vertical-agent-harness",
-    "vertical-plugin-data-analysis",
-    "vertical-plugin-research-citation",
 ]
 
 [[package]]
@@ -2932,6 +2930,10 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+analysis = [
+    { name = "duckdb" },
+    { name = "openpyxl" },
+]
 dev = [
     { name = "mypy" },
     { name = "pytest" },
@@ -2944,6 +2946,7 @@ postgres = [
 [package.metadata]
 requires-dist = [
     { name = "deepagents", specifier = ">=0.7.28,<0.8" },
+    { name = "duckdb", marker = "extra == 'analysis'", specifier = ">=1.0.0" },
     { name = "langchain", extras = ["mcp"], specifier = ">=1.4.6,<2" },
     { name = "langchain-deepseek", specifier = ">=1.1.1,<2" },
     { name = "langgraph", specifier = ">=1.2.16,<2" },
@@ -2953,40 +2956,13 @@ requires-dist = [
     { name = "langsmith", specifier = ">=0.14.11,<0.15" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.15,<2" },
     { name = "openevals", specifier = ">=0.1,<0.2" },
+    { name = "openpyxl", marker = "extra == 'analysis'", specifier = ">=3.1.0" },
     { name = "pydantic", specifier = ">=2.10,<3" },
     { name = "pydantic-settings", specifier = ">=2.6,<3" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.9" },
 ]
-provides-extras = ["postgres", "dev"]
-
-[[package]]
-name = "vertical-plugin-data-analysis"
-version = "0.1.0"
-source = { editable = "packages/data-analysis" }
-dependencies = [
-    { name = "duckdb" },
-    { name = "openpyxl" },
-    { name = "vertical-agent-harness" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "duckdb", specifier = ">=1.0.0" },
-    { name = "openpyxl", specifier = ">=3.1.0" },
-    { name = "vertical-agent-harness", editable = "packages/agent-harness" },
-]
-
-[[package]]
-name = "vertical-plugin-research-citation"
-version = "0.1.0"
-source = { editable = "packages/research-citation" }
-dependencies = [
-    { name = "vertical-agent-harness" },
-]
-
-[package.metadata]
-requires-dist = [{ name = "vertical-agent-harness", editable = "packages/agent-harness" }]
+provides-extras = ["postgres", "analysis", "dev"]
 
 [[package]]
 name = "watchfiles"

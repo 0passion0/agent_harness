@@ -7,7 +7,7 @@ from collections.abc import AsyncIterator, Iterable
 from contextlib import AsyncExitStack, asynccontextmanager
 
 from vertical_harness.config import HarnessSettings, MCPStdioServer
-from vertical_harness.plugins.contracts import Exposure, SkillAsset, ToolContribution
+from vertical_plugins.common.contracts import Exposure, SkillAsset, ToolContribution
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +19,7 @@ async def aopen_mcp_tools(settings: HarnessSettings) -> AsyncIterator[list[ToolC
     :param settings: 包含 MCP 服务配置与全局策略的宿主设置对象。
     :type settings: vertical_harness.config.settings.HarnessSettings
     :return: 包含所有连接服务工具贡献列表的异步上下文迭代器。
-    :rtype: collections.abc.AsyncIterator[list[vertical_harness.plugins.contracts.ToolContribution]]
+    :rtype: collections.abc.AsyncIterator[list[vertical_plugins.common.contracts.ToolContribution]]
     :raises ValueError: 当服务端配置的白名单工具不存在于远程服务返回的列表中时抛出。
     :author: tongliga
     :date: 2026-10-19
@@ -98,9 +98,9 @@ def mcp_skill_assets(
     :param settings: 包含 MCP 声明的宿主配置实例。
     :type settings: vertical_harness.config.settings.HarnessSettings
     :param contributions: 包含 MCP 工具元数据的工具贡献迭代器。
-    :type contributions: collections.abc.Iterable[vertical_harness.plugins.contracts.ToolContribution]
+    :type contributions: collections.abc.Iterable[vertical_plugins.common.contracts.ToolContribution]
     :return: 生成的 SkillAsset 实例列表。
-    :rtype: list[vertical_harness.plugins.contracts.SkillAsset]
+    :rtype: list[vertical_plugins.common.contracts.SkillAsset]
     :author: tongliga
     :date: 2026-10-19
     """

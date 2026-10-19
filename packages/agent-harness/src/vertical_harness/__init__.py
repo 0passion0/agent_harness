@@ -2,7 +2,10 @@
 
 架构子包划分：
 - `vertical_harness.config`: 基于 Pydantic Settings 的宿主环境配置与路由规则校验
-- `vertical_harness.plugins`: 领域插件契约协议（Protocol / Pydantic）与 Entry Points 发现机制
+- `vertical_harness.engine.plugin_loader`: 基于 Entry Points 的插件发现与 ABC 继承校验
+
+领域插件契约（`DomainPlugin` ABC、清单、贡献类型）位于同级包 `vertical_plugins.common`，
+内置业务插件位于 `vertical_plugins.<plugin>`；顶层仍重导出既有公共名称。
 - `vertical_harness.storage`: LangGraph 原生 SqliteStore 生命周期与 Deep Agents CompositeBackend 挂载
 - `vertical_harness.engine`: LangChain 聊天模型路由中间件与 Deep Agents 唯一组装器
 """
@@ -51,10 +54,28 @@ from vertical_harness.engine import (
     run_memory_worker,
     time_travel_invoke,
 )
+from vertical_harness.engine.plugin_loader import (
+    PLUGIN_GROUP,
+    discover_plugins,
+    discover_workflow_graphs,
+)
 from vertical_harness.logging import configure_logging, log_context
 from vertical_harness.observability import LangSmithSettings, tracing_session
-from vertical_harness.plugins import (
-    PLUGIN_GROUP,
+from vertical_harness.storage import (
+    AsyncSqliteSaver,
+    AsyncSqliteStore,
+    SqliteSaver,
+    SqliteStore,
+    aopen_checkpointer,
+    aopen_store,
+    compose_backend,
+    create_checkpointer,
+    create_store,
+    open_checkpointer,
+    open_store,
+    tenant_memory_namespace,
+)
+from vertical_plugins.common import (
     BuildServices,
     DomainPlugin,
     Exposure,
@@ -70,22 +91,6 @@ from vertical_harness.plugins import (
     WorkflowInternalState,
     WorkflowMode,
     WorkflowOutputState,
-    discover_plugins,
-    discover_workflow_graphs,
-)
-from vertical_harness.storage import (
-    AsyncSqliteSaver,
-    AsyncSqliteStore,
-    SqliteSaver,
-    SqliteStore,
-    aopen_checkpointer,
-    aopen_store,
-    compose_backend,
-    create_checkpointer,
-    create_store,
-    open_checkpointer,
-    open_store,
-    tenant_memory_namespace,
 )
 
 getLogger(__name__).addHandler(NullHandler())

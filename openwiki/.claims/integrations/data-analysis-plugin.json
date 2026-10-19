@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:f7ed82706710fe2b6b879e697a0fac069c72de969291a7c8f052ea6021bc1b4d",
+  "claims": [
+    {
+      "id": "claim_1ee00d4b334a4c4a9513dd09e63a6be4",
+      "statement": "DataAnalysisPlugin 显式继承 DomainPlugin 抽象基类，向宿主导出 8 阶段确定性 LangGraph 工作流、DataAnalysisToolkit 原生工具集与 AnalysisEvidence 凭证中间件。",
+      "evidence": [
+        {
+          "resource": "repo://packages/agent-harness/src/vertical_plugins/data_analysis/__init__.py#L130-L198",
+          "version": "repo-lines-v1:sha256:166bd1f9556ae097da2cb1b2d405826591e68c084afa1fccde2481827107c9c9:eyJzZWxlY3RlZExpbmVDb3VudCI6NjksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVhZjcwMzM3NjJmYzM3MjcxYTQ0NzMwMGE3MmFmYWJiMjExYWZhYWFiNDJkMGY3MjcyYzI2NmRiZjIzODA4NTIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk5NjRmMDQ3N2E5YzU5ZmJmZTE0MTgzOGRiZGU0YjNhMjAxNDQ3NDg3ZDE0YzMzYTY3MzA5ZGMzNjc2Y2QyMTQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNiMjM2N2JkMGRmMGE2MmRmYzNkMTIxOTkxYjI5OGZlNGU5YzNkMzI2NzUyZTY5ODU1OTQzYjZjZjRiMjQ4M2QifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_fd659ff46dce4df88e729e25966cd5ec",
+      "statement": "DataAnalysisWorkflow 封装了 8 阶段确定性科研数据分析管道，支持在特定业务节点内通过 create_node_agent 调用 langchain.agents.create_agent 装配专用子任务智能体。",
+      "evidence": [
+        {
+          "resource": "repo://packages/agent-harness/src/vertical_plugins/data_analysis/workflow/pipeline.py#L157-L248",
+          "version": "repo-lines-v1:sha256:c088363665d9564d369c9d8f07fc8564ec8c55711d166b27e57316556214a738:eyJzZWxlY3RlZExpbmVDb3VudCI6OTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRhZjk4Y2FkMjM4OTIyMzk2ZmI4MTMwZTdkYTAzYjhhZTE0NmEyM2E1NDFhZTc3NDRjOTgwNTRjNWU1N2ZkZGYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ3MDE0OWUwNjlhZDY3ZWNjZjQ3MzY0NmZmMWM3NTAwNTBkMzI5ZDExMDAxOGRjNTc2Njg3OGVhZmExZDYwN2QiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjgwMDlmYWVjOWEzY2Y5YTM3YmY2ZTU3MzhiZTM5ZjJhNzdmNTQyY2FhMDA3OGJlMGI2YmE5ZThlNTM5ZmVhNTkifQ"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.7.2",
+    "at": "2026-10-19T05:51:52.758Z"
+  }
+}

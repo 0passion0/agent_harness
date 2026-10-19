@@ -6,12 +6,12 @@ tags: [workflow, citation-audit, end-to-end, skills-middleware, tool-gating]
 sources:
   - id: openwiki-source-3738efb5862ea362ae17bac1
     resource: repo://packages/agent-harness/src/vertical_harness/cli.py
-  - id: openwiki-source-21ddae62bfa0ad804a7ed2b8
-    resource: repo://packages/research-citation/src/research_citation/skills/numeric-citation-audit/SKILL.md
+  - id: openwiki-source-19b20fb01f248ba8bd343729
+    resource: repo://packages/agent-harness/src/vertical_plugins/research_citation/skills/numeric-citation-audit/SKILL.md
+generated: { by: "antigravity", at: "2026-10-19T05:32:42.641Z" }
 verified:
   - by: openwiki/0.7.2
-    at: 2026-10-19T02:30:03.285Z
-generated: { by: "antigravity", at: "2026-10-19T02:30:03.285Z" }
+    at: 2026-10-19T05:51:52.758Z
 ---
 
 # 数字引用审计端到端流程
@@ -60,9 +60,9 @@ sequenceDiagram
 - **对话式渐进技能门控 (`numeric-citation-audit`)**：适用于直接对话场景，通过 `SkillsMiddleware` 激活技能文档后按需暴露工具。
 
 ### 2.3 提示词引导与技能激活
-- 插件在 [plugin.py](../../packages/research-citation/src/research_citation/plugin.py) 的 `PluginContribution` 中注入了系统指令：`"Use numeric-citation-audit skill for bracket-numbered references. Report only verified inconsistencies."`。
+- 插件在 [vertical_plugins/research_citation/__init__.py](../../packages/agent-harness/src/vertical_plugins/research_citation/__init__.py) 的 `PluginContribution` 中注入了系统指令：`"Use numeric-citation-audit skill for bracket-numbered references. Report only verified inconsistencies."`。
 - 大模型根据系统提示词引导，识别出需要处理方括号数字引用。
-- `SkillsMiddleware` 拦截并感知到虚拟 `/skills/research-citations-numeric-citation-audit/SKILL.md` 下的技能文档（源自 [packages/research-citation/src/research_citation/skills/numeric-citation-audit/SKILL.md](../../packages/research-citation/src/research_citation/skills/numeric-citation-audit/SKILL.md)）。
+- `SkillsMiddleware` 拦截并感知到虚拟 `/skills/research-citations-numeric-citation-audit/SKILL.md` 下的技能文档（源自 [packages/agent-harness/src/vertical_plugins/research_citation/skills/numeric-citation-audit/SKILL.md](../../packages/agent-harness/src/vertical_plugins/research_citation/skills/numeric-citation-audit/SKILL.md)）。
 
 ### 2.4 门控工具按需暴露 (`include_tools`)
 - 在 `numeric-citation-audit/SKILL.md` 的 YAML frontmatter 中明确声明了：
@@ -73,7 +73,7 @@ sequenceDiagram
 - `SkillsMiddleware` 读取该元数据后，将由 `ResearchCitationToolkit` 导出且初始隐藏的 `research_citations_scan_numeric` 工具动态注入至当前轮次大模型的工具可见列表中，实现了工具的**渐进式暴露**，避免无用工具干扰模型注意力。
 
 ### 2.5 确定性算法核查与输出边界 (`checker/`)
-- 大模型调用 [checker/tools.py](../../packages/research-citation/src/research_citation/checker/tools.py) 中的 `scan_numeric`，传入拆解后的正文纯文本与参考文献列表。
+- 大模型调用 [checker/tools.py](../../packages/agent-harness/src/vertical_plugins/research_citation/checker/tools.py) 中的 `scan_numeric`，传入拆解后的正文纯文本与参考文献列表。
 - 工具内部调用 `evaluate_references` 与 `extract_cited_indices` 执行严格的正则表达式解析与集合边界比对：
   - 提取正文中所有引用的数字标号（如 `[1]` 与 `[3]`）。
   - 针对超出文献列表总数的引用标记 `out_of_range`（如索引 3 超出长度 2）。

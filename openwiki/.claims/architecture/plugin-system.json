@@ -1,14 +1,14 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:beb7c3e1840d63bb0b673fc9300ad3794b15022259d57f82b61810c069edfea9",
+  "pageVersion": "sha256:a270013f15838e51b893580fc281be28faae02d60675c752f25e9c0e9cc21afb",
   "claims": [
     {
       "id": "claim_faf0f88027cf4b9a865882ba9390089b",
-      "statement": "discover_plugins 通过 _index_matching_entry_points 与 _instantiate_and_verify 扫描 vertical_agent.plugins 入口点并按 allowlist 白名单过滤，校验入口点唯一性及未安装插件，并强制校验插件清单的 plugin_id 必须与入口点注册名称一致且实现了可调用的 build() 方法。",
+      "statement": "discover_plugins 通过 _index_matching_entry_points 与 _instantiate_and_verify 扫描 vertical_agent.plugins 入口点并按 allowlist 白名单过滤，校验入口点唯一性及未安装插件，并强制校验插件继承 DomainPlugin ABC 以及清单的 plugin_id 必须与入口点注册名称一致。",
       "evidence": [
         {
-          "resource": "repo://packages/agent-harness/src/vertical_harness/plugins/discovery.py#L21-L135",
-          "version": "repo-lines-v1:sha256:59029ada61eb14861d3f9ee455b4b086ebb6386d6186d84a27b486333377075b:eyJzZWxlY3RlZExpbmVDb3VudCI6MTE1LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiIwZTgyZGJiZDAxMGEwODIyYzRjNmNhMjdkNDNjMjc3NDZhMmY1ZWM4YmMxYmNmYWVlYTg2MjZhN2IyY2RmNWVkIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI3ZWI3MDI1NzU5M2RhMDZmNjgyYTNkZGRhNTRhOWQyNjBkNGZjNTE0ZjY0NTIzN2Y1Y2E3NGIwOGY4ZGE2MWE2IiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI0ZjUyMThkZDVlYzNhMGZiMjY0YTc0NTA2MjI3NGM4YWExNDNjY2E1ZjYxZTFlN2Q3ZGNiMjEwYjMyYmExMzI0IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiI2ODA5OGM2MGU2MWU1OGU3ZjNiY2UwZjFmMmEzOWYwNzJiYjE4MTlmYzNiOTMyNWIxN2E5ODBiMjk2N2RhNDY4In0"
+          "resource": "repo://packages/agent-harness/src/vertical_harness/engine/plugin_loader.py#L22-L135",
+          "version": "repo-lines-v1:sha256:0b5073744d3e8a41a9c5317627ff53d33e69c1093c4ea1bffd7e67a6f1f27e2f:eyJzZWxlY3RlZExpbmVDb3VudCI6MTE0LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiIwZTgyZGJiZDAxMGEwODIyYzRjNmNhMjdkNDNjMjc3NDZhMmY1ZWM4YmMxYmNmYWVlYTg2MjZhN2IyY2RmNWVkIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI3ZWI3MDI1NzU5M2RhMDZmNjgyYTNkZGRhNTRhOWQyNjBkNGZjNTE0ZjY0NTIzN2Y1Y2E3NGIwOGY4ZGE2MWE2IiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI0ZjUyMThkZDVlYzNhMGZiMjY0YTc0NTA2MjI3NGM4YWExNDNjY2E1ZjYxZTFlN2Q3ZGNiMjEwYjMyYmExMzI0IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiJhY2Y3OTk5NTcwMGUxOGQzNTJjZmI4ZjBhOGEwZGVjNWNjYjJlYTQ3ZTUxNGQxNTg5OTRmNjMyOWRmOGVhMzc2In0"
         }
       ]
     },
@@ -17,8 +17,8 @@
       "statement": "SkillAsset 对 relative_path 执行严格校验，禁止反斜杠、绝对路径、包含 '.' 或 '..' 的路径分段且层级至少包含两级，并通过 to_virtual_path 与 to_upload_payload 生成命名空间隔离的虚拟路径及 UTF-8 字节流。",
       "evidence": [
         {
-          "resource": "repo://packages/agent-harness/src/vertical_harness/plugins/contracts.py#L151-L200",
-          "version": "repo-lines-v1:sha256:02f73b4dab32ddf2ef50bcde054530c0700e6135c280d55ff3bb080b1fc4d7c1:eyJzZWxlY3RlZExpbmVDb3VudCI6NTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY1ZmYxMzA1OWMyMzBjYjk2MzhiMDU2ZmYxYjAzOTljNWZkOGE1ODc4MDAwMmM0YTU2NWRlMmRiNmZmZDZiNmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAyY2FkZDY2NjlkZGE5YmE4YWUzNTMyNjQwZWEzNTg0ODgwZWJkNzBjYTkyOTg2YjVlOTQ2MWMyZWZlMWJhOWUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjEwYmU3YWFmMjIyYzEwYTZjY2RhOGFhNjE1MTFhYzhmNWM2Mzc5NmUwYmZmNGEzMDEyMjU3MWJjNGIwNDdmODMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjVmOTEyYjcxNGM3M2UwMTk1NTcxNTUwZTE0YjczMDE1ZjdiZTYwOGViMjcwODJhMGM3MWI0N2RlNWQ5ODNiYmQifQ"
+          "resource": "repo://packages/agent-harness/src/vertical_plugins/common/contracts.py#L151-L205",
+          "version": "repo-lines-v1:sha256:e794c38ef977dcef6a46fc7c8655be0c8d1b8fa87b7c2c1b71b9b29a72995ef3:eyJzZWxlY3RlZExpbmVDb3VudCI6NTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY1ZmYxMzA1OWMyMzBjYjk2MzhiMDU2ZmYxYjAzOTljNWZkOGE1ODc4MDAwMmM0YTU2NWRlMmRiNmZmZDZiNmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVjNzhkNDFjNzBjNzliZjI2NjkzMjAwYTY0N2ExZGUwNmYzMjA4ZDdmNmFhMDJiYWY1NGJkNDYyMTM2ZjFkZTkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjEwYmU3YWFmMjIyYzEwYTZjY2RhOGFhNjE1MTFhYzhmNWM2Mzc5NmUwYmZmNGEzMDEyMjU3MWJjNGIwNDdmODMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA5YzRkZWVkYTdiMjcyNDUxOTY0NmYyOWE5NzdkYzQ2ZDdkM2Q4ZWFjZjgxNTZkMWQ4ZDJmMTBhZTFiMWE0YTcifQ"
         }
       ]
     },
@@ -28,11 +28,11 @@
       "evidence": [
         {
           "resource": "repo://packages/agent-harness/src/vertical_harness/engine/compose.py#L397-L437",
-          "version": "repo-lines-v1:sha256:3c0899832abf006eb6ea928b5709aaf1ed6b8e2e2178a96ff65860622f23e4c7:eyJzZWxlY3RlZExpbmVDb3VudCI6NDEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE1NGJjYzZjNGRhN2UxNGNmZDliMzNmNDVmMmJhZGQ0ZmQzMzBiZjQyMTYxNWZlNGJiYjliODhiNjllNTRlM2IiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJhOWY4YzJiYzdhMTQxYTAyMmFmM2ZlYjhhYjUwMDhlYzI1NzU3ZWYyNGFjZDA0OWY1MDg5YTc0YjdjOWFlODEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI0ZjIzMDAwNmFjYTNlNDU1NDg5NGMyMjcxNjMxM2I4MDFmZGNlOTg1NmU5NzBhNDY1MTc4YWQyYTgxMDgxZDEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFmZDBkN2YzN2UxOWQ2ZmNkOWIxNGZiZmIzZjUxZWQwN2MwMjVhMmJlMThmYmE0ZDUwYmI2NjZjYTNkZjhhNDQifQ"
+          "version": "repo-lines-v1:sha256:17499a84b8733993b63be1c776c515674191258cb4fdbefb6b091017b887bfe6:eyJzZWxlY3RlZExpbmVDb3VudCI6NDEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE1NGJjYzZjNGRhN2UxNGNmZDliMzNmNDVmMmJhZGQ0ZmQzMzBiZjQyMTYxNWZlNGJiYjliODhiNjllNTRlM2IiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJhOWY4YzJiYzdhMTQxYTAyMmFmM2ZlYjhhYjUwMDhlYzI1NzU3ZWYyNGFjZDA0OWY1MDg5YTc0YjdjOWFlODEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI0ZjIzMDAwNmFjYTNlNDU1NDg5NGMyMjcxNjMxM2I4MDFmZGNlOTg1NmU5NzBhNDY1MTc4YWQyYTgxMDgxZDEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFmZDBkN2YzN2UxOWQ2ZmNkOWIxNGZiZmIzZjUxZWQwN2MwMjVhMmJlMThmYmE0ZDUwYmI2NjZjYTNkZjhhNDQifQ"
         },
         {
-          "resource": "repo://packages/agent-harness/src/vertical_harness/plugins/contracts.py#L87-L118",
-          "version": "repo-lines-v1:sha256:f93d9e5ba79fc15c080117087b09fb987671f1748fa144608b9fb14451fb2fa6:eyJzZWxlY3RlZExpbmVDb3VudCI6MzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRhMmFhMzFjZDcwYTY0YjhlNzU2ZTk4ZmUzZjBlOWEwOTFmOTdkNmQ2ZThkN2JmYTZhOTA0MDJkNzZkM2M1NzkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkyMGQyNjk2ZTY3OGVmMmM3MzdiNTUyMjBlMGVlMTY5MWNkNjYzZDRmNTFhZDRhMDFmNTczYWNhYjlhYmZiOTUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM4ODc5OWVkYmNkMTU3NTc5Yzc2ZGQ1ZWNlODQ4Y2EwMTJlZDljNjNhN2YzOGJlZWQ3NDFhZjBhNDc2ZmRmZDMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjZiYzY0MTllZDIzNzc4ZGU1ZDgwNTg0MDI0YWYzNGFlNTQ5OTc1NmUwOGJhNWZlMDRhMzQ4YzJkMTRhODc5OTYifQ"
+          "resource": "repo://packages/agent-harness/src/vertical_plugins/common/contracts.py#L87-L125",
+          "version": "repo-lines-v1:sha256:8741b3f51e8f5a5fe64bbd171e6a32b15251ab8f9d01641b64cd15b2dd6ad5df:eyJzZWxlY3RlZExpbmVDb3VudCI6MzksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRhMmFhMzFjZDcwYTY0YjhlNzU2ZTk4ZmUzZjBlOWEwOTFmOTdkNmQ2ZThkN2JmYTZhOTA0MDJkNzZkM2M1NzkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdlYjcwMjU3NTkzZGEwNmY2ODJhM2RkZGE1NGE5ZDI2MGQ0ZmM1MTRmNjQ1MjM3ZjVjYTc0YjA4ZjhkYTYxYTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM4ODc5OWVkYmNkMTU3NTc5Yzc2ZGQ1ZWNlODQ4Y2EwMTJlZDljNjNhN2YzOGJlZWQ3NDFhZjBhNDc2ZmRmZDMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImI0M2YyOGUwNGIyNmNmZTFiMzliOGIyMDcwNzczNjkxN2RiNDMxNmVkOTQxNDdiMmMyNTU4YjdiMTViMjliNTkifQ"
         }
       ]
     },
@@ -41,14 +41,14 @@
       "statement": "ToolContribution.from_toolkit 支持从遵循 LangChain BaseToolkit 接口的工具包实例批量导出工具并统一封装副作用与暴露策略。",
       "evidence": [
         {
-          "resource": "repo://packages/agent-harness/src/vertical_harness/plugins/contracts.py#L311-L335",
-          "version": "repo-lines-v1:sha256:8715cc75654a68a933b37adb29ea9452690a1359e9cb87a419814477c3b3e019:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNmYWY3YmIyYjU2Y2Y0YzgzYWExMzc2YmRlM2IyMWVhZjExNmRkZTBmZGEyMGQ5Njg2ZmY2ZTUwMzQwNGY0YTciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjlhMzdlZWMzYmM1YTYyMzM5MzFkNmFmYWNlM2VlOWFkYTk0NDNkZDRjM2ZjMGZlYzgzNmYyNWE2NjRlZWU1OWUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjIwZDhjM2JkZWVhMzU4YTI1NDFmMmQ2ZmE2MjY4OTY1MjMyMGQzNDYyZjVhZGIwNjFjYmMzMGFjZTZmZjU5MTQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQyYTdjY2VmNTg0MWNlMDI4NDZmMjNmZmRkOTAzNGFhYmI4MTBlMGE3OTY2ZWIwNjQxODE4OTNmNjA0NmU4YWIifQ"
+          "resource": "repo://packages/agent-harness/src/vertical_plugins/common/contracts.py#L312-L338",
+          "version": "repo-lines-v1:sha256:a2d5ad222cf86fe7c88f30f24f4dce894a8b32b349ef8f1bdd9f208d29daa8ad:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRiZmNkMmFjYzQ5MmU3M2I3NmE0ZjMxOTZmOTE2ZGVhZTQ4MjMwY2VlNzdkNmFmMWFhMzUxZGNkMGZhNGMxYWIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUxMGEyMTk5ZWMzN2Q2YWMxMTgyNTE5NzcxOTVhNzZkZTIwNDMwYzA3YTJmZGYxOWYzMzE0MTEwY2ZlMDA1NGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA2MjJkNjYzYWQ0NmExODVjNGY3NmZjNmE5NWJlMDUyZWFjN2I5YWI5ZTNmNDMwOGE2MGY0N2NlMjAxOGY0OTQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImVkMjJjMWI4ZTE5YzljNjYyOTJhYWM1NzI0Njk0MWM0NjM3MGMyYWY1ZmVlMDQ3ZDhlMTVlOWU0MWE1ZGZlYmUifQ"
         }
       ]
     }
   ],
   "verification": {
     "by": "openwiki/0.7.2",
-    "at": "2026-10-19T02:30:03.285Z"
+    "at": "2026-10-19T05:51:52.758Z"
   }
 }

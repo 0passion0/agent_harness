@@ -1,13 +1,13 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:dd23b61ff81ddd404b43a9a7cc18dcf28d5100a0c056b39dab1eabdfdc87477a",
+  "pageVersion": "sha256:48b08d97ce447dae644f4bef9e63a6f22412d32f0bd56315aa205274ff03ec3c",
   "claims": [
     {
       "id": "claim_8ac7dbdeedbd454f958bb888752dadc6",
       "statement": "numeric-citation-audit/SKILL.md 在 frontmatter 元数据中通过 metadata.include_tools 声明 research_citations_scan_numeric，指示 SkillsMiddleware 按需暴露该门控工具。",
       "evidence": [
         {
-          "resource": "repo://packages/research-citation/src/research_citation/skills/numeric-citation-audit/SKILL.md#L1-L6",
+          "resource": "repo://packages/agent-harness/src/vertical_plugins/research_citation/skills/numeric-citation-audit/SKILL.md#L1-L6",
           "version": "repo-lines-v1:sha256:21af79a6fc5f09e1a3960158f1b15bd9ce0bc56b12824705ea181c8dfb4a780e:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZjUyZDcxMTEwM2Q1MGE0Mzc4MzBjNmZiY2QwNGZiNGJhYjQ5YTBmODJmNmQyNmQxYzc5MWM2ZTg0ODhkZDA5MCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZjUyZDcxMTEwM2Q1MGE0Mzc4MzBjNmZiY2QwNGZiNGJhYjQ5YTBmODJmNmQyNmQxYzc5MWM2ZTg0ODhkZDA5MCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjAsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTJkYTE5ODBmMmRhMmNiNjBlZTM0ZGE3MDBhMGJkZWUwZjI3ODZhMDJlNGQxYzg5YjY4NTMyYjM0YjM2YmE1NCJ9"
         }
       ]
@@ -17,8 +17,8 @@
       "statement": "cli.py 的 _invoke_prompt 通过 aopen_agent 管理异步生命周期并调用 agent.ainvoke 或 atime_travel_invoke，注入包含 tenant_id、user_id 和 task_tier 的 RunContext 运行时上下文。",
       "evidence": [
         {
-          "resource": "repo://packages/agent-harness/src/vertical_harness/cli.py#L289-L368",
-          "version": "repo-lines-v1:sha256:08eb14e4ab42597886b72470e60dfcae52ea28d281c6a39ea4a29f06e09e6a65:eyJzZWxlY3RlZExpbmVDb3VudCI6ODAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhhMjYyM2IyNWVjMjZmZjIxOTA5YjY2NTE4ZDM5MDQ5OWFhN2I4MDBkYTdhMzgxZWNiM2QzODliOTM5YTgwNzEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdlYjcwMjU3NTkzZGEwNmY2ODJhM2RkZGE1NGE5ZDI2MGQ0ZmM1MTRmNjQ1MjM3ZjVjYTc0YjA4ZjhkYTYxYTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhiOTc0ZGE0MDg2MzJhNGFhN2UyYWU4MGI4NjAzOTFhM2RjZDgyMTFjNzllY2FkN2NhOGU5NTEyOGIwMDE4MzIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJhMGIyYjY1ZTliNGVlMmYzZjU1YmRhNGQwNmU0ZmIyMjU5YmE1NmJiM2NjOWFmZDNiYjNhMWVlNTZiMWFjYTAifQ"
+          "resource": "repo://packages/agent-harness/src/vertical_harness/cli.py#L290-L368",
+          "version": "repo-lines-v1:sha256:2423e5ffe4fa9a80470f72f95196d340b1e814d61753f050419c4d39d0c1a0ec:eyJzZWxlY3RlZExpbmVDb3VudCI6NzksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIyNTBmMWIwZjRkMzA0ZTk1YmExYWNiMjY3NDkwOWU2ZDU1Yzk1MjUzNjU1NzMyNTYwMmZmZjczMDE5MjRiOGYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhjYzRhN2QxY2M3OTZhYmEzZTQ2NzIzMzI3ZjUxN2U5ZjgxMTk4MmQyNTBmMDcwMjk4NmU0YjU3NjRhZDk1ODkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc1MmZmMDZjMzlhNmRmZjVhOGY0YzVkZDk3MGU1YWIxYTBjNDZjYWYzNDY4NTdiYmQ1YmQ5MjA4YjZmYzMwOTgifQ"
         }
       ]
     },
@@ -27,7 +27,7 @@
       "statement": "numeric-citation-audit 技能 SOP 规定 Agent 必须区分确认为序号错误与语义引用有效性，仅返回问题索引与清单且不得指控科研不端。",
       "evidence": [
         {
-          "resource": "repo://packages/research-citation/src/research_citation/skills/numeric-citation-audit/SKILL.md#L8-L14",
+          "resource": "repo://packages/agent-harness/src/vertical_plugins/research_citation/skills/numeric-citation-audit/SKILL.md#L8-L14",
           "version": "repo-lines-v1:sha256:9180aec0bef6bf3a81dbd39c8b0eacb58f4490b3720f572cad271c28b8d89c44:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNzdiMGY2ZDUwODRmNzI5ODJiYWE1ZTg1YjAxNjkyNTEwMDEzZWEyZWI4OWNmNmZkODJlZjdhZGYyOTkxZTlmOCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNWRmNzliZmY4OTQzNmFiODUzYWY4ZGRjYWNkYWUxM2FmMWM2OWQ4NGI0ZjgzOTFmOTE2MWQyYzNlNWU3YWQ3MyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMTA4YzYwOGMxNWFjZGZjYjU1NzU2Y2E3ZWQ3N2UxNDkxZGM3ZGMxNDdiNWQzNjhiOGQyYmUwOTk2ZjlhNDMyMCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjAsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSJ9"
         }
       ]
@@ -35,6 +35,6 @@
   ],
   "verification": {
     "by": "openwiki/0.7.2",
-    "at": "2026-10-19T02:30:03.285Z"
+    "at": "2026-10-19T05:51:52.758Z"
   }
 }

@@ -22,12 +22,24 @@ dependencies = [
 
 [project.optional-dependencies]
 postgres = ["langgraph-checkpoint-postgres>=2,<4"]
+analysis = ["duckdb>=1.0.0", "openpyxl>=3.1.0"]
 dev = ["pytest>=8", "ruff>=0.9", "mypy>=1.15,<2"]
 
 [project.scripts]
 vertical-agent = "vertical_harness.cli:main"
 vertical-eval = "vertical_harness.evaluation.cli:main"
 
+[project.entry-points."vertical_agent.plugins"]
+"data_analysis" = "vertical_plugins.data_analysis:DataAnalysisPlugin"
+"research.citations" = "vertical_plugins.research_citation:ResearchCitationPlugin"
+
 [tool.hatch.build.targets.wheel]
-packages = ["src/vertical_harness"]
+packages = ["src/vertical_harness", "src/vertical_plugins"]
+include = [
+  "src/vertical_harness/**/*.py",
+  "src/vertical_harness/py.typed",
+  "src/vertical_plugins/**/*.py",
+  "src/vertical_plugins/**/*.md",
+  "src/vertical_plugins/py.typed",
+]
 

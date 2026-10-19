@@ -3,10 +3,10 @@
 ## 目录定位与职责
 本根目录 `agent_harness` 是面向垂直领域复杂工作流的智能体测试与组装脚手架（Vertical Agent Harness）。项目由两层核心体系组成：
 1. 通用宿主脚手架（`packages/agent-harness`）：负责多租户隔离、配置加载、存储后端适配、MCP 协议集成、动态模型路由、中间件链组装以及工作流状态机管理（基于 Deep Agents 与 LangGraph）。
-2. 领域垂直插件（`packages/research-citation` 等）：遵循标准插件契约扩展特定业务工具、工作流与评估套件。
+2. 领域垂直插件（`packages/agent-harness/src/vertical_plugins`）：遵循 ABC 插件契约扩展特定业务工具、工作流与评估套件（如 `research_citation` 与 `data_analysis`）。
 
 ## 架构与核心组件
-- `packages/`：monorepo 包结构，包含宿主框架与官方领域扩展插件。
+- `packages/`：包含统一发行包 `packages/agent-harness`（内部组织为 `vertical_harness` 宿主与 `vertical_plugins` 插件）。
 - `docs/`：系统设计与运维架构规范文档（架构、评估、稳定性、流式传输、Token 效率）。
 - `examples/`：可执行示例与评估样例数据集。
 - `scripts/`：项目构建、CI 验证与辅助运维脚本。
@@ -17,7 +17,7 @@
 
 ## 关键工作流与交互时序
 1. **环境与依赖初始化**：通过 `uv sync` 构建虚拟环境，链接各工作区包。
-2. **插件自动发现与组装**：通过 `vertical_harness.plugins.discovery` 扫描启用的插件，由 `AgentComposer` 聚合工作流、工具、子智能体与技能。
+2. **插件自动发现与组装**：通过 `vertical_harness.engine.plugin_loader` 扫描 entry points 启用的插件，由 `AgentComposer` 聚合工作流、工具、子智能体与技能。
 3. **安全执行与隔离**：主智能体以证据优先提示词启动，受限于租户隔离命名空间与沙箱文件系统权限，并在运行全程输出受控结构化事件日志。
 
 ## 约束与设计不变量

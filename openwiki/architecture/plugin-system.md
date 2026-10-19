@@ -6,19 +6,19 @@ tags: [plugin-system, entry-points, contracts, pydantic, hitl]
 sources:
   - id: openwiki-source-2540ded2e9118384bbc3e1a9
     resource: repo://packages/agent-harness/src/vertical_harness/engine/compose.py
-  - id: openwiki-source-eda43ae96b105fae785c7609
-    resource: repo://packages/agent-harness/src/vertical_harness/plugins/contracts.py
-  - id: openwiki-source-22fd106252c69a22894fb255
-    resource: repo://packages/agent-harness/src/vertical_harness/plugins/discovery.py
+  - id: openwiki-source-8f1838ccc92e57a29e115809
+    resource: repo://packages/agent-harness/src/vertical_harness/engine/plugin_loader.py
+  - id: openwiki-source-9fc5d6a72cbefd0e5da19f0f
+    resource: repo://packages/agent-harness/src/vertical_plugins/common/contracts.py
+generated: { by: "antigravity", at: "2026-10-19T05:32:42.641Z" }
 verified:
   - by: openwiki/0.7.2
-    at: 2026-10-19T02:30:03.285Z
-generated: { by: "antigravity", at: "2026-10-19T02:30:03.285Z" }
+    at: 2026-10-19T05:51:52.758Z
 ---
 
 # 插件机制与贡献契约
 
-`vertical-agent-harness` 采用插件化架构，使得第三方领域包（如学术引用审计、金融核查、合规审查等）可以在完全不侵入、不修改主工程代码的前提下，向 Agent 注入专属的工具、技能、子智能体与系统指令。相关实现集中在 `vertical_harness.plugins` 子包中，并通过 `vertical_harness` 顶层统一导出。
+`vertical-agent-harness` 采用插件化架构，使得第三方与内置垂直领域包（如学术引用审计、科研数据分析等）可以在完全不侵入主 Agent 编排逻辑的前提下，向 Agent 注入专属的工具、技能、子智能体与系统指令。相关契约基类与模型定义在 `vertical_plugins.common` 中，宿主通过 `vertical_harness.engine.plugin_loader` 负责白名单发现与加载。
 
 ## 1. 入口点与动态发现机制
 
@@ -26,21 +26,22 @@ generated: { by: "antigravity", at: "2026-10-19T02:30:03.285Z" }
 
 ### 1.1 插件端声明 (`pyproject.toml`)
 
-每个插件作为一个独立的 Python 包，在其 `pyproject.toml` 中向 `vertical_agent.plugins` 入口点组注册实现类：
+插件在 `pyproject.toml` 中向 `vertical_agent.plugins` 入口点组注册实现类：
 
 ```toml
 [project.entry-points."vertical_agent.plugins"]
-"research.citations" = "research_citation.plugin:ResearchCitationPlugin"
+"data_analysis" = "vertical_plugins.data_analysis:DataAnalysisPlugin"
+"research.citations" = "vertical_plugins.research_citation:ResearchCitationPlugin"
 ```
 
-### 1.2 宿主端白名单发现 (`plugins/discovery.py`)
+### 1.2 宿主端白名单发现 (`engine/plugin_loader.py`)
 
-在 [packages/agent-harness/src/vertical_harness/plugins/discovery.py](../../packages/agent-harness/src/vertical_harness/plugins/discovery.py) 中，`discover_plugins` 结合辅助函数 `_index_matching_entry_points` 与 `_instantiate_and_verify` 负责安全加载插件：
+在 [packages/agent-harness/src/vertical_harness/engine/plugin_loader.py](../../packages/agent-harness/src/vertical_harness/engine/plugin_loader.py) 中，`discover_plugins` 结合辅助函数 `_index_matching_entry_points` 与 `_instantiate_and_verify` 负责安全加载插件：
 
 - **白名单严格过滤**：使用 `Counter` 检查 `allowlist` 中是否存在重复 ID，随后只扫描并索引 `settings.enabled_plugins` 白名单中明确列出的插件。
 - **缺失与冲突检查**：若在 `vertical_agent.plugins` 入口点组中发现重复的同名入口点，或白名单中要求的插件未安装，立即抛出 `ValueError` 阻断启动（Fail-Closed 原则）。
-- **清单与入口点一致性校验 (`_instantiate_and_verify`)**：动态加载入口点工厂并实例化后，通过 `PluginManifest.model_validate` 验证插件元数据，并强制要求 `manifest.plugin_id` 必须与入口点注册名称 `identifier` 完全一致。
-- **协议实现校验**：确保插件实例符合 `@runtime_checkable` 的 `DomainPlugin` 协议且实现了可调用的 `build()` 方法，否则抛出 `TypeError`。
+- **清单与入口点一致性校验 (`_instantiate_and_verify`)**：动态加载入口点工厂并实例化后，断言其显式继承 `DomainPlugin` ABC 抽象基类，通过 `PluginManifest.model_validate` 验证插件元数据，并强制要求 `manifest.plugin_id` 必须与入口点注册名称 `identifier` 完全一致。
+- **抽象方法强制实现**：由于 `DomainPlugin` 为显式 `ABC`，若具体插件未实现 `@property def manifest` 或 `build(services)`，在 Python 实例化阶段即会触发 `TypeError` 阻止非法插件启动。
 
 ```python
 matches = _index_matching_entry_points(allowlist_set)
@@ -48,9 +49,9 @@ matches = _index_matching_entry_points(allowlist_set)
 return [_instantiate_and_verify(identifier, matches[identifier]) for identifier in allowlist]
 ```
 
-## 2. 强类型贡献契约 (`plugins/contracts.py`)
+## 2. 强类型贡献契约 (`vertical_plugins/common/contracts.py`)
 
-在 [packages/agent-harness/src/vertical_harness/plugins/contracts.py](../../packages/agent-harness/src/vertical_harness/plugins/contracts.py) 中，系统基于 Pydantic v2 定义了强类型契约模型，所有模型均继承自开启 `extra="forbid"` 的 `StrictModel`，杜绝未声明的隐式参数：
+在 [packages/agent-harness/src/vertical_plugins/common/contracts.py](../../packages/agent-harness/src/vertical_plugins/common/contracts.py) 中，系统基于 Pydantic v2 定义了强类型契约模型，所有模型均继承自开启 `extra="forbid"` 的 `StrictModel`，杜绝未声明的隐式参数：
 
 ### 2.1 核心数据结构
 

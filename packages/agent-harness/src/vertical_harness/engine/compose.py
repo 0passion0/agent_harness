@@ -35,24 +35,13 @@ from langgraph.store.base import BaseStore
 from vertical_harness.config.settings import HarnessSettings
 from vertical_harness.engine.mcp import aopen_mcp_tools, mcp_skill_assets
 from vertical_harness.engine.memory import UserMemoryMiddleware
+from vertical_harness.engine.plugin_loader import discover_plugins
 from vertical_harness.engine.policy import (
     SupervisorPolicyMiddleware,
     build_workflow_interrupt_configs,
 )
 from vertical_harness.engine.routing import init_configured_model, make_router
 from vertical_harness.observability import tracing_session
-from vertical_harness.plugins.contracts import (
-    BuildServices,
-    DomainPlugin,
-    Exposure,
-    PluginContribution,
-    RunContext,
-    SkillAsset,
-    SubAgentSpec,
-    ToolContribution,
-    WorkflowContribution,
-)
-from vertical_harness.plugins.discovery import discover_plugins
 from vertical_harness.storage.backends import (
     aopen_checkpointer,
     aopen_store,
@@ -60,6 +49,17 @@ from vertical_harness.storage.backends import (
     create_store,
     open_checkpointer,
     open_store,
+)
+from vertical_plugins.common.base import DomainPlugin
+from vertical_plugins.common.contracts import (
+    BuildServices,
+    Exposure,
+    PluginContribution,
+    RunContext,
+    SkillAsset,
+    SubAgentSpec,
+    ToolContribution,
+    WorkflowContribution,
 )
 
 logger = logging.getLogger(__name__)
@@ -195,11 +195,11 @@ class AgentComposer:
         """遍历并注册所有已启用的领域插件贡献。
 
         :param plugins: 已发现并验证的领域插件序列。
-        :type plugins: collections.abc.Iterable[vertical_harness.plugins.contracts.DomainPlugin]
+        :type plugins: collections.abc.Iterable[vertical_plugins.common.base.DomainPlugin]
         :param services: 注入给插件 build() 方法的宿主服务集合。
-        :type services: vertical_harness.plugins.contracts.BuildServices
+        :type services: vertical_plugins.common.contracts.BuildServices
         :param contributions: 可选的预构建插件贡献映射。
-        :type contributions: collections.abc.Mapping[str, vertical_harness.plugins.contracts.PluginContribution] | None
+        :type contributions: collections.abc.Mapping[str, vertical_plugins.common.contracts.PluginContribution] | None
         :return: 无返回值。
         :rtype: None
         :author: tongliga
@@ -272,11 +272,11 @@ class AgentComposer:
         """提取单个插件的贡献并执行唯一性及安全策略校验。
 
         :param plugin: 领域插件实例。
-        :type plugin: vertical_harness.plugins.contracts.DomainPlugin
+        :type plugin: vertical_plugins.common.base.DomainPlugin
         :param services: 宿主构建服务实例。
-        :type services: vertical_harness.plugins.contracts.BuildServices
+        :type services: vertical_plugins.common.contracts.BuildServices
         :param contribution: 可选的预构建插件贡献对象。
-        :type contribution: vertical_harness.plugins.contracts.PluginContribution | None
+        :type contribution: vertical_plugins.common.contracts.PluginContribution | None
         :return: 无返回值。
         :rtype: None
         :raises ValueError: 当资源插件未通过 open_agent 加载或中间件/子智能体重复时抛出。
@@ -350,7 +350,7 @@ class AgentComposer:
         :param plugin_id: 所属插件唯一标识符。
         :type plugin_id: str
         :param workflow: 经契约校验的 WorkflowContribution 实例。
-        :type workflow: vertical_harness.plugins.contracts.WorkflowContribution
+        :type workflow: vertical_plugins.common.contracts.WorkflowContribution
         :return: 无返回值。
         :rtype: None
         :raises ValueError: 当工作流名称重复或使用了保留名称时抛出。
@@ -398,7 +398,7 @@ class AgentComposer:
         """注册单个 LangChain 工具，校验重名并配置 HITL 审批与技能门控。
 
         :param item: 插件工具贡献声明项。
-        :type item: vertical_harness.plugins.contracts.ToolContribution
+        :type item: vertical_plugins.common.contracts.ToolContribution
         :return: 无返回值。
         :rtype: None
         :raises ValueError: 当工具重名或具有副作用的工具被配置为技能隐藏模式时抛出。
@@ -440,7 +440,7 @@ class AgentComposer:
         """注册插件贡献的子智能体，防止与保留名称或其他插件子智能体冲突。
 
         :param subagent: 子智能体规范字典或预编译实例。
-        :type subagent: vertical_harness.plugins.contracts.SubAgentSpec
+        :type subagent: vertical_plugins.common.contracts.SubAgentSpec
         :return: 无返回值。
         :rtype: None
         :raises ValueError: 当子智能体名称重复或使用了保留名称时抛出。
@@ -462,7 +462,7 @@ class AgentComposer:
         :param plugin_id: 插件唯一标识符。
         :type plugin_id: str
         :param skill: 技能资产对象。
-        :type skill: vertical_harness.plugins.contracts.SkillAsset
+        :type skill: vertical_plugins.common.contracts.SkillAsset
         :return: 无返回值。
         :rtype: None
         :raises ValueError: 当隔离后的虚拟路径发生冲突时抛出。
@@ -591,15 +591,15 @@ def build_agent(
     :param store: 调用方托管的存储；持久化配置必须传入或使用 open_agent/aopen_agent。
     :type store: langgraph.store.base.BaseStore | None
     :param mcp_tools: 由异步宿主管理生命周期的 MCP 工具；通常使用 aopen_agent 自动加载。
-    :type mcp_tools: collections.abc.Iterable[vertical_harness.plugins.contracts.ToolContribution] | None
+    :type mcp_tools: collections.abc.Iterable[vertical_plugins.common.contracts.ToolContribution] | None
     :param prompt_overrides: 可选的针对主智能体或插件的提示词覆盖字典。
     :type prompt_overrides: dict[str, str] | None
     :param plugins: 可选的显式插件列表；默认自动从配置发现。
-    :type plugins: collections.abc.Iterable[vertical_harness.plugins.contracts.DomainPlugin] | None
+    :type plugins: collections.abc.Iterable[vertical_plugins.common.base.DomainPlugin] | None
     :param _contributions: 内部使用：预构建的插件贡献声明字典。
-    :type _contributions: collections.abc.Mapping[str, vertical_harness.plugins.contracts.PluginContribution] | None
+    :type _contributions: collections.abc.Mapping[str, vertical_plugins.common.contracts.PluginContribution] | None
     :return: 编译完成的 Deep Agent LangGraph 状态图可运行对象。
-    :rtype: langgraph.graph.state.CompiledStateGraph[typing.Any, vertical_harness.plugins.contracts.RunContext, typing.Any, typing.Any]
+    :rtype: langgraph.graph.state.CompiledStateGraph[typing.Any, vertical_plugins.common.contracts.RunContext, typing.Any, typing.Any]
     :raises ValueError: 当工具名称、子智能体名称冲突，或技能路径重复、副作用工具暴露模式非法时抛出。
     :raises RuntimeError: 当技能资产文件上传至虚拟文件系统失败时抛出。
     :author: tongliga
@@ -773,7 +773,7 @@ def open_agent(
     :param prompt_overrides: 可选的提示词覆盖字典。
     :type prompt_overrides: dict[str, str] | None
     :return: 仅在当前上下文内有效的智能体状态图实例迭代器。
-    :rtype: collections.abc.Iterator[langgraph.graph.state.CompiledStateGraph[typing.Any, vertical_harness.plugins.contracts.RunContext, typing.Any, typing.Any]]
+    :rtype: collections.abc.Iterator[langgraph.graph.state.CompiledStateGraph[typing.Any, vertical_plugins.common.contracts.RunContext, typing.Any, typing.Any]]
     :raises ValueError: 当配置了 MCP 服务却以同步方式调用时抛出（MCP 要求异步上下文）。
     :author: tongliga
     :date: 2026-10-19
@@ -839,7 +839,7 @@ async def aopen_agent(
     :param prompt_overrides: 可选的提示词覆盖字典。
     :type prompt_overrides: dict[str, str] | None
     :return: 仅在当前上下文内有效的智能体状态图实例异步迭代器。
-    :rtype: collections.abc.AsyncIterator[langgraph.graph.state.CompiledStateGraph[typing.Any, vertical_harness.plugins.contracts.RunContext, typing.Any, typing.Any]]
+    :rtype: collections.abc.AsyncIterator[langgraph.graph.state.CompiledStateGraph[typing.Any, vertical_plugins.common.contracts.RunContext, typing.Any, typing.Any]]
     :author: tongliga
     :date: 2026-10-19
     """

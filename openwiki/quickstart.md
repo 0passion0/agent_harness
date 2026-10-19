@@ -10,15 +10,15 @@ sources:
     resource: repo://packages/agent-harness/src/vertical_harness/cli.py
   - id: openwiki-source-23775c3de52f3ab95a13cb8b
     resource: repo://README.md
+generated: { by: "antigravity", at: "2026-10-19T05:32:42.641Z" }
 verified:
   - by: openwiki/0.7.2
-    at: 2026-10-19T02:30:03.285Z
-generated: { by: "antigravity", at: "2026-10-19T02:30:03.285Z" }
+    at: 2026-10-19T05:51:52.758Z
 ---
 
 # 快速开始与任务导航
 
-欢迎阅读 `vertical-agent-harness` 知识库。本仓库基于 LangChain 与 Deep Agents 构建了一套面向垂直领域的插件化 Agent 参考架构，采用双独立 Python distribution：通用宿主底座 `vertical-agent-harness` 与演示领域插件 `vertical-plugin-research-citation`，并集成了开箱即用的 MedPeer Electron/React 桌面前端工作台。
+欢迎阅读 `vertical-agent-harness` 知识库。本仓库基于 LangChain 与 Deep Agents 构建了一套面向垂直领域的插件化 Agent 参考架构，采用单一发行包 `vertical-agent-harness`，同时包含宿主包 `vertical_harness` 与业务插件包 `vertical_plugins`（内置支持 `research.citations` 与 `data_analysis`），并集成了开箱即用的 MedPeer Electron/React 桌面前端工作台。
 
 ---
 
@@ -33,8 +33,11 @@ generated: { by: "antigravity", at: "2026-10-19T02:30:03.285Z" }
 python -m venv .venv
 source .venv/bin/activate  # Windows: .venv\Scripts\activate
 
-# 2. 以可编辑模式同时安装宿主与插件两个独立分发包
-python -m pip install -e ./packages/agent-harness -e ./packages/research-citation
+# 2. 基础安装（包含引用核验插件）
+python -m pip install -e ./packages/agent-harness
+
+# 如需使用科研数据分析插件（包含 duckdb/openpyxl 支持）
+python -m pip install -e "./packages/agent-harness[analysis]"
 
 # 3. 配置环境变量
 cp .env.example .env
@@ -121,7 +124,8 @@ npm run dev
 - [动态模型路由与模型适配](architecture/model-routing.md)：掌握基于 LangChain 中间件与可信 `RunContext.task_tier` 驱动的双模型分流（经济型与品质型模型）及成对校验。
 
 ### 🔌 插件集成与前端工作台 (Integrations)
-- [学术引用审计插件实现](integrations/citation-plugin.md)：剖析 `vertical-plugin-research-citation` 独立分发包的内部架构，涵盖纯函数解析器、确定性评估器、`ResearchCitationToolkit` 工具集、Pydantic 严格契约与证据优先审计模型。
+- [学术引用审计插件实现](integrations/citation-plugin.md)：剖析学术引用审计内置插件的内部架构，涵盖纯函数解析器、确定性评估器、`ResearchCitationToolkit` 工具集、Pydantic 严格契约与证据优先审计模型。
+- [科研数据分析插件实现](integrations/data-analysis-plugin.md)：深入分析科研数据分析插件的架构设计，涵盖 8 阶段确定性全流程 LangGraph 管道、`DataAnalysisWorkflow` 类封装、DuckDB 表格画像、报告结构核验与执行凭证追踪。
 - [MedPeer 桌面前端工作台](integrations/desktop-workbench.md)：深入解析基于 Electron + React 的桌面工作台架构、SSO 认证、Python Bridge 进程通讯、本地加密凭据存储与附件解析运行时。
 
 ### ⚙️ 运维配置域 (Operations)

@@ -1,0 +1,92 @@
+"""作为 LangChain 工具与 BaseToolkit 暴露的确定性学术引用检查实现模块。"""
+
+from __future__ import annotations
+
+import logging
+from time import perf_counter
+
+from langchain_core.tools import BaseTool, BaseToolkit, tool
+
+from vertical_plugins.research_citation.checker.evaluator import evaluate_references
+from vertical_plugins.research_citation.models.check import ReferenceCheckInput
+
+logger = logging.getLogger(__name__)
+
+
+@tool("research_citations_scan_numeric", args_schema=ReferenceCheckInput)
+def scan_numeric(manuscript_text: str, bibliography: list[str]) -> str:
+    """根据参考文献列表长度校验手稿中的数字引用序号。
+
+    本工具仅对数字引用标号进行范围与覆盖率验证，不验证引用的论文是否存在或是否支持相应学术观点。
+
+    :param manuscript_text: 包含诸如 [1]、[1, 2] 或 [1-3] 形式数字引用的手稿正文纯文本。
+    :type manuscript_text: str
+    :param bibliography: 按照手稿引用顺序排列的参考文献条目列表。
+    :type bibliography: list[str]
+    :return: 经过 Pydantic 校验并序列化为 JSON 字符串的引用序号异常比对结果。
+    :rtype: str
+    :raises Exception: 当比对计算或参数解析发生未预期异常时直接抛出并记录日志。
+    :author: tongliga
+    :date: 2026-10-19
+
+    .. code-block:: python
+
+        # 返回 JSON 字符串契约结构：
+        # '{"status": "passed", "cited_indices": [1, 2], "issues": [], "verified_scope": "..."}'
+    """
+    # 第一步：初始化计时器并记录启动调试日志
+    started = perf_counter()
+    logger.debug(
+        "citation_scan_started", extra={"event_fields": {"bibliography_count": len(bibliography)}}
+    )
+    # 第二步：调用确定性比对纯函数执行核验
+    try:
+        result = evaluate_references(manuscript_text, bibliography)
+    except Exception as exc:
+        logger.error(
+            "citation_scan_failed", extra={"event_fields": {"error_type": type(exc).__name__}}
+        )
+        raise
+    # 第三步：统计耗时指标并记录包含业务状态的结构化日志
+    logger.info(
+        "citation_scan_completed",
+        extra={
+            "event_fields": {
+                "status": result.status,
+                "citation_count": len(result.cited_indices),
+                "bibliography_count": len(bibliography),
+                "issue_count": len(result.issues),
+                "duration_ms": round((perf_counter() - started) * 1000, 2),
+            }
+        },
+    )
+    # 第四步：将 Pydantic 模型序列化为 JSON 字符串返回
+    return result.model_dump_json()
+
+
+scan_numeric.handle_validation_error = (
+    "Invalid citation input: check size/schema and use citation IDs of at most 9 digits."
+)
+
+
+class ResearchCitationToolkit(BaseToolkit):
+    """遵循 LangChain 标准 BaseToolkit 规范的学术引用核查工具包。"""
+
+    def get_tools(self) -> list[BaseTool]:
+        """导出当前工具包内的所有 LangChain 原生工具实例。
+
+        :return: 包含 scan_numeric 在内的 BaseTool 列表。
+        :rtype: list[langchain_core.tools.BaseTool]
+        :author: tongliga
+        :date: 2026-10-19
+        """
+        # 第一步：记录工具导出调用日志
+        logger.debug("research_citation_get_tools_called")
+        # 第二步：返回封装好的原生工具列表
+        return [scan_numeric]
+
+
+__all__ = [
+    "ResearchCitationToolkit",
+    "scan_numeric",
+]

@@ -12,7 +12,7 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command, Durability, StateSnapshot
 
-from vertical_harness.plugins.contracts import StrictModel
+from vertical_plugins.common.contracts import StrictModel
 
 logger = logging.getLogger(__name__)
 

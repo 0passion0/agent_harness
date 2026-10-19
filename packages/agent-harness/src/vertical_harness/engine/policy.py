@@ -21,7 +21,7 @@ from langchain_core.messages import AIMessage, AnyMessage, ToolMessage
 from langgraph.types import Command
 from pydantic import BaseModel, ValidationError
 
-from vertical_harness.plugins.contracts import (
+from vertical_plugins.common.contracts import (
     RunContext,
     WorkflowContribution,
     WorkflowMode,
@@ -179,9 +179,9 @@ def _normalize_workflow_map(
     """将工作流字典或序列统一规范化为 {name: WorkflowContribution} 字典。
 
     :param workflows: 工作流映射或序列。
-    :type workflows: collections.abc.Mapping[str, vertical_harness.plugins.contracts.WorkflowContribution] | collections.abc.Sequence[vertical_harness.plugins.contracts.WorkflowContribution]
+    :type workflows: collections.abc.Mapping[str, vertical_plugins.common.contracts.WorkflowContribution] | collections.abc.Sequence[vertical_plugins.common.contracts.WorkflowContribution]
     :return: 规范化后的工作流字典。
-    :rtype: dict[str, vertical_harness.plugins.contracts.WorkflowContribution]
+    :rtype: dict[str, vertical_plugins.common.contracts.WorkflowContribution]
     :author: tongliga
     :date: 2026-10-19
     """
@@ -227,9 +227,9 @@ def build_workflow_interrupt_configs(
     纯只读工作流自动放行。
 
     :param workflows: 已注册的工作流贡献字典或序列。
-    :type workflows: collections.abc.Mapping[str, vertical_harness.plugins.contracts.WorkflowContribution] | collections.abc.Sequence[vertical_harness.plugins.contracts.WorkflowContribution]
+    :type workflows: collections.abc.Mapping[str, vertical_plugins.common.contracts.WorkflowContribution] | collections.abc.Sequence[vertical_plugins.common.contracts.WorkflowContribution]
     :param preferred_mode: 宿主偏好的工作流运行模式。
-    :type preferred_mode: vertical_harness.plugins.contracts.WorkflowMode | str | None
+    :type preferred_mode: vertical_plugins.common.contracts.WorkflowMode | str | None
     :return: 工具名称（'task' 或 'start_async_task'）到 InterruptOnConfig 的映射。
     :rtype: dict[str, langchain.agents.middleware.InterruptOnConfig]
     :author: tongliga
@@ -298,7 +298,7 @@ class SupervisorPolicyMiddleware(AgentMiddleware[Any, RunContext, Any]):
         """初始化 Supervisor 确定性策略中间件。
 
         :param workflows: 工作流名称到 WorkflowContribution 的映射或工作流贡献序列。
-        :type workflows: collections.abc.Mapping[str, vertical_harness.plugins.contracts.WorkflowContribution] | collections.abc.Sequence[vertical_harness.plugins.contracts.WorkflowContribution]
+        :type workflows: collections.abc.Mapping[str, vertical_plugins.common.contracts.WorkflowContribution] | collections.abc.Sequence[vertical_plugins.common.contracts.WorkflowContribution]
         :param allowed_subagents: 允许调用的全部子智能体名称集合（包含声明式子智能体与工作流）。
         :type allowed_subagents: frozenset[str] | None
         :param enforce_allowlist: 是否严格拦截未在白名单中显式登记的子智能体（含默认 general-purpose）。

@@ -21,8 +21,8 @@ from pydantic import BaseModel, Field
 
 from vertical_harness.config.settings import HarnessSettings
 from vertical_harness.engine.routing import init_configured_model
-from vertical_harness.plugins.contracts import RunContext
 from vertical_harness.storage.backends import open_store
+from vertical_plugins.common.contracts import RunContext
 
 logger = logging.getLogger(__name__)
 _ROOT = ("harness_memory",)
@@ -223,7 +223,7 @@ class UserMemoryMiddleware(AgentMiddleware):
         """从 Store 读取当前用户的长期事实知识。
 
         :param runtime: 工具运行时上下文。
-        :type runtime: langchain.tools.ToolRuntime[vertical_harness.plugins.contracts.RunContext]
+        :type runtime: langchain.tools.ToolRuntime[vertical_plugins.common.contracts.RunContext]
         :return: 包含未受信任记忆声明前缀的用户长期知识 JSON 字符串。
         :rtype: str
         :author: tongliga
@@ -240,7 +240,7 @@ class UserMemoryMiddleware(AgentMiddleware):
         """异步从 Store 读取当前用户的长期事实知识。
 
         :param runtime: 工具运行时上下文。
-        :type runtime: langchain.tools.ToolRuntime[vertical_harness.plugins.contracts.RunContext]
+        :type runtime: langchain.tools.ToolRuntime[vertical_plugins.common.contracts.RunContext]
         :return: 用户长期事实知识文本。
         :rtype: str
         :author: tongliga

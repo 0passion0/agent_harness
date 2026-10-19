@@ -16,18 +16,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from pydantic import BaseModel, ValidationError
 
-import research_citation
-from research_citation import (
-    CITATION_WORKFLOW_NAME,
-    CheckStatus,
-    CitationInputState,
-    CitationInternalState,
-    CitationOutputState,
-    InternalState,
-    ReferenceCheckResult,
-    build_citation_workflow,
-    build_citation_workflow_contribution,
-)
+import vertical_plugins.research_citation as research_citation
 from vertical_harness import (
     HarnessSettings,
     RunContext,
@@ -54,6 +43,17 @@ from vertical_harness import (
 )
 from vertical_harness.cli import main as cli_main
 from vertical_harness.engine import compose
+from vertical_plugins.research_citation import (
+    CITATION_WORKFLOW_NAME,
+    CheckStatus,
+    CitationInputState,
+    CitationInternalState,
+    CitationOutputState,
+    InternalState,
+    ReferenceCheckResult,
+    build_citation_workflow,
+    build_citation_workflow_contribution,
+)
 
 
 class ToolCallingFakeModel(FakeMessagesListChatModel):

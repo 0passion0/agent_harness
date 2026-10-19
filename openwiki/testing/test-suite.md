@@ -8,10 +8,10 @@ sources:
     resource: repo://tests/test_schema.py
   - id: openwiki-source-09d2a8f36f3ecb7ab9487ab2
     resource: repo://tests/test_store.py
+generated: { by: "antigravity", at: "2026-10-19T05:32:42.641Z" }
 verified:
   - by: openwiki/0.7.2
-    at: 2026-10-19T02:30:03.285Z
-generated: { by: "antigravity", at: "2026-10-19T02:30:03.285Z" }
+    at: 2026-10-19T05:51:52.758Z
 ---
 
 # 测试架构与质量保证
@@ -25,9 +25,13 @@ generated: { by: "antigravity", at: "2026-10-19T02:30:03.285Z" }
 ```text
 tests/
 ├── conftest.py                # 全局 pytest fixtures 与环境清理
+├── test_data_analysis.py      # 科研数据分析插件、表格画像、报告核验与 8 阶段管道测试
+├── test_evaluation.py         # 评估体系、数据集与评分逻辑测试
 ├── test_logging.py            # 应用结构化日志、格式化脱敏、并发上下文与轮转测试
 ├── test_mcp.py                # MCP 服务配置、stdio/HTTP 传输、Tool Annotations 与生命周期测试
+├── test_plugin_architecture.py# 后端插件目录单一 py 规范、DomainPlugin ABC 契约与分层隔离测试
 ├── test_schema.py             # 数据契约、解析器与 Toolkit 集成、安全防御与配置测试
+├── test_stabilization.py      # 确定性重试、并发稳定性与异常恢复测试
 ├── test_store.py              # 原生 SQLite 存储生命周期、异步操作与复合后端隔离测试
 ├── test_supervisor_workflows_and_time_travel.py # Supervisor 工作流委派、三层状态契约、监督策略与 Time Travel Fork
 └── test_workflow_logging.py   # 基于本地假模型的完整 Deep Agents 工作流回调执行树测试

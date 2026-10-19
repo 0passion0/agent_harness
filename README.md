@@ -1,6 +1,6 @@
 # Deep Agents 垂直领域插件化 Harness（参考架构）
 
-本仓库采用两个**独立 Python distribution**：通用 `vertical-agent-harness` 和演示插件 `vertical-plugin-research-citation`。
+本仓库统一采用 **`vertical-agent-harness`** 单一 Python distribution 发行，包含主智能体包 `vertical_harness` 与业务插件包 `vertical_plugins`。内置支持 `research.citations`（基础安装）与 `data_analysis`（通过 `analysis` 可选依赖组引入）。
 
 核心默认不启用领域插件；`.env.example` 显式启用科研样例。升级前请阅读[稳定化与迁移说明](docs/STABILIZATION.md)：默认数据目录、文件记忆 namespace 与持久化资源托管有调整，已有数据不会自动移动或删除。
 
@@ -11,7 +11,10 @@
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-python -m pip install -e ./packages/agent-harness -e ./packages/research-citation
+# 基础安装（包含引用核验插件）
+python -m pip install -e ./packages/agent-harness
+# 如需使用数据分析插件（包含 duckdb/openpyxl 支持）
+python -m pip install -e "./packages/agent-harness[analysis]"
 cp .env.example .env  # 在 .env 中配置 VA_API_KEY 与 VA_MODEL（如 deepseek:deepseek-flash）
 vertical-agent --list-plugins
 vertical-agent '检查下面正文的参考文献索引：正文 [1] 和 [3]；参考文献依次为 A、B。'

@@ -13,8 +13,16 @@ from langchain_core.messages import HumanMessage
 from langgraph.checkpoint.memory import InMemorySaver
 from openpyxl import Workbook
 
-import data_analysis
-from data_analysis import (
+import vertical_plugins.data_analysis as data_analysis
+from vertical_harness.config.settings import HarnessSettings
+from vertical_harness.engine.compose import AgentComposer
+from vertical_harness.engine.plugin_loader import discover_plugins, discover_workflow_graphs
+from vertical_plugins.common.contracts import (
+    BuildServices,
+    PluginContribution,
+    WorkflowMode,
+)
+from vertical_plugins.data_analysis import (
     DATA_ANALYSIS_WORKFLOW_NAME,
     AnalysisEvidence,
     DataAnalysisInputState,
@@ -37,14 +45,6 @@ from data_analysis import (
     save_report,
     snapshot,
 )
-from vertical_harness.config.settings import HarnessSettings
-from vertical_harness.engine.compose import AgentComposer
-from vertical_harness.plugins.contracts import (
-    BuildServices,
-    PluginContribution,
-    WorkflowMode,
-)
-from vertical_harness.plugins.discovery import discover_plugins, discover_workflow_graphs
 
 
 def test_data_analysis_plugin_discovery_and_manifest(tmp_path: Path) -> None:
@@ -507,7 +507,7 @@ def test_data_analysis_workflow_create_agent_in_node(tmp_path: Path) -> None:
 
 def test_native_guides_loading() -> None:
     """测试原生科研分析指南读取工具与映射函数。"""
-    from data_analysis import GUIDE_DESCRIPTIONS, read_analysis_guide
+    from vertical_plugins.data_analysis import GUIDE_DESCRIPTIONS, read_analysis_guide
 
     assert len(GUIDE_DESCRIPTIONS) == 7
     assert "research-analysis" in GUIDE_DESCRIPTIONS

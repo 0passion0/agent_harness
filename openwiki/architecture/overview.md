@@ -8,12 +8,12 @@ sources:
     resource: repo://packages/agent-harness/src/vertical_harness/__init__.py
   - id: openwiki-source-2540ded2e9118384bbc3e1a9
     resource: repo://packages/agent-harness/src/vertical_harness/engine/compose.py
-  - id: openwiki-source-eda43ae96b105fae785c7609
-    resource: repo://packages/agent-harness/src/vertical_harness/plugins/contracts.py
+  - id: openwiki-source-9fc5d6a72cbefd0e5da19f0f
+    resource: repo://packages/agent-harness/src/vertical_plugins/common/contracts.py
+generated: { by: "antigravity", at: "2026-10-19T05:32:42.641Z" }
 verified:
   - by: openwiki/0.7.2
-    at: 2026-10-19T02:30:03.285Z
-generated: { by: "antigravity", at: "2026-10-19T02:30:03.285Z" }
+    at: 2026-10-19T05:51:52.758Z
 ---
 
 # Harness 系统架构与核心组装
@@ -22,10 +22,10 @@ generated: { by: "antigravity", at: "2026-10-19T02:30:03.285Z" }
 
 ## 1. 架构职责与子包划分
 
-根据 [packages/agent-harness/src/vertical_harness/__init__.py](../../packages/agent-harness/src/vertical_harness/__init__.py) 与 [docs/ARCHITECTURE.md](../../docs/ARCHITECTURE.md)，`vertical_harness` 内部按职责划分为四个正交子包，并通过 `vertical_harness.__init__.py` 统一对外导出公共 API：
+根据 [packages/agent-harness/src/vertical_harness/__init__.py](../../packages/agent-harness/src/vertical_harness/__init__.py) 与 [docs/ARCHITECTURE.md](../../docs/ARCHITECTURE.md)，系统划分为宿主核心包 `vertical_harness` 与领域插件包 `vertical_plugins`，并通过 `vertical_harness.__init__.py` 统一对外导出公共 API：
 
 - **`vertical_harness.config`**（[config/settings.py](../../packages/agent-harness/src/vertical_harness/config/settings.py)、[config/mcp.py](../../packages/agent-harness/src/vertical_harness/config/mcp.py)）：基于 Pydantic Settings 的 `VA_*` 宿主环境配置、MCP 服务连接配置（`MCPServerConfig`）、模型初始化参数解包与动态路由成对校验。
-- **`vertical_harness.plugins`**（[plugins/contracts.py](../../packages/agent-harness/src/vertical_harness/plugins/contracts.py)、[plugins/discovery.py](../../packages/agent-harness/src/vertical_harness/plugins/discovery.py)）：领域插件 `DomainPlugin` 协议、Pydantic `StrictModel` 贡献契约与 Python `entry points` 白名单发现机制。
+- **`vertical_plugins.common` 与插件体系**（[vertical_plugins/common/contracts.py](../../packages/agent-harness/src/vertical_plugins/common/contracts.py)、[engine/plugin_loader.py](../../packages/agent-harness/src/vertical_harness/engine/plugin_loader.py)）：领域插件 `DomainPlugin` ABC 基类、Pydantic `StrictModel` 贡献契约、内置业务插件（`vertical_plugins.data_analysis`、`vertical_plugins.research_citation`）与 Python `entry points` 白名单发现机制。
 - **`vertical_harness.storage`**（[storage/backends.py](../../packages/agent-harness/src/vertical_harness/storage/backends.py)、[storage/namespace.py](../../packages/agent-harness/src/vertical_harness/storage/namespace.py)）：多租户命名空间分段清洗、原生 LangGraph `SqliteStore` / `AsyncSqliteStore` 生命周期与 `CompositeBackend` 虚拟路径挂载。
 - **`vertical_harness.engine`**（[engine/compose.py](../../packages/agent-harness/src/vertical_harness/engine/compose.py)、[engine/mcp.py](../../packages/agent-harness/src/vertical_harness/engine/mcp.py)、[engine/routing.py](../../packages/agent-harness/src/vertical_harness/engine/routing.py)、[engine/policy.py](../../packages/agent-harness/src/vertical_harness/engine/policy.py)、[engine/time_travel.py](../../packages/agent-harness/src/vertical_harness/engine/time_travel.py)）：`@wrap_model_call` 动态模型路由器、`AgentComposer` 插件贡献聚合器、`aopen_agent` 异步上下文生命周期管理器、MCP 工具适配器、`SupervisorPolicyMiddleware` 确定性监督策略中间件、Time Travel 回溯分叉与 `build_agent` 组装入口。
 - **日志与可观测基础设施**（[logging.py](../../packages/agent-harness/src/vertical_harness/logging.py)、[engine/callbacks.py](../../packages/agent-harness/src/vertical_harness/engine/callbacks.py)）：通过 `configure_logging`、`log_context` 上下文变量与 `WorkflowLoggingHandler` 回调提供结构化 JSON/KeyValue 运行追踪。

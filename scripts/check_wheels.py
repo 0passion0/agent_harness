@@ -15,7 +15,7 @@ from langchain_core.messages import AIMessage
 
 from vertical_harness import HarnessSettings, RunContext, open_agent
 from vertical_harness.engine import compose
-from vertical_harness.plugins import discover_plugins
+from vertical_harness.engine.plugin_loader import discover_plugins
 
 os.environ["LANGSMITH_TRACING"] = "false"
 os.environ["LANGCHAIN_TRACING_V2"] = "false"
@@ -31,59 +31,140 @@ class Model(FakeMessagesListChatModel):
         return self
 
 
-def check_wheels(*, core_only: bool = False) -> None:
-    """验证已安装的分发包中包含 py.typed、SKILL.md 及有效的 entry point 和原生计算图。
+def check_wheels(*, mode: str = "base") -> None:
+    """验证已安装的分发包中包含 py.typed、SKILL.md、guides 及有效的 entry point 和原生计算图。
 
-    :param core_only: 若为 True 则仅校验核心 harness 包，不校验领域插件。
+    :param mode: 校验模式：'core-only'（仅核心宿主）、'base'（基础安装，加载引用插件）、'with-analysis'（包含 analysis extra）。
     :raises AssertionError: 当关键资产文件缺失或智能体响应不符合预期时抛出。
     """
-    logger.info("checking_wheels_started", extra={"event_fields": {"core_only": core_only}})
-    packages = (
-        ("vertical-agent-harness",)
-        if core_only
-        else ("vertical-agent-harness", "vertical-plugin-research-citation")
-    )
-    for package in packages:
-        files = [str(path).replace("\\", "/") for path in distribution(package).files or ()]
-        assert any(path.endswith("/py.typed") for path in files), package
-        if package.endswith("citation"):
-            assert any(path.endswith("/SKILL.md") for path in files)
+    logger.info("checking_wheels_started", extra={"event_fields": {"mode": mode}})
+    package = "vertical-agent-harness"
+    files = [str(path).replace("\\", "/") for path in distribution(package).files or ()]
 
-    if not core_only:
+    # 核对类型标记与技能、指南资产在 wheel 中完整打包
+    assert any(path.endswith("vertical_harness/py.typed") for path in files), "missing vertical_harness/py.typed"
+    assert any(path.endswith("vertical_plugins/py.typed") for path in files), "missing vertical_plugins/py.typed"
+    assert any(path.endswith("numeric-citation-audit/SKILL.md") for path in files), "missing citation SKILL.md"
+    assert any(path.endswith("scientific-data-analysis/SKILL.md") for path in files), "missing data analysis SKILL.md"
+    assert any(path.endswith("guides/tabular-data.md") for path in files), "missing tabular-data guide"
+
+    compose.init_configured_model = lambda *_: Model(responses=[AIMessage(content="wheel-ok")])
+
+    if mode == "core-only":
+        with tempfile.TemporaryDirectory() as directory:
+            config = HarnessSettings(
+                _env_file=None,
+                model="test:model",
+                workspace_root=Path(directory) / "workspace",
+                store_backend="memory",
+                enable_memory=False,
+                enabled_plugins=[],
+            )
+            with open_agent(config) as agent:
+                output = agent.invoke(
+                    {"messages": [("user", "check core")]},
+                    config={"configurable": {"thread_id": "wheel-core"}},
+                    context=RunContext("t", "u"),
+                )
+                assert output["messages"][-1].content == "wheel-ok"
+        print("Installed wheel: core-only native graph OK")
+        return
+
+    if mode == "base":
+        # 基础安装：加载引用插件
         (plugin,) = discover_plugins(["research.citations"])
         assert plugin.manifest.plugin_id == "research.citations"
 
-    compose.init_configured_model = lambda *_: Model(responses=[AIMessage(content="wheel-ok")])
-    with tempfile.TemporaryDirectory() as directory:
-        config = HarnessSettings(
-            _env_file=None,
-            model="test:model",
-            workspace_root=Path(directory) / "workspace",
-            store_backend="memory",
-            enable_memory=False,
-            enabled_plugins=[] if core_only else ["research.citations"],
-        )
-        with open_agent(config) as agent:
-            output = agent.invoke(
-                {"messages": [("user", "check installed plugin")]},
-                config={"configurable": {"thread_id": "wheel"}},
-                context=RunContext("t", "u"),
+        with tempfile.TemporaryDirectory() as directory:
+            config = HarnessSettings(
+                _env_file=None,
+                model="test:model",
+                workspace_root=Path(directory) / "workspace",
+                store_backend="memory",
+                enable_memory=False,
+                enabled_plugins=["research.citations"],
             )
-            assert output["messages"][-1].content == "wheel-ok"
-    logger.info("checking_wheels_passed")
-    print(
-        "Installed wheels: core native graph OK"
-        if core_only
-        else "Installed wheels: entry point, skill, type markers and native graph OK"
-    )
+            with open_agent(config) as agent:
+                output = agent.invoke(
+                    {"messages": [("user", "check installed citation plugin")]},
+                    config={"configurable": {"thread_id": "wheel-citation"}},
+                    context=RunContext("t", "u"),
+                )
+                assert output["messages"][-1].content == "wheel-ok"
+
+        # 基础安装若未安装 duckdb/openpyxl，尝试启用 data_analysis 必须直接抛出原始 ModuleNotFoundError
+        try:
+            import duckdb  # noqa: F401
+            has_duckdb = True
+        except ModuleNotFoundError:
+            has_duckdb = False
+
+        if not has_duckdb:
+            try:
+                discover_plugins(["data_analysis"])
+                raise AssertionError("Expected ModuleNotFoundError for missing duckdb when loading data_analysis in base wheel")
+            except ModuleNotFoundError as exc:
+                assert "duckdb" in str(exc)
+
+        print("Installed wheel: base install (research.citations entry point, skills, type markers, native graph) OK")
+        return
+
+    if mode == "with-analysis":
+        # 安装了 analysis extra：同时验证 data_analysis 与 research.citations
+        plugins = discover_plugins(["research.citations", "data_analysis"])
+        assert len(plugins) == 2
+        p_map = {p.manifest.plugin_id: p for p in plugins}
+        assert "research.citations" in p_map
+        assert "data_analysis" in p_map
+
+        # 验证指南与技能资源完整可读
+        from vertical_plugins.data_analysis import read_analysis_guide
+        guide_text = read_analysis_guide("tabular-data")
+        assert len(guide_text) > 50
+
+        with tempfile.TemporaryDirectory() as directory:
+            config = HarnessSettings(
+                _env_file=None,
+                model="test:model",
+                workspace_root=Path(directory) / "workspace",
+                store_backend="memory",
+                enable_memory=False,
+                enabled_plugins=["research.citations", "data_analysis"],
+            )
+            with open_agent(config) as agent:
+                output = agent.invoke(
+                    {"messages": [("user", "check installed plugins with analysis")]},
+                    config={"configurable": {"thread_id": "wheel-analysis"}},
+                    context=RunContext("t", "u"),
+                )
+                assert output["messages"][-1].content == "wheel-ok"
+
+        print("Installed wheel with analysis extra: entry points, skills, guides, type markers and native graphs OK")
 
 
 def main() -> None:
     """脚本命令行入口。"""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--core-only", action="store_true", help="Only check core harness package")
+    parser.add_argument(
+        "--mode",
+        choices=["core-only", "base", "with-analysis"],
+        default="base",
+        help="Validation mode: core-only, base (default), or with-analysis",
+    )
+    parser.add_argument("--core-only", action="store_true", help="Alias for --mode core-only")
+    parser.add_argument("--with-analysis", action="store_true", help="Alias for --mode with-analysis")
+    parser.add_argument("--base", action="store_true", help="Alias for --mode base")
     args = parser.parse_args()
-    check_wheels(core_only=args.core_only)
+
+    mode = args.mode
+    if args.core_only:
+        mode = "core-only"
+    elif args.with_analysis:
+        mode = "with-analysis"
+    elif args.base:
+        mode = "base"
+
+    check_wheels(mode=mode)
 
 
 if __name__ == "__main__":

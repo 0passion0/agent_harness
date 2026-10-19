@@ -16,6 +16,7 @@ from langgraph.types import interrupt
 
 from vertical_harness import (
     BuildServices,
+    DomainPlugin,
     HarnessSettings,
     PluginContribution,
     PluginManifest,
@@ -29,7 +30,7 @@ from vertical_harness import (
 from vertical_harness.engine.mcp import aopen_mcp_tools
 
 
-class DesktopPlugin:
+class DesktopPlugin(DomainPlugin):
     manifest = PluginManifest(plugin_id="desktop.runtime", api_version=1, version="1.0.0",
                               description="Desktop-provided instructions and skills")
 

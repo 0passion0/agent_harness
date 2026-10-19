@@ -10,7 +10,7 @@ if TYPE_CHECKING:
     from langgraph.runtime import Runtime
     from langgraph.store.base import BaseStore
 
-    from vertical_harness.plugins.contracts import RunContext
+    from vertical_plugins.common.contracts import RunContext
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +42,7 @@ def tenant_memory_namespace(
     """从 LangGraph Runtime 运行时上下文中派生出租户和用户隔离的命名空间元组。
 
     :param runtime: LangGraph 运行时对象，其 context 属性包含当前租户与用户标识。
-    :type runtime: langgraph.runtime.Runtime[vertical_harness.plugins.contracts.RunContext] | None
+    :type runtime: langgraph.runtime.Runtime[vertical_plugins.common.contracts.RunContext] | None
     :param bucket: 存储分类桶标识，默认为 'memories'。
     :type bucket: str
     :return: 版本标识及未经清洗的身份摘要，不回退到共享默认身份。

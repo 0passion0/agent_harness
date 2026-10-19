@@ -8,10 +8,10 @@ sources:
     resource: repo://packages/agent-harness/src/vertical_harness/storage/backends.py
   - id: openwiki-source-03421093e23299854e4dcf40
     resource: repo://packages/agent-harness/src/vertical_harness/storage/namespace.py
+generated: { by: "antigravity", at: "2026-10-19T02:30:03.285Z" }
 verified:
   - by: openwiki/0.7.2
-    at: 2026-10-19T02:30:03.285Z
-generated: { by: "antigravity", at: "2026-10-19T02:30:03.285Z" }
+    at: 2026-10-19T05:51:52.758Z
 ---
 
 # 状态隔离与分层存储

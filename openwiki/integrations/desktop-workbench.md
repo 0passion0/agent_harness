@@ -10,10 +10,10 @@ sources:
     resource: repo://desktop/bridge.py
   - id: openwiki-source-2f66613e587b7c57d9be522e
     resource: repo://desktop/README.md
+generated: { by: "antigravity", at: "2026-10-19T02:30:03.285Z" }
 verified:
   - by: openwiki/0.7.2
-    at: 2026-10-19T02:30:03.285Z
-generated: { by: "antigravity", at: "2026-10-19T02:30:03.285Z" }
+    at: 2026-10-19T05:51:52.758Z
 ---
 
 # MedPeer 桌面前端工作台

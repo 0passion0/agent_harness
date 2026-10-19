@@ -15,7 +15,6 @@ from langchain_core.language_models.fake_chat_models import FakeMessagesListChat
 from langchain_core.messages import AIMessage, ToolMessage
 from langgraph.errors import GraphInterrupt
 
-from research_citation import scan_numeric
 from vertical_harness import (
     HarnessSettings,
     PluginContribution,
@@ -28,6 +27,7 @@ from vertical_harness import (
     open_store,
 )
 from vertical_harness.engine import compose
+from vertical_plugins.research_citation import scan_numeric
 
 
 class ToolCallingModel(FakeMessagesListChatModel):

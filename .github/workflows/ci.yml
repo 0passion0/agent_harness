@@ -33,6 +33,6 @@ jobs:
           uv export --frozen --all-packages --no-dev --no-emit-workspace --no-hashes --output-file /tmp/wheel-constraints.txt
           uv pip install --python .wheel-env/bin/python --constraint /tmp/wheel-constraints.txt dist/vertical_agent_harness-*.whl
           cd /tmp
-          "$GITHUB_WORKSPACE/.wheel-env/bin/python" "$GITHUB_WORKSPACE/scripts/check_wheels.py" --core-only
-          uv pip install --python "$GITHUB_WORKSPACE/.wheel-env/bin/python" --constraint /tmp/wheel-constraints.txt "$GITHUB_WORKSPACE"/dist/vertical_plugin_research_citation-*.whl
-          "$GITHUB_WORKSPACE/.wheel-env/bin/python" "$GITHUB_WORKSPACE/scripts/check_wheels.py"
+          "$GITHUB_WORKSPACE/.wheel-env/bin/python" "$GITHUB_WORKSPACE/scripts/check_wheels.py" --base
+          uv pip install --python "$GITHUB_WORKSPACE/.wheel-env/bin/python" --constraint /tmp/wheel-constraints.txt "$GITHUB_WORKSPACE"/dist/vertical_agent_harness-*.whl --extra analysis
+          "$GITHUB_WORKSPACE/.wheel-env/bin/python" "$GITHUB_WORKSPACE/scripts/check_wheels.py" --with-analysis

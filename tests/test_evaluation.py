@@ -15,6 +15,7 @@ from langsmith import Client
 from langsmith.run_helpers import get_tracing_context
 
 from vertical_harness import AgentComposer, BuildServices, HarnessSettings
+from vertical_harness.engine.plugin_loader import discover_plugins
 from vertical_harness.evaluation import (
     EvaluationSettings,
     EvaluationTarget,
@@ -34,7 +35,6 @@ from vertical_harness.evaluation.scoring import (
     normalize_outputs,
 )
 from vertical_harness.evaluation.targets import make_target
-from vertical_harness.plugins import discover_plugins
 
 
 @pytest.fixture

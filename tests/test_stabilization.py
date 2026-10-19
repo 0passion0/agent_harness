@@ -20,14 +20,14 @@ from vertical_harness import HarnessSettings, RunContext, WorkflowContribution
 from vertical_harness.engine import compose, routing
 from vertical_harness.engine.policy import SupervisorPolicyMiddleware, _inspect_history
 from vertical_harness.engine.time_travel import afork_checkpoint, fork_checkpoint
-from vertical_harness.plugins.contracts import (
+from vertical_harness.storage.namespace import copy_memory_namespace, tenant_memory_namespace
+from vertical_plugins.common.contracts import (
     PluginContribution,
     PluginManifest,
     WorkflowInputState,
     WorkflowInternalState,
     WorkflowOutputState,
 )
-from vertical_harness.storage.namespace import copy_memory_namespace, tenant_memory_namespace
 
 
 class RecordingModel(FakeMessagesListChatModel):
@@ -378,7 +378,7 @@ def test_private_database_cannot_be_read_or_deleted(tmp_path, monkeypatch, async
 def test_resource_plugins_close_once_and_receive_isolated_config(
     tmp_path, monkeypatch, asynchronous, build_fails
 ):
-    from vertical_harness.plugins.contracts import BuildServices
+    from vertical_plugins.common.contracts import BuildServices
 
     events = []
     config = settings(tmp_path).model_copy(
@@ -452,7 +452,7 @@ def test_resource_plugins_close_once_and_receive_isolated_config(
 def test_graph_dependencies_and_reserved_middleware_fail_early(tmp_path):
     from langchain.agents.middleware import AgentMiddleware
 
-    from vertical_harness.plugins.contracts import BuildServices, WorkflowMode
+    from vertical_plugins.common.contracts import BuildServices, WorkflowMode
 
     a = WorkflowContribution.from_async_graph(
         name="first", description="First graph", graph_id="first"
@@ -481,7 +481,7 @@ def test_graph_dependencies_and_reserved_middleware_fail_early(tmp_path):
 
 
 def test_citation_huge_numbers_are_explicit_invalid_input():
-    from research_citation import build_citation_workflow, scan_numeric
+    from vertical_plugins.research_citation import build_citation_workflow, scan_numeric
 
     payload = {"manuscript_text": "[" + "9" * 5000 + "]", "bibliography": ["ref"]}
     assert "at most 9 digits" in scan_numeric.invoke(payload)
@@ -536,7 +536,7 @@ def test_cancelled_memory_worker_drains_before_owner_can_close():
 def test_deadline_cancels_async_tool_and_resource_context(tmp_path, monkeypatch):
     from langchain_core.tools import tool
 
-    from vertical_harness.plugins.contracts import ToolContribution
+    from vertical_plugins.common.contracts import ToolContribution
 
     events = []
 

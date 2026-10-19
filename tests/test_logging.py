@@ -13,10 +13,10 @@ from unittest.mock import Mock
 import pytest
 from pydantic import ValidationError
 
-from research_citation import scan_numeric
 from vertical_harness import HarnessSettings, cli, configure_logging, log_context, open_store
-from vertical_harness.plugins import discovery
+from vertical_harness.engine import plugin_loader as discovery
 from vertical_harness.storage import backends
+from vertical_plugins.research_citation import scan_numeric
 
 
 def settings(**overrides) -> HarnessSettings:
