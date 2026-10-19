@@ -74,15 +74,41 @@ def test_configure_isolates_store_and_checkpoint_paths(monkeypatch, tmp_path):
     assert bridge.loop.settings.resolved_workspace_root == (tmp_path / "workspace").resolve()
 
 
+def test_snapshot_of_new_sqlite_thread_has_no_run(monkeypatch, tmp_path):
+    async def scenario():
+        await configure(monkeypatch, tmp_path)
+        thread_id = str(uuid4())
+
+        @asynccontextmanager
+        async def open_agent(_state):
+            async with aopen_checkpointer(bridge.loop.settings) as saver:
+                yield agent(saver)
+
+        monkeypatch.setattr(bridge, "open_configured_agent", open_agent)
+        snapshot = await bridge.loop.dispatch("snapshot", {"thread_id": thread_id})
+        assert snapshot["thread_id"] == thread_id
+        assert snapshot["run_id"] is None
+        assert snapshot["messages"] == []
+        assert snapshot["interrupts"] == []
+        assert snapshot["artifacts"] == []
+        assert snapshot["token_usage"]["max_tokens"] == 128000
+
+    asyncio.run(scenario())
+
+
 def test_snapshot_reopens_sqlite_checkpoint_with_messages_and_interrupt(monkeypatch, tmp_path):
     async def scenario():
         await configure(monkeypatch, tmp_path)
         thread_id = str(uuid4())
+        run_id = str(uuid4())
         async with aopen_checkpointer(bridge.loop.settings) as saver:
             graph = agent(saver)
             await graph.ainvoke(
                 {"messages": [HumanMessage(content="hello")]},
-                {"configurable": {"thread_id": thread_id}},
+                {
+                    "configurable": {"thread_id": thread_id},
+                    "metadata": {"desktop_run_id": run_id},
+                },
             )
 
         @asynccontextmanager
@@ -92,6 +118,7 @@ def test_snapshot_reopens_sqlite_checkpoint_with_messages_and_interrupt(monkeypa
 
         monkeypatch.setattr(bridge, "open_configured_agent", open_agent)
         snapshot = await bridge.loop.dispatch("snapshot", {"thread_id": thread_id})
+        assert snapshot["run_id"] == run_id
         assert snapshot["messages"][0]["data"]["content"] == "hello"
         assert snapshot["messages"][0]["message"]["content"] == "hello"
         assert snapshot["interrupts"][0]["value"] == {

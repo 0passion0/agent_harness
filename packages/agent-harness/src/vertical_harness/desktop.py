@@ -235,7 +235,11 @@ class AgentLoop:
 
             return {
                 "thread_id": thread_id,
-                "run_id": checkpoint_values.get("desktop_run_id"),
+                "run_id": (
+                    checkpoint_values.get("desktop_run_id")
+                    if checkpoint_values is not None
+                    else None
+                ),
                 "messages": messages,
                 "interrupts": interrupts,
                 "analysis": None,
