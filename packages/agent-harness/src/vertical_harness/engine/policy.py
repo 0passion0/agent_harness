@@ -223,6 +223,7 @@ class PluginAuthorizationGateway:
         *,
         installed_plugins: Iterable[str] = (),
         enabled_plugins: Iterable[str] = (),
+        remember_authorizations: bool = False,
     ) -> None:
         """初始化插件授权网关。
 
@@ -230,6 +231,8 @@ class PluginAuthorizationGateway:
         :type installed_plugins: collections.abc.Iterable[str]
         :param enabled_plugins: 宿主已启用的插件 ID 集合。
         :type enabled_plugins: collections.abc.Iterable[str]
+        :param remember_authorizations: 批准后授予该身份持续使用插件的权限；持久化由可信宿主负责。
+        :type remember_authorizations: bool
         :return: 无返回值。
         :rtype: None
         :author: tongliga
@@ -246,6 +249,12 @@ class PluginAuthorizationGateway:
         self._rejected_keys: set[tuple[str, str]] = set()
         self._selected_by_thread: dict[str, tuple[str, frozenset[str]]] = {}
         self._execution_requests: dict[str, str] = {}
+        self._remember_authorizations = remember_authorizations
+        self._authorized_plugins: set[tuple[str, str, str]] = set()
+
+    def authorize_plugin(self, plugin_id: str, *, user_id: str, tenant_id: str) -> None:
+        """Restore a plugin grant from trusted host storage, never from model input."""
+        self._authorized_plugins.add((tenant_id, user_id, plugin_id))
 
     def select_for_run(self, thread_id: str, run_id: str, plugin_ids: Iterable[str]) -> None:
         selected = frozenset(plugin_ids)
@@ -404,7 +413,8 @@ class PluginAuthorizationGateway:
         :date: 2026-10-19
         """
         # 第一步：查找匹配的活跃批准记录
-        return (
+        plugin_id = self._workflow_to_plugin.get(plugin_or_workflow, plugin_or_workflow)
+        return (tenant_id, user_id, plugin_id) in self._authorized_plugins or (
             self._find_active_approval(
                 plugin_or_workflow=plugin_or_workflow,
                 thread_id=thread_id,
@@ -588,6 +598,8 @@ class PluginAuthorizationGateway:
         self._approvals[record.approval_id] = record
         self._state_by_key[(req.thread_id, req.plugin_id)] = PluginAuthState.AUTHORIZED
         self._state_by_key[(req.thread_id, req.workflow_name)] = PluginAuthState.AUTHORIZED
+        if self._remember_authorizations:
+            self.authorize_plugin(req.plugin_id, user_id=req.user_id, tenant_id=req.tenant_id)
         return record
 
     def reject_request(
@@ -717,10 +729,9 @@ class PluginAuthorizationGateway:
                 f"Plugin '{plugin_id}' ({workflow_name}) was rejected by user in thread '{thread_id}'; terminate without retrying."
             )
 
-        selection = self._selected_by_thread.get(thread_id)
-        if selection is not None and selection[0] == run_id and plugin_id in selection[1]:
-            if plugin_id not in self._enabled:
-                raise PermissionError(f"Plugin '{plugin_id}' is not enabled by the host.")
+        if plugin_id not in self._enabled:
+            raise PermissionError(f"Plugin '{plugin_id}' is not enabled by the host.")
+        if (tenant_id, user_id, plugin_id) in self._authorized_plugins:
             return
 
         # 第三步：查找宿主维护的活跃批准记录

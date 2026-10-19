@@ -282,6 +282,15 @@ def _compute_pearson(xs: list[float], ys: list[float]) -> float | None:
     return round(max(-1.0, min(1.0, r)), 6)
 
 
+class AnalysisWorkflowResult(ReportValidationResult):
+    """Validate profiling and full-analysis outputs without accepting unknown fields."""
+
+    profile: dict[str, Any] | None = None
+    analysis: dict[str, Any] | None = None
+    audit: dict[str, Any] | None = None
+    report: ReportValidationResult | None = None
+
+
 class DataAnalysisWorkflow(BaseWorkflow):
     """固定的表格数据分析与报告生成流程。
 
@@ -297,7 +306,7 @@ class DataAnalysisWorkflow(BaseWorkflow):
     input_schema = DataAnalysisInputState
     output_schema = DataAnalysisOutputState
     internal_state = DataAnalysisInternalState
-    result_schema = ReportValidationResult
+    result_schema = AnalysisWorkflowResult
     effect = SideEffect.WRITE
     idempotent = False
 

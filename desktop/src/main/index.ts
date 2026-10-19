@@ -9,7 +9,7 @@ import { assertFilePaths, assertSender, validateCommand } from './commands'
 import { DesktopApplication } from './application'
 import { SsoLogin } from './sso-login'
 import { scanDirectory, copyFilesToWorkspace } from './workspace-files'
-import type { ConfigScope, EventFrame } from '../shared/protocol'
+import type { ConfigScope, EventFrame, UserProfile } from '../shared/protocol'
 
 app.setName('MedPeer')
 app.setPath('userData', path.join(app.getPath('appData'), 'agent-harness-desktop'))
@@ -23,6 +23,8 @@ let login: SsoLogin
 let desktop: DesktopApplication
 let startup: Promise<unknown>
 let restoreError: Error | null = null
+const devUser: UserProfile = { userID: -1, realName: '本地开发', userName: 'local-dev', userAvatar: '', userPhone: '', userCredit: 0, isCo: false, isBeta: false }
+const skipLogin = !app.isPackaged
 const emit = (frame: EventFrame): void => { if (window && !window.isDestroyed()) window.webContents.send('backend:event', frame) }
 const backend = new Backend(root, frame => desktop.receive(frame))
 
@@ -47,8 +49,8 @@ async function start(): Promise<void> {
   Menu.setApplicationMenu(null)
   mkdirSync(path.join(dataDirectory, 'logs'), { recursive: true })
   auth = new AuthStore(path.join(dataDirectory, 'credentials.bin'))
-  desktop = new DesktopApplication(dataDirectory, backend, () => auth.user, emit)
-  startup = auth.restore().catch(error => { restoreError = error }).then(() => desktop.initialize())
+  desktop = new DesktopApplication(dataDirectory, backend, () => skipLogin ? devUser : auth.user, emit)
+  startup = (skipLogin ? Promise.resolve() : auth.restore().catch(error => { restoreError = error })).then(() => desktop.initialize())
   window = new BrowserWindow({ width: 1440, height: 900, minWidth: 640, minHeight: 520, show: false, icon: path.join(root, 'assets/medpeer.ico'),
     webPreferences: { preload: path.join(import.meta.dirname, '../preload/index.cjs'), contextIsolation: true, sandbox: true, nodeIntegration: false } })
   login = new SsoLogin(() => window, (ticket, details, cookies) => desktop.serial(async () => {

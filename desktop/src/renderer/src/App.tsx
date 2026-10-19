@@ -7,14 +7,15 @@
  * @date 2026-10-16
  */
 
-import { Fragment, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
-  Activity, ArrowRight, Check, ChevronLeft, ChevronRight, CircleHelp,
+  Activity, ArrowRight, ChevronLeft, ChevronRight, CircleHelp,
   FileText, Folder, FolderOpen, Menu, Paperclip, PanelRightClose, PanelRightOpen,
-  Send, Settings2, Shield, Sparkles, Square, X, House, History, Wrench, Plus
+  Send, Settings2, Sparkles, Square, X, House, History, Wrench, Plus
 } from 'lucide-react'
 import { useAgentController } from './state/use-agent-controller'
 import type { Json } from '../../shared/protocol'
+import { Decision } from './components/Decision'
 import { Conversation } from './components/Conversation'
 import { SessionSidebar } from './components/SessionSidebar'
 import { CapabilityPicker, isCapabilityShortcut } from './components/CapabilityPicker'
@@ -61,69 +62,6 @@ function savedTheme(): Theme {
   } catch {
     return 'light'
   }
-}
-
-/**
- * 智能体提问与操作授权交互卡片组件。
- * 当智能体执行高危操作（如写文件、执行系统脚本）或需要用户补充关键上下文时暂停并呈现此组件。
- */
-function Decision({ kind, question, purpose, inputScope, plannedOutputs, allowedEffects, onAnswer, onStop }: {
-  /** 交互类别：approval 授权审批，或普通输入提问 */
-  kind: string
-  /** 提问内容或待授权操作说明 */
-  question: string
-  purpose?: string
-  inputScope?: Json
-  plannedOutputs?: Json
-  allowedEffects?: Json
-  /** 答复回调 */
-  onAnswer(value: string): void
-  /** 取消任务回调 */
-  onStop(): void
-}) {
-  const [answer, setAnswer] = useState('')
-  const approval = kind === 'approval' || kind === 'plugin_authorization'
-  const describe = (value?: Json) => value == null ? '' : typeof value === 'string' ? value : JSON.stringify(value)
-  const scopes = [
-    ['可读取', inputScope], ['计划产出', plannedOutputs], ['允许的操作', allowedEffects]
-  ].filter(([, value]) => value != null) as Array<[string, Json]>
-
-  return <section className="decision" aria-live="assertive">
-    <div className="decision-heading">
-      <Shield size={18} />
-      <strong>{approval ? '需要你的授权' : '需要补充信息'}</strong>
-      <span>任务已暂停</span>
-    </div>
-    <p>{question}</p>
-    {approval && (purpose || scopes.length > 0) && <dl className="approval-scope">
-      {purpose && <><dt>用途</dt><dd>{purpose}</dd></>}
-      {scopes.map(([label, value]) => <Fragment key={label}><dt>{label}</dt><dd>{describe(value)}</dd></Fragment>)}
-    </dl>}
-    {approval ? <div className="decision-actions">
-      <button className="primary-action" onClick={() => onAnswer('approve')}>
-        <Check size={15} />允许这次操作
-      </button>
-      <button onClick={() => onAnswer('reject')}>拒绝操作</button>
-    </div> : <form onSubmit={event => {
-      event.preventDefault()
-      if (answer.trim()) onAnswer(answer.trim())
-    }}>
-      <textarea
-        aria-label="补充信息"
-        placeholder="输入答复，帮助任务继续…"
-        rows={2}
-        value={answer}
-        onChange={event => setAnswer(event.target.value)}
-      />
-      <div className="decision-actions">
-        <button className="primary-action" disabled={!answer.trim()} type="submit">
-          提交答复 <ArrowRight size={15} />
-        </button>
-        <button type="button" onClick={onStop}>取消任务</button>
-      </div>
-    </form>}
-    <small>未确认前不会继续执行当前步骤。</small>
-  </section>
 }
 
 /**
@@ -474,12 +412,16 @@ export default function App() {
             {state.question && state.runId && <Decision
               key={state.question.interaction_id}
               kind={state.question.kind}
+              pluginId={state.question.plugin_id}
+              pluginName={application?.plugins.find(plugin => plugin.id === state.question!.plugin_id)?.name}
               question={state.question.question}
+              actionRequests={state.question.action_requests}
+              options={state.question.options}
               purpose={state.question.purpose}
               inputScope={state.question.input_scope}
               plannedOutputs={state.question.planned_outputs}
               allowedEffects={state.question.allowed_effects}
-              onAnswer={value => void answer(state.runId!, state.question!.interaction_id, value)}
+              onAnswer={value => answer(state.runId!, state.question!.interaction_id, value)}
               onStop={() => void stop()}
             />}
 

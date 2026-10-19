@@ -10,6 +10,30 @@ function temp(): string { const root = mkdtempSync(path.join(tmpdir(), 'desktop-
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }) })
 
 describe('DesktopStore', () => {
+  it('remembers plugin grants across projects and restarts within the same account', () => {
+    const root = temp(), account = path.join(root, 'account')
+    const first = new DesktopStore(path.join(root, 'one'), path.join(root, 'workspace-one'), account)
+    expect(first.authorizedPlugins()).toEqual([])
+    first.authorizePlugins(['demo', 'demo'])
+    const second = new DesktopStore(path.join(root, 'two'), path.join(root, 'workspace-two'), account)
+    expect(second.authorizedPlugins()).toEqual(['demo'])
+    const other = new DesktopStore(path.join(root, 'other'), path.join(root, 'workspace-other'), path.join(root, 'other-account'))
+    expect(other.authorizedPlugins()).toEqual([])
+    writeFileSync(path.join(account, 'plugin-authorizations.json'), '{"demo":true}')
+    expect(() => first.authorizedPlugins()).toThrow('Invalid plugin authorizations')
+  })
+  it('fills missing usage on completion without duplicating or overwriting measured requests', () => {
+    const root = temp()
+    const store = new DesktopStore(path.join(root, 'project'), path.join(root, 'workspace'), path.join(root, 'account'))
+    const record = { request_id: 'request', requested_at: '2026-01-01T00:00:00Z', model: 'fallback', source: 'model' as const, usage: null, cost_estimate: null }
+    store.recordUsage('p', 's', record)
+    store.recordUsage('p', 's', { ...record, requested_at: '2026-01-02T00:00:00Z', model: 'actual', usage: { input_tokens: 10, output_tokens: 5, total_tokens: 15 } })
+    store.recordUsage('p', 's', record)
+    const stats = store.usageStats('', '')
+    expect(stats.totals).toMatchObject({ requests: 1, reported_requests: 1, total_tokens: 15 })
+    expect(stats.model_names).toEqual(['actual'])
+    expect(stats.dates).toEqual(['2026-01-01'])
+  })
   it('binds selected project paths and deletes only that project session', () => {
     const root = temp(); const account = new LocalStore(root, 12); const project = account.createProject('one')
     const workspace = path.join(root, 'selected'); mkdirSync(workspace)

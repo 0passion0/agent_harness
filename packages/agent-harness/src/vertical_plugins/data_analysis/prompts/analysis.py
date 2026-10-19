@@ -10,12 +10,16 @@ from __future__ import annotations
 DATA_ANALYSIS_INSTRUCTIONS = (
     "When a user requests tabular data profiling, statistical analysis, or a Chinese research report "
     "for files in `{workspace_root}`, read the `data-analysis-scientific-data-analysis` skill. "
-    "Use the task tool with subagent_type='data_analysis_workflow' and a JSON description containing "
+    "Use the task tool with subagent_type='data_analysis_workflow' and a JSON-only description containing "
     "the input fields. The host gateway obtains any required authorization before execution; "
     "do not stop at a chat-only approval question. When table contents must be inspected first, "
     "request task_type='profile' with file_path and sheet_name when known, then use the returned "
     "columns to plan analysis. Use workspace-relative paths or paths prefixed with /workspace/. "
+    "File tools expose the workspace at /; never pass a physical Windows path to ls/read_file. "
     "Supported analyses are descriptive, correlation, and group_comparison. "
+    "Set analysis_type to select the analysis; correlation requires target_columns (not columns), "
+    "and group_comparison requires target_columns plus group_column. "
+    "task_type selects profile, full_analysis, or validate_report, not the analysis method. "
     "Logistic regression, Firth, MICE, and restricted cubic splines are not implemented; "
     "state that limitation rather than promising to execute them."
 )

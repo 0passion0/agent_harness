@@ -296,7 +296,7 @@ def compose_backend(
 
     :param workspace_root: 物理工作区根目录路径。
     :type workspace_root: pathlib.Path
-    :param store: 可选的 LangGraph 长期存储实例；若为 None 则退化为纯文件系统后端。
+    :param store: 可选的 LangGraph 长期存储实例；技能始终挂载于独立的内存存储。
     :type store: langgraph.store.base.BaseStore | None
     :param memory_route: 长期记忆在虚拟文件系统中的路由前缀，默认为 '/memories/'。
     :type memory_route: str
@@ -309,17 +309,19 @@ def compose_backend(
     """
     # 第一步：实例化底层工作区物理文件系统后端（启用虚拟路径模式）
     fs_backend = DocumentFilesystemBackend(root_dir=str(workspace_root), virtual_mode=True)
-    if store is None:
-        logger.debug("filesystem_backend_ready")
-        return fs_backend
+    # Plugin assets belong to this agent build, never to the user's workspace or memory store.
+    routes = {
+        "/skills/": StoreBackend(store=InMemoryStore(), namespace=lambda _rt: ("skills",))
+    }
 
     # 第二步：规范化 POSIX 路由前缀（前后带斜杠，如 '/memories/'）
     normalized_route = f"{PurePosixPath('/', memory_route.strip('/'))}/"
     # 第三步：装配默认文件系统与长期记忆路由的 CompositeBackend 实例并返回
-    backend = CompositeBackend(
-        default=fs_backend,
-        routes={normalized_route: StoreBackend(store=store, namespace=namespace_factory)},
-    )
+    if normalized_route == "/skills/":
+        raise ValueError("memory_route must not overlap the reserved /skills/ route")
+    if store is not None:
+        routes[normalized_route] = StoreBackend(store=store, namespace=namespace_factory)
+    backend = CompositeBackend(default=fs_backend, routes=routes)
     logger.debug(
         "composite_backend_ready", extra={"event_fields": {"memory_route": normalized_route}}
     )

@@ -80,6 +80,8 @@ it('resumes research questions with text and approvals with exact decisions usin
   expect(s.request).toHaveBeenCalledWith('run.resume', { thread_id: snapshot.thread_id, run_id: run, decisions: { research: '比较两组均值' } })
   s.application.receive({ event: 'agent.event', data: event(run, snapshot.thread_id, 'run.interrupted', { interrupts: [{ id: 'approval', value: { action_requests: [{ name: 'execute_python', args: { code: 'print(1)' } }] } }] }) })
   await s.application.serial(async () => {})
+  expect(s.events.at(-1)).toMatchObject({ event: 'interaction.request', data: { kind: 'approval', action_requests: [{ name: 'execute_python', args: { code: 'print(1)' } }] } })
+  expect((s.events.at(-1) as Extract<EventFrame, { event: 'interaction.request' }>).data.question).not.toContain('print(1)')
   await expect(s.command('interaction.answer', { run_id: run, interaction_id: 'approval', answer: 'anything' })).rejects.toThrow('审批')
   await s.command('interaction.answer', { run_id: run, interaction_id: 'approval', answer: 'reject' })
   expect(s.request).toHaveBeenCalledWith('run.resume', { thread_id: snapshot.thread_id, run_id: run, decisions: { approval: { decisions: [{ type: 'reject' }] } } })
@@ -189,7 +191,37 @@ it('passes explicit selections and resumes a structured plugin approval only for
   await expect(s.command('interaction.answer', { run_id: 'stale-run', interaction_id: 'approval-1', answer: 'approve' })).rejects.toThrow('失效')
   await s.command('interaction.answer', { run_id: run, interaction_id: 'approval-1', answer: 'approve' })
   expect(s.request).toHaveBeenCalledWith('run.resume', { thread_id: snapshot.thread_id, run_id: run, decisions: { 'approval-1': { request_id: 'req-1', approved: true } } })
+  expect(s.application.storage().authorizedPlugins()).toEqual(['research.citations'])
+  const restored = new DesktopApplication(s.directory, { request: s.request } as unknown as Backend, () => s.application.state().user, () => {})
+  await restored.initialize()
+  expect(s.request.mock.calls.filter(([method]) => method === 'configure').at(-1)![1].options.authorized_plugins).toEqual(['research.citations'])
   await expect(s.command('interaction.answer', { run_id: run, interaction_id: 'approval-1', answer: 'approve' })).rejects.toThrow('失效')
+})
+
+it('delivers question options and custom text without granting plugin permissions', async () => {
+  const s = setup(); await s.application.initialize(); await s.command('project.create', { name: '选项' })
+  const snapshot = await s.command('session.snapshot') as any, run = randomUUID()
+  await s.command('run.start', { text: '生成报告' }, run)
+  s.application.receive({ event: 'agent.event', data: event(run, snapshot.thread_id, 'run.interrupted', { interrupts: [{ id: 'choose', value: { kind: 'question', question: '选择格式', options: ['摘要', '完整报告'] } }] }) })
+  await s.application.serial(async () => {})
+  expect(s.events.at(-1)).toMatchObject({ event: 'interaction.request', data: { options: ['摘要', '完整报告'], kind: 'question' } })
+  await s.command('interaction.answer', { run_id: run, interaction_id: 'choose', answer: '自定义：双语摘要' })
+  expect(s.request).toHaveBeenCalledWith('run.resume', { thread_id: snapshot.thread_id, run_id: run, decisions: { choose: '自定义：双语摘要' } })
+  expect(s.application.storage().authorizedPlugins()).toEqual([])
+})
+
+it('does not remember rejected or unsuccessfully submitted plugin approvals', async () => {
+  const s = setup(); await s.application.initialize(); await s.command('project.create', { name: '审批' })
+  const snapshot = await s.command('session.snapshot') as any, run = randomUUID()
+  await s.command('run.start', { text: '核查' }, run)
+  const value = { kind: 'plugin_authorization', plugin_id: 'research.citations', request_id: 'req-1', question: '允许？' }
+  s.application.receive({ event: 'agent.event', data: event(run, snapshot.thread_id, 'run.interrupted', { interrupts: [{ id: 'approval', value }] }) })
+  await s.application.serial(async () => {})
+  s.request.mockRejectedValueOnce(new Error('resume failed'))
+  await expect(s.command('interaction.answer', { run_id: run, interaction_id: 'approval', answer: 'approve' })).rejects.toThrow('resume failed')
+  expect(s.application.storage().authorizedPlugins()).toEqual([])
+  await s.command('interaction.answer', { run_id: run, interaction_id: 'approval', answer: 'reject' })
+  expect(s.application.storage().authorizedPlugins()).toEqual([])
 })
 
 it('retains workflow metadata and counts plugin model usage once in the durable timeline', async () => {

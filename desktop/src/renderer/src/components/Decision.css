@@ -1,0 +1,62 @@
+.product-v2.product-v3 .decision {
+  margin: 0 0 16px; padding: 20px; border: 1px solid var(--line-strong);
+  border-radius: 16px; background: var(--panel); box-shadow: 0 4px 18px #00000006;
+  max-height: min(60vh, 560px); overflow-y: auto;
+}
+.product-v2.product-v3 .decision-heading { gap: 12px; align-items: center; }
+.decision-icon { display: grid; place-items: center; flex: none; width: 40px; height: 40px; border-radius: 12px; background: var(--soft); color: var(--accent); }
+.decision-title { display: flex; flex-direction: column; min-width: 0; gap: 2px; }
+.product-v2.product-v3 .decision-title strong { font-size: 15px; font-weight: 600; }
+.product-v2.product-v3 .decision-title span { margin: 0; font-size: 11px; color: var(--muted); }
+.product-v2.product-v3 .decision-heading .decision-status { flex: none; margin-left: auto; padding: 3px 8px; border-radius: 6px; background: var(--soft); color: var(--accent); font-size: 11px; }
+.decision-plugin { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; margin-top: 18px; overflow-wrap: anywhere; }
+.decision-plugin strong { color: var(--heading); font-size: 14px; }
+.decision-plugin code { color: var(--muted); font-size: 11px; }
+.product-v2.product-v3 .decision .decision-summary { margin: 6px 0 16px; max-height: 120px; color: var(--text); font-size: 13px; overflow-wrap: anywhere; }
+.decision-trust { display: flex; gap: 8px; padding: 12px; border-radius: 10px; background: var(--soft); color: var(--text); font-size: 12px; line-height: 1.7; }
+.decision-trust svg { flex: none; margin-top: 3px; color: var(--accent); }
+.decision-details { margin-top: 12px; font-size: 12px; }
+.decision-details summary { width: fit-content; cursor: pointer; color: var(--muted); padding: 4px 0; }
+.decision-details .approval-scope { margin: 8px 0 0; padding: 12px; background: var(--bg); border: 1px solid var(--line); }
+.product-v2.product-v3 .decision-actions { justify-content: flex-end; flex-wrap: wrap; gap: 8px; margin: 18px 0 0; }
+.product-v2.product-v3 .decision-actions button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 36px; border-radius: 8px; padding: 8px 14px; font-size: 12px; }
+.product-v2.product-v3 .decision-actions button:not(.primary-action) { background: transparent; border-color: var(--line-strong); }
+.product-v2.product-v3 .decision-actions button:not(.primary-action):hover:not(:disabled) { background: var(--hover); }
+@media (max-width: 540px) {
+  .product-v2.product-v3 .decision { padding: 16px; }
+  .product-v2.product-v3 .decision-heading .decision-status { display: none; }
+  .product-v2.product-v3 .decision-actions button { flex: 1; }
+}
+
+.decision-options { display: grid; gap: 8px; padding: 0; margin: 0 0 12px; border: 0; min-width: 0; }
+.decision-option { display: flex; align-items: flex-start; gap: 10px; padding: 11px 12px; border: 1px solid var(--line); border-radius: 10px; color: var(--text); cursor: pointer; font-size: 13px; overflow-wrap: anywhere; }
+.decision-option:hover { background: var(--hover); }
+.decision-option.selected { background: var(--soft); border-color: var(--accent); }
+.decision-option input { flex: none; margin: 4px 0 0; accent-color: var(--accent); }
+.decision-option:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+.product-v2.product-v3 .decision > p { margin: 14px 0; font-size: 13px; overflow-wrap: anywhere; }
+.product-v2.product-v3 .decision small { display: block; margin-top: 10px; }
+
+.product-v2.product-v3 .decision .decision-intro { margin: 14px 0; color: var(--muted); max-height: none; }
+.approval-operations { display: grid; gap: 12px; }
+.approval-operation { min-width: 0; padding: 16px; background: var(--bg); border: 1px solid var(--line); border-radius: 12px; font-size: 13px; line-height: 1.75; overflow-wrap: anywhere; }
+.approval-operation-heading { display: flex; align-items: center; gap: 9px; margin-bottom: 10px; color: var(--heading); }
+.approval-step { display: grid; place-items: center; width: 24px; height: 24px; flex: none; border-radius: 8px; background: var(--soft); color: var(--accent); font-size: 11px; }
+.approval-description { margin-bottom: 14px; }
+.approval-preview { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; white-space: pre-wrap; }
+.approval-text { white-space: pre-wrap; }
+.approval-fields { display: grid; grid-template-columns: minmax(70px, auto) minmax(0, 1fr); gap: 10px 16px; margin: 8px 0 0; }
+.approval-fields dt { color: var(--muted); font-size: 12px; }
+.approval-fields dd { margin: 0; min-width: 0; }
+.approval-fields .approval-fields { margin-top: 0; padding-left: 12px; border-left: 2px solid var(--line); }
+.approval-values { margin: 0; padding-left: 18px; }
+.approval-values li + li { margin-top: 4px; }
+.approval-empty { color: var(--muted); }
+.approval-operation .decision-details { margin-top: 6px; }
+.decision-details summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 4px; }
+.approval-operation .decision-details[open] > summary { margin-bottom: 10px; }
+@media (max-width: 540px) {
+  .approval-operation { padding: 12px; }
+  .approval-fields { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  .approval-fields dd + dt { margin-top: 8px; }
+}

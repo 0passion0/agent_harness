@@ -61,7 +61,8 @@ export class DesktopApplication {
   private plugins(): AppPlugin[] {
     const settings = this.files?.readSettings()
     const enabled = settings?.plugins ?? {}
-    return this.catalog.plugins.map(plugin => ({ ...plugin, interaction_kinds: ['plugin_authorization'], enabled: enabled[plugin.id] === true, configured: true, loaded: enabled[plugin.id] === true }))
+    const authorized = this.files?.authorizedPlugins() ?? []
+    return this.catalog.plugins.map(plugin => ({ ...plugin, interaction_kinds: ['plugin_authorization'], enabled: enabled[plugin.id] === true, authorized: authorized.includes(plugin.id), configured: true, loaded: enabled[plugin.id] === true }))
   }
   state(): ApplicationState {
     const settings = this.files?.readSettings()
@@ -83,7 +84,7 @@ export class DesktopApplication {
       tenant_id: local.activeProject!.id, user_id: String(this.user()!.userID), workspace_root: this.workspace(), runtime_data_dir: local.projectDirectory(),
       options: { model_code: settings.model_code || this.environment!.model,
         runtimes: settings.runtimes, permission_mode: settings.permission_mode, max_context_tokens: settings.max_context_tokens,
-        agent_content: config.agent.content, skills, mcp_servers: config.mcp.servers,
+        agent_content: config.agent.content, skills, mcp_servers: config.mcp.servers, authorized_plugins: files.authorizedPlugins(),
         enabled_plugins: Object.keys(settings.plugins).filter(id => settings.plugins[id] && this.catalog.plugins.some(plugin => plugin.id === id)) }
     })
     this.catalog = await this.backend.request<Catalog>('catalog.get', {})
@@ -96,7 +97,7 @@ export class DesktopApplication {
       options: { model_code: settings.model_code || this.environment!.model, runtimes: settings.runtimes,
         permission_mode: settings.permission_mode, max_context_tokens: settings.max_context_tokens, agent_content: config.agent.content,
         skills: config.skills.filter(item => item.enabled).map(item => ({ id: item.id, content: files.readSkill('global', item.id).content, source: '全局' })),
-        mcp_servers: config.mcp.servers, enabled_plugins: Object.keys(settings.plugins).filter(id => settings.plugins[id] && this.catalog.plugins.some(plugin => plugin.id === id)) }
+        mcp_servers: config.mcp.servers, authorized_plugins: files.authorizedPlugins(), enabled_plugins: Object.keys(settings.plugins).filter(id => settings.plugins[id] && this.catalog.plugins.some(plugin => plugin.id === id)) }
     })
     this.catalog = await this.backend.request<Catalog>('catalog.get', {})
   }
@@ -106,6 +107,10 @@ export class DesktopApplication {
     return existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) as Saved : { runs: [], attachment_ids: [], analysis: {}, last_run_id: null }
   }
   private save(session: string, value: Saved): void { writeAtomic(this.recordPath(session), JSON.stringify(value)) }
+  private totals(sessionId: string): Snapshot['totals'] {
+    const usage = this.storage().usageStats('', '', { projectId: this.account().activeProject!.id, sessionId })
+    return { ...usage.totals, models: usage.models.map(model => ({ ...model, cache_hit_tokens: model.cache_read })), complete: usage.totals.requests === usage.totals.reported_requests }
+  }
   private async snapshot(sessionId?: string, restoreInterrupts = true): Promise<Snapshot> {
     const local = this.account()
     if (!local.activeProject) return emptySnapshot()
@@ -116,7 +121,7 @@ export class DesktopApplication {
     for (const message of result.messages.filter(message => message.type === 'ai')) {
       const usage = message.data.usage_metadata as { input_tokens: number; output_tokens: number; total_tokens: number } | null
       const metadata = message.data.response_metadata as Record<string, Json> | undefined
-      if (message.data.id) this.storage().recordUsage(local.activeProject!.id, session.id, { request_id: message.data.id as string, requested_at: new Date().toISOString(), model: metadata?.model_name as string || this.state().model!.model, source: 'model', usage: usage ?? null, cost_estimate: null })
+      if (message.data.id) this.storage().recordUsage(local.activeProject!.id, session.id, { request_id: message.data.id as string, requested_at: new Date().toISOString(), model: metadata?.model_name as string || metadata?.model as string || this.state().model!.model, source: 'model', usage: usage ?? null, cost_estimate: null })
     }
     const runIds = new Set([...saved.runs.map(run => run.id), saved.last_run_id])
     const published = this.storage().listArtifacts()
@@ -129,8 +134,7 @@ export class DesktopApplication {
       if (!saved.last_run_id) throw new Error('报告缺少对应的任务记录')
       artifacts.push(this.storage().publishArtifact(relative, saved.last_run_id))
     }
-    const usage = this.storage().usageStats('', '', { projectId: local.activeProject.id, sessionId: session.id })
-    const totals = { ...usage.totals, models: usage.models.map(model => ({ ...model, cache_hit_tokens: model.cache_read })), complete: usage.totals.requests === usage.totals.reported_requests }
+    const totals = this.totals(session.id)
     const snapshot: Snapshot = { session_id: session.id, thread_id: session.id, thread_ids: [session.id], messages: result.messages, attachments: saved.attachment_ids.map(id => this.storage().attachment(id)), artifacts, runs: saved.runs, totals, unsettled_history: result.interrupts.length > 0, token_usage: result.token_usage }
     if (result.interrupts.length && saved.active_run) snapshot.active_run = { id: saved.active_run.id, started_at: new Date(saved.active_run.started).toISOString(), records: saved.active_run.records, user_message_id: [...result.messages].reverse().find(message => message.type === 'human')?.data.id as string | undefined }
     if (restoreInterrupts && result.interrupts.length && !this.running) {
@@ -143,7 +147,8 @@ export class DesktopApplication {
     const item = this.running!.interrupts.find(interrupt => !(interrupt.id in this.running!.answers))!
     const actions = item.value.action_requests
     if (item.value.kind === 'plugin_authorization') return { ...item.value, interaction_id: item.id } as Question
-    return { interaction_id: item.id, plugin_id: 'harness', kind: actions ? 'approval' : 'question', question: actions ? actions.map(action => `${action.name}\n${JSON.stringify(action.args, null, 2)}`).join('\n\n') : String(item.value.question) }
+    const options = Array.isArray(item.value.options) && item.value.options.every(option => typeof option === 'string') ? item.value.options as string[] : undefined
+    return { interaction_id: item.id, plugin_id: typeof item.value.plugin_id === 'string' ? item.value.plugin_id : 'harness', kind: actions ? 'approval' : 'question', options, action_requests: actions, question: actions ? '以下操作需要你的确认，允许后将继续执行。' : String(item.value.question) }
   }
   private notifyQuestion(): void {
     if (this.running?.interrupts.some(item => !(item.id in this.running!.answers))) this.emit({ event: 'interaction.request', session_id: this.running.thread, run_id: this.running.id, data: this.question() })
@@ -222,7 +227,10 @@ export class DesktopApplication {
         } else { if (!params.answer.trim()) throw new Error('答复不能为空'); answer = params.answer }
         const answers = { ...run.answers, [interrupt.id]: answer }
         if (!run.interrupts.every(item => item.id in answers)) { run.answers = answers; setImmediate(() => this.notifyQuestion()); return {} }
-        await this.backend.request('run.resume', { thread_id: run.thread, run_id: run.id, decisions: answers }); run.interrupts = []; run.answers = {}; return { run_id: run.id }
+        await this.backend.request('run.resume', { thread_id: run.thread, run_id: run.id, decisions: answers })
+        const approvedPlugins = run.interrupts.filter(item => item.value.kind === 'plugin_authorization' && (answers[item.id] as { approved?: boolean })?.approved === true).map(item => item.value.plugin_id).filter((id): id is string => typeof id === 'string')
+        if (approvedPlugins.length) { files.authorizePlugins(approvedPlugins); this.emit({ event: 'app.ready', data: this.state() }) }
+        run.interrupts = []; run.answers = {}; return { run_id: run.id }
       }
       case 'model.configure': this.idle(); if (!params.model_code.trim()) throw new Error('模型不能为空'); files.saveSettings({ model_code: params.model_code }); break
       case 'model.test': this.idle(); await this.configurePreferences(); await this.backend.request('model.test', {}); return this.state()
@@ -261,6 +269,7 @@ export class DesktopApplication {
       if (event.type === 'model.completed') {
         const usage = event.data.usage as { input_tokens: number; output_tokens: number; total_tokens: number } | undefined
         this.storage().recordUsage(this.account().activeProject!.id, this.running.thread, { request_id: event.data.message_id as string || event.operation_id, requested_at: event.data.requested_at as string || new Date().toISOString(), model: event.data.model as string || this.state().model!.model, source: 'model', usage: usage ?? null, cost_estimate: null })
+        record.totals = this.totals(this.running.thread)
       }
       this.running.records.push(record)
       this.emit({ event: 'run.event', session_id: this.running.thread, run_id: this.running.id, data: record })

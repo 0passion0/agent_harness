@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import { initialState, reduceAgent } from '../../src/renderer/src/state/agent-state'
+import type { SessionTokenReport } from '../../src/shared/protocol'
 
 describe('agent state', () => {
+  it('updates the context popup and totals when a model request completes', () => {
+    const token_usage = { used_tokens: 820 } as SessionTokenReport
+    let state = reduceAgent(initialState, { event: 'ready', data: { session_id: 's', thread_id: 't', thread_ids: ['t'], messages: [], attachments: [], artifacts: [], runs: [], totals: {}, unsettled_history: false } })
+    state = reduceAgent(state, { event: 'run.event', session_id: 's', run_id: 'r', data: { kind: 'model_end', totals: { total_tokens: 820 }, token_usage } })
+    expect(state.snapshot?.token_usage).toBe(token_usage)
+    expect(state.liveTotals).toEqual({ total_tokens: 820 })
+  })
   it('preserves the current conversation and running state during app refresh', () => {
     const snapshot = { session_id: 's', thread_id: 't', thread_ids: ['t'], messages: [], attachments: [], artifacts: [], runs: [], totals: {}, unsettled_history: false }
     let state = reduceAgent(initialState, { event: 'ready', data: snapshot })

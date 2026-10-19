@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import os
+import subprocess
 from contextlib import asynccontextmanager
+from io import StringIO
+from unittest.mock import Mock
 from uuid import uuid4
 
 import pytest
@@ -13,6 +17,56 @@ from vertical_harness import aopen_checkpointer
 from vertical_harness import desktop as bridge
 
 APPROVAL = {"decisions": [{"type": "approve"}]}
+
+
+@pytest.mark.parametrize("result,expected", [
+    (subprocess.CompletedProcess([], 0, stdout="revision-dirty\n"), "revision-dirty"),
+    (subprocess.CompletedProcess([], 0, stdout=""), "unknown"),
+    (subprocess.TimeoutExpired("git", 2), "unknown"),
+    (subprocess.CalledProcessError(128, "git"), "unknown"),
+    (FileNotFoundError("git"), "unknown"),
+])
+def test_stdio_startup_resolves_trace_revision_without_inheriting_protocol_input(monkeypatch, result, expected):
+    from langsmith.env import _runtime_env
+
+    monkeypatch.setenv("LANGSMITH_TRACING", "true")
+    monkeypatch.delenv("LANGSMITH_REVISION_ID", raising=False)
+    monkeypatch.delenv("LANGCHAIN_REVISION_ID", raising=False)
+    monkeypatch.setattr(bridge.sys, "stdin", StringIO(""))
+    probe = Mock(side_effect=result) if isinstance(result, Exception) else Mock(return_value=result)
+    monkeypatch.setattr(subprocess, "run", probe)
+    sdk_probe = Mock(return_value=None)
+    monkeypatch.setattr(_runtime_env, "exec_git", sdk_probe)
+
+    asyncio.run(bridge.main())
+
+    probe.assert_called_once_with(
+        ["git", "describe", "--tags", "--always", "--dirty"],
+        stdin=subprocess.DEVNULL, capture_output=True, text=True, check=True, timeout=2,
+    )
+    assert os.environ["LANGSMITH_REVISION_ID"] == expected
+    assert _runtime_env.get_langchain_env_var_metadata.__wrapped__()["revision_id"] == expected
+    sdk_probe.assert_not_called()
+
+
+@pytest.mark.parametrize("tracing,revision_key", [
+    ("false", None), ("true", "LANGSMITH_REVISION_ID"), ("true", "LANGCHAIN_REVISION_ID"),
+])
+def test_stdio_startup_skips_revision_probe_when_disabled_or_explicit(monkeypatch, tracing, revision_key):
+    monkeypatch.setenv("LANGSMITH_TRACING", tracing)
+    monkeypatch.delenv("LANGSMITH_REVISION_ID", raising=False)
+    monkeypatch.delenv("LANGCHAIN_REVISION_ID", raising=False)
+    if revision_key:
+        monkeypatch.setenv(revision_key, "configured-revision")
+    monkeypatch.setattr(bridge.sys, "stdin", StringIO(""))
+    probe = Mock()
+    monkeypatch.setattr(subprocess, "run", probe)
+
+    asyncio.run(bridge.main())
+
+    probe.assert_not_called()
+    if revision_key:
+        assert os.environ[revision_key] == "configured-revision"
 
 
 def agent(checkpointer=None, body_calls=None):
@@ -42,7 +96,7 @@ def agent(checkpointer=None, body_calls=None):
     )
 
 
-async def configure(monkeypatch, tmp_path):
+async def configure(monkeypatch, tmp_path, enabled_plugins=(), authorized_plugins=()):
     monkeypatch.setenv("VA_MODEL", "test:fake")
     return await bridge.loop.dispatch(
         "configure",
@@ -59,10 +113,27 @@ async def configure(monkeypatch, tmp_path):
                 "agent_content": "",
                 "skills": [],
                 "mcp_servers": {},
-                "enabled_plugins": [],
+                "enabled_plugins": list(enabled_plugins),
+                "authorized_plugins": list(authorized_plugins),
             },
         },
     )
+
+
+def test_configure_restores_only_host_supplied_plugin_grants(monkeypatch, tmp_path):
+    async def scenario():
+        await configure(monkeypatch, tmp_path, ["demo.plugin"], ["demo.plugin"])
+        gateway = bridge.loop.auth_gateway
+        gateway.verify_execution(
+            plugin_id="demo.plugin", workflow_name="workflow", user_id="user-a",
+            tenant_id="tenant-a", thread_id="new-chat", run_id="new-run",
+        )
+        await configure(monkeypatch, tmp_path, ["demo.plugin"])
+        assert not bridge.loop.auth_gateway.is_authorized(
+            "demo.plugin", user_id="user-a", tenant_id="tenant-a",
+        )
+
+    asyncio.run(scenario())
 
 
 def test_configure_isolates_store_and_checkpoint_paths(monkeypatch, tmp_path):
@@ -92,6 +163,49 @@ def test_snapshot_of_new_sqlite_thread_has_no_run(monkeypatch, tmp_path):
         assert snapshot["interrupts"] == []
         assert snapshot["artifacts"] == []
         assert snapshot["token_usage"]["max_tokens"] == 128000
+
+    asyncio.run(scenario())
+
+
+def test_actual_model_context_is_streamed_persisted_and_isolated_by_chat(monkeypatch, tmp_path):
+    from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
+
+    from vertical_harness.engine import compose
+
+    class Model(FakeMessagesListChatModel):
+        def bind_tools(self, tools, **kwargs):
+            return self
+
+    monkeypatch.setattr(compose, "init_configured_model", lambda settings: Model(responses=[
+        AIMessage(content="Done", usage_metadata={"input_tokens": 800, "output_tokens": 20, "total_tokens": 820})
+    ]))
+    frames = []
+
+    async def capture(state, method, params):
+        frames.append(params)
+
+    monkeypatch.setattr(bridge, "notify", capture)
+
+    async def scenario():
+        await configure(monkeypatch, tmp_path)
+        bridge.loop.settings.enable_memory = False
+        thread_id = str(uuid4())
+        run_id = str(uuid4())
+        await bridge.loop.dispatch("run.start", {"thread_id": thread_id, "run_id": run_id, "text": "Hello", "selected_plugins": [], "selected_skills": []})
+        task = bridge.loop.active[run_id][1]
+        await task
+        completed = next(frame for frame in frames if frame["type"] == "model.completed")
+        assert completed["data"]["token_usage"]["used_tokens"] == 820
+        report = await bridge.loop.context_usage(thread_id, [])
+        assert report["used_tokens"] == 820
+        assert report["sections"]["system_prompt"]["tokens"] > 0
+        assert (await bridge.loop.context_usage(str(uuid4()), []))["used_tokens"] == 0
+        bridge.loop.desktop_options["max_context_tokens"] = 400
+        resized = await bridge.loop.context_usage(thread_id, [])
+        assert resized["used_ratio"] == 2.05
+        assert resized["remaining_tokens"] == 0
+        await bridge.loop.dispatch("session.delete", {"thread_id": thread_id})
+        assert (await bridge.loop.context_usage(thread_id, []))["used_tokens"] == 0
 
     asyncio.run(scenario())
 
@@ -267,11 +381,11 @@ def test_plugin_authorization_resume_accepts_exact_decision_contract(monkeypatch
     asyncio.run(scenario())
 
 
-def test_plugin_scope_approval_survives_checkpoint_reconfigure_for_same_run(
+def test_plugin_approval_survives_checkpoint_reconfigure_and_run_completion(
     monkeypatch, tmp_path
 ):
     async def scenario():
-        await configure(monkeypatch, tmp_path)
+        await configure(monkeypatch, tmp_path, ["demo.plugin"])
         saver = InMemorySaver()
 
         def graph():
@@ -337,7 +451,7 @@ def test_plugin_scope_approval_survives_checkpoint_reconfigure_for_same_run(
         saved_approvals = await bridge.loop._load_plugin_approvals(thread_id, run_id)
         assert saved_approvals[0]["input_scope"] == ["source.csv"]
 
-        await configure(monkeypatch, tmp_path)
+        await configure(monkeypatch, tmp_path, ["demo.plugin"])
         await bridge.loop.dispatch(
             "run.resume",
             {
@@ -356,19 +470,18 @@ def test_plugin_scope_approval_survives_checkpoint_reconfigure_for_same_run(
             run_id=run_id,
             input_data={"file_path": "source.csv"},
         )
-        with pytest.raises(PermissionError, match="expands beyond approved scope"):
-            gateway.verify_execution(
-                plugin_id="demo.plugin",
-                workflow_name="demo_workflow",
-                user_id="user-a",
-                tenant_id="tenant-a",
-                thread_id=thread_id,
-                run_id=run_id,
-                input_data={"file_path": "other.csv"},
-            )
+        gateway.verify_execution(
+            plugin_id="demo.plugin",
+            workflow_name="demo_workflow",
+            user_id="user-a",
+            tenant_id="tenant-a",
+            thread_id=thread_id,
+            run_id=run_id,
+            input_data={"file_path": "other.csv"},
+        )
         await bridge.loop.active[run_id][1]
         assert await bridge.loop._load_plugin_approvals(thread_id, run_id) == []
-        assert not gateway.is_authorized(
+        assert gateway.is_authorized(
             "demo_workflow", thread_id=thread_id, user_id="user-a", tenant_id="tenant-a"
         )
 

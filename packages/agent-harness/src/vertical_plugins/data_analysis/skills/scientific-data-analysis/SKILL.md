@@ -15,7 +15,7 @@ metadata:
 
 1. **支持格式**：工作区内的 `.csv`、`.parquet`、`.xlsx` 表格数据。
 2. **执行授权**：用户要求执行且输入已明确时，调用 `task`，设置 `subagent_type="data_analysis_workflow"`，在 `description` 中提供 JSON 输入（含 `file_path` 及本次操作参数）。宿主负责展示插件名称、操作目的、输入范围与计划输出，并按授权状态决定确认或执行。仅在聊天中询问是否授权不会创建运行请求；用户仅要求讨论方案时不发起运算。
-3. **真实计算与证据闭环**：默认执行全表描述性统计；相关分析（`correlation`）与组间比较（`group_comparison`）需提供显式列名参数。严禁在缺少参数时编造统计检验结论或虚构随机种子说明。
+3. **真实计算与证据闭环**：默认执行全表描述性统计；用 `analysis_type` 选择 `descriptive`、`correlation` 或 `group_comparison`。相关分析必须传 `target_columns`（至少两列，不是 `columns`），组间比较必须传 `target_columns` 和 `group_column`。`task_type` 仅选择 `profile`、`full_analysis` 或 `validate_report` 模式。`description` 只传 JSON 对象，例如 `{"file_path":"sample.csv","analysis_type":"correlation","target_columns":["价格","累计浏览"]}`。严禁在缺少参数时编造统计检验结论或虚构随机种子说明。
 4. **先读取真实变量**：用户要求先识别表格变量时，先提交 `{"task_type":"profile","file_path":"工作区内的实际文件路径"}`，已知工作表时同时提供 `sheet_name`。文件路径使用工作区相对路径或 `/workspace/` 前缀路径；若文件工具列出 `/data.xlsx`，提交 `data.xlsx`。多工作表需根据返回结果确认工作表，列画像有分页时按 `next_column_offset` 继续获取。根据真实画像划分变量角色和分析方向，不能用拟定列名代替读取结果。画像模式仅返回画像，不生成统计分析报告。
 5. **能力边界**：当前统计计算仅支持描述性统计、Pearson 相关与组间比较；尚不支持多变量 logistic 回归、Firth、MICE 或限制性立方样条（RCS）。可解释这些方法为何适合研究问题，但必须明确当前插件无法执行，不能将其列为已具备执行能力的待办，也不能用其他分析类型替代。
 

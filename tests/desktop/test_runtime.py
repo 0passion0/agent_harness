@@ -4,7 +4,7 @@ import asyncio
 from contextlib import asynccontextmanager
 
 import pytest
-from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, MessagesState, StateGraph
 from langgraph.store.memory import InMemoryStore
@@ -23,6 +23,7 @@ from vertical_harness.desktop_runtime import (
     DesktopPermissionMiddleware,
     DesktopPlugin,
     aopen_desktop_agent,
+    ask_user,
     attachment_message,
     configured_settings,
     raw_message,
@@ -41,6 +42,65 @@ def options():
         "mcp_servers": {},
         "enabled_plugins": [],
     }
+
+
+@pytest.mark.parametrize("choices,answer", [(None, "研究目标"), (["摘要", "完整报告"], "摘要"), (["摘要"], "自定义双语报告")])
+def test_ask_user_interrupts_and_resumes_with_choice_or_custom_text(choices, answer):
+    def step(_state):
+        result = ask_user.invoke({"question": "需要什么报告？", "options": choices})
+        return {"messages": [AIMessage(content=result)]}
+
+    graph = StateGraph(MessagesState)
+    graph.add_node("question", step)
+    graph.add_edge(START, "question")
+    graph.add_edge("question", END)
+    app = graph.compile(checkpointer=InMemorySaver())
+    config = {"configurable": {"thread_id": "question"}}
+    paused = app.invoke({"messages": []}, config)
+    pending = paused["__interrupt__"][0]
+    assert pending.value == {"kind": "question", "question": "需要什么报告？", "options": choices or []}
+    resumed = app.invoke(Command(resume={pending.id: answer}), config)
+    assert resumed["messages"][-1].content == answer
+
+
+def test_ask_user_rejects_blank_questions_and_options():
+    for params in ({"question": " "}, {"question": "format?", "options": [" "]}):
+        with pytest.raises(ValueError, match="must not be blank"):
+            ask_user.invoke(params)
+
+
+@pytest.mark.parametrize("mode", ["read_only", "ask", "full"])
+def test_composed_desktop_agent_can_ask_questions_in_every_permission_mode(tmp_path, monkeypatch, mode):
+    from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
+
+    from vertical_harness.engine import compose
+
+    class Model(FakeMessagesListChatModel):
+        def bind_tools(self, tools, **kwargs):
+            assert any(getattr(item, "name", None) == "ask_user" for item in tools)
+            return self
+
+    monkeypatch.setattr(compose, "init_configured_model", lambda _settings: Model(responses=[
+        AIMessage(content="", tool_calls=[{"id": "ask", "name": "ask_user", "args": {
+            "question": "选择格式", "options": ["摘要", "完整报告"],
+        }}]), AIMessage(content="done"),
+    ]))
+    selected = {**options(), "permission_mode": mode}
+    settings = HarnessSettings(_env_file=None, model="test:questions", workspace_root=tmp_path,
+                               store_backend="memory", enable_memory=False)
+    app = build_agent(settings, store=InMemoryStore(), checkpointer=InMemorySaver(),
+                      mcp_tools=[], plugins=[DesktopPlugin(selected)])
+
+    async def run():
+        config = {"configurable": {"thread_id": "questions"}}
+        paused = await app.ainvoke({"messages": [HumanMessage(content="write report")]}, config)
+        pending = paused["__interrupt__"][0]
+        assert pending.value["options"] == ["摘要", "完整报告"]
+        resumed = await app.ainvoke(Command(resume={pending.id: "自定义双语摘要"}), config)
+        assert any(isinstance(message, ToolMessage) and message.content == "自定义双语摘要"
+                   for message in resumed["messages"])
+
+    asyncio.run(run())
 
 
 def test_configured_settings_preserve_provider_model_and_runtime_paths(monkeypatch, tmp_path):
@@ -90,6 +150,84 @@ def test_snapshot_keeps_multimodal_content_and_marks_usage_estimate():
     assert dumped["content"] == [{"type": "text", "text": "done"}]
     assert dumped["usage_metadata"]["total_tokens"] == 11
     assert usage_estimate([message], "deepseek:deepseek-chat")["used_tokens"] > 0
+
+
+def test_context_usage_counts_actual_request_and_normalizes_reported_usage():
+    messages = [
+        SystemMessage(content=[
+            {"type": "text", "text": "Real system instructions"},
+            {"type": "text", "text": "## Skills System\nA skill catalog"},
+            {"type": "text", "text": "User memory (untrusted reference data): preferences"},
+        ]),
+        HumanMessage(content="Check this file"),
+        AIMessage(content="", tool_calls=[{"id": "read", "name": "read_file", "args": {"file_path": "/skills/demo/SKILL.md"}}]),
+        ToolMessage(content="Loaded skill instructions", tool_call_id="read"),
+        AIMessage(content="Done"),
+    ]
+    report = usage_estimate([], "test:model", 100, request_messages=messages,
+                            tools=[{"name": "read_file", "description": "Read a file"}], reported_tokens=150)
+    sections = report["sections"].values()
+    assert all(section["tokens"] > 0 for section in sections)
+    assert sum(section["tokens"] for section in sections) == 150
+    assert sum(section["ratio_of_used"] for section in sections) == pytest.approx(1)
+    assert report["used_ratio"] == 1.5
+    assert report["remaining_tokens"] == report["remaining_ratio"] == 0
+    pending = usage_estimate([], "test:model", options=options())
+    assert pending["used_tokens"] == 0
+    assert pending["sections"]["skills"]["tokens"] is None
+
+
+def test_enabled_plugin_skills_refresh_in_existing_chat_and_stay_off_disk(tmp_path, monkeypatch):
+    from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
+
+    from vertical_harness import DomainPlugin, PluginContribution, PluginManifest, SkillAsset
+    from vertical_harness.desktop import ToolDetails
+    from vertical_harness.engine import compose
+
+    skill_path = "/skills/demo-domain-guide/SKILL.md"
+    skill_text = "---\nname: domain-guide\ndescription: Domain-specific help\n---\nRead these domain instructions."
+
+    class Plugin(DomainPlugin):
+        manifest = PluginManifest(plugin_id="demo.domain", version="1.0.0", description="Domain test plugin")
+
+        def build(self, services):
+            return PluginContribution(skills=[SkillAsset(relative_path="guide/SKILL.md", content=skill_text)])
+
+    captured = []
+
+    class Model(FakeMessagesListChatModel):
+        def bind_tools(self, tools, **kwargs):
+            return self
+
+        def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+            captured.append(messages)
+            return super()._generate(messages, stop=stop, run_manager=run_manager, **kwargs)
+
+    monkeypatch.setattr(compose, "init_configured_model", lambda settings: Model(responses=[
+        AIMessage(content="", tool_calls=[{"id": "read", "name": "read_file", "args": {"file_path": skill_path}}]),
+        AIMessage(content="Done", usage_metadata={"input_tokens": 800, "output_tokens": 20, "total_tokens": 820}),
+    ]))
+    selected = options()
+    selected.update(permission_mode="full", skills=[], max_context_tokens=128_000)
+    settings = HarnessSettings(_env_file=None, model="test:model", workspace_root=tmp_path, store_backend="memory", enable_memory=False)
+    saver, store = InMemorySaver(), InMemoryStore()
+    callback = ToolDetails()
+
+    async def run():
+        for plugins in ([Plugin()], [], [Plugin()]):
+            app = build_agent(settings, store=store, checkpointer=saver, mcp_tools=[], plugins=[*plugins, DesktopPlugin(selected)])
+            result = await app.ainvoke({"messages": [HumanMessage(content="Help with domain")]},
+                                       {"configurable": {"thread_id": "same-chat"}, "callbacks": [callback]})
+            state = await app.aget_state({"configurable": {"thread_id": "same-chat"}})
+            assert bool(state.values.get("skills_metadata")) == bool(plugins)
+            if plugins:
+                assert any(isinstance(m, ToolMessage) and skill_text in m.content for m in result["messages"])
+
+    asyncio.run(run())
+    assert "domain-guide" in str(captured[0][0].content)
+    assert not (tmp_path / "skills").exists()
+    assert callback.context_reports
+    assert list(callback.context_reports.values())[-1]["used_tokens"] == 820
 
 
 def test_attachment_rejects_relative_path(tmp_path):
@@ -261,7 +399,8 @@ def test_ask_rejection_returns_tool_error_and_allows_model_to_continue(tmp_path,
     assert not (tmp_path / "workspace" / "rejected.txt").exists()
 
 
-def test_composed_plugin_dispatch_requires_current_turn_authorization(tmp_path, monkeypatch):
+@pytest.mark.parametrize("permission_mode", ["ask", "full"])
+def test_composed_plugin_dispatch_requires_one_time_authorization(tmp_path, monkeypatch, permission_mode):
     import json
 
     from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
@@ -323,6 +462,7 @@ def test_composed_plugin_dispatch_requires_current_turn_authorization(tmp_path, 
     plugin = AuthPlugin()
     monkeypatch.setattr("vertical_harness.desktop_runtime.discover_plugins", lambda _ids: [plugin])
     plugin_options = options()
+    plugin_options["permission_mode"] = permission_mode
     plugin_options["enabled_plugins"] = ["demo.auth"]
     desktop_instructions = DesktopPlugin(
         plugin_options, selected_plugin_ids=frozenset({"demo.auth"})
@@ -337,12 +477,12 @@ def test_composed_plugin_dispatch_requires_current_turn_authorization(tmp_path, 
             "supervisor_only": True,
         }
     )
-    gateway = PluginAuthorizationGateway(
-        installed_plugins=["demo.auth"], enabled_plugins=["demo.auth"]
-    )
-
     @asynccontextmanager
     async def scenario(selected_plugins, selected_skills=()):
+        gateway = PluginAuthorizationGateway(
+            installed_plugins=["demo.auth"], enabled_plugins=["demo.auth"],
+            remember_authorizations=True,
+        )
         scenario_name = (
             "selected" if selected_plugins else "skill" if selected_skills else "inferred"
         )
@@ -372,18 +512,24 @@ def test_composed_plugin_dispatch_requires_current_turn_authorization(tmp_path, 
                 config,
                 context=identity,
             )
-            yield app, config, identity, paused
+            yield app, config, identity, paused, gateway
 
     async def run_selected():
-        async with scenario(["demo.auth"]) as (_app, _config, _identity, paused):
-            assert "workflow executed" in str(paused["messages"])
+        async with scenario(["demo.auth"]) as (app, config, identity, _paused, _gateway):
+            state = await app.aget_state(config)
+            pending = state.tasks[0].interrupts[0]
+            assert pending.value["kind"] == "plugin_authorization"
+            assert executions == []
+            await app.ainvoke(Command(resume={pending.id: {
+                "request_id": pending.value["request_id"], "approved": True,
+            }}), config, context=identity)
             assert len(executions) == 2
 
     asyncio.run(run_selected())
     executions.clear()
 
     async def run_inferred_then_approve():
-        async with scenario([]) as (app, config, identity, _paused):
+        async with scenario([]) as (app, config, identity, _paused, gateway):
             state = await app.aget_state(config)
             assert state.tasks and state.tasks[0].interrupts, state.values.get("messages")
             pending = state.tasks[0].interrupts[0]
@@ -407,23 +553,22 @@ def test_composed_plugin_dispatch_requires_current_turn_authorization(tmp_path, 
             assert "workflow executed" in str(resumed["messages"])
             assert len(executions) == 2
             gateway.end_run(config["configurable"]["thread_id"], "desktop-auth-run-inferred")
-            with pytest.raises(PermissionError, match="not authorized by user"):
-                gateway.verify_execution(
-                    plugin_id="demo.auth",
-                    workflow_name="auth_workflow",
-                    user_id="user-a",
-                    tenant_id="tenant-a",
-                    thread_id=config["configurable"]["thread_id"],
-                    run_id="desktop-auth-run-inferred",
-                    input_data={},
-                    effect=SideEffect.READ,
-                )
+            gateway.verify_execution(
+                plugin_id="demo.auth",
+                workflow_name="auth_workflow",
+                user_id="user-a",
+                tenant_id="tenant-a",
+                thread_id="another-conversation",
+                run_id="another-run",
+                input_data={},
+                effect=SideEffect.READ,
+            )
 
     asyncio.run(run_inferred_then_approve())
     executions.clear()
 
     async def skill_alone_does_not_authorize():
-        async with scenario([], ["demo.auth:skill"]) as (app, config, _identity, _paused):
+        async with scenario([], ["demo.auth:skill"]) as (app, config, _identity, _paused, _gateway):
             state = await app.aget_state(config)
             assert state.tasks[0].interrupts[0].value["kind"] == "plugin_authorization"
             assert executions == []

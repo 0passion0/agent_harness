@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
+import subprocess
 import sys
 from contextlib import aclosing, asynccontextmanager
 from time import perf_counter
@@ -16,6 +18,7 @@ from langgraph.types import Command
 
 from vertical_harness import (
     HarnessSettings,
+    LangSmithSettings,
     RunContext,
     aopen_checkpointer,
     aopen_store,
@@ -52,6 +55,25 @@ class AgentLoop:
         self.selected_plugin_ids: frozenset[str] = frozenset()
         self.paused_runs: dict[str, str] = {}
         self.plugin_approvals: list[dict[str, Any]] = []
+
+    def _context_namespace(self, thread_id: str) -> tuple[str, ...]:
+        assert self.identity is not None
+        return ("vertical_harness", "desktop_context", self.identity.tenant_id, self.identity.user_id, thread_id)
+
+    async def context_usage(self, thread_id: str, messages: list[Any]) -> dict[str, Any]:
+        assert self.settings is not None
+        maximum = (self.desktop_options or {}).get("max_context_tokens", 128_000)
+        async with aopen_store(self.settings) as store:
+            saved = await store.aget(self._context_namespace(thread_id), "usage")
+        if saved is None:
+            return usage_estimate(messages, self.settings.model, maximum)
+        report = saved.value
+        used = report["used_tokens"]
+        report.update(max_tokens=maximum, remaining_tokens=max(0, maximum - used), used_ratio=used / maximum, remaining_ratio=max(0, maximum - used) / maximum)
+        for section in report["sections"].values():
+            if section["tokens"] is not None:
+                section["ratio_of_max"] = section["tokens"] / maximum
+        return report
 
     def _plugin_approval_namespace(self, thread_id: str, run_id: str) -> tuple[str, ...]:
         assert self.identity is not None
@@ -111,7 +133,14 @@ class AgentLoop:
             self.auth_gateway = PluginAuthorizationGateway(
                 installed_plugins=configured.enabled_plugins,
                 enabled_plugins=configured.enabled_plugins,
+                remember_authorizations=True,
             )
+            for plugin_id in options.get("authorized_plugins", []):
+                self.auth_gateway.authorize_plugin(
+                    plugin_id,
+                    user_id=configured_identity.user_id,
+                    tenant_id=configured_identity.tenant_id,
+                )
             self.plugin_approvals = []
 
             return {"model": configured.model, "environment": runtime_environment(options)}
@@ -166,6 +195,8 @@ class AgentLoop:
 
             async with aopen_checkpointer(self.settings) as checkpointer:
                 await checkpointer.adelete_thread(thread_id)
+            async with aopen_store(self.settings) as store:
+                await store.adelete(self._context_namespace(thread_id), "usage")
 
             return {"thread_id": thread_id, "deleted": True}
 
@@ -186,13 +217,7 @@ class AgentLoop:
             async with open_configured_agent(self) as agent:
                 graph_state = await agent.aget_state(make_checkpoint_config(thread_id))
 
-            return usage_estimate(
-                graph_state.values.get("messages", []),
-                self.settings.model,
-                self.desktop_options["max_context_tokens"],
-                self.desktop_options,
-                self.selected_skill_ids,
-            )
+            return await self.context_usage(thread_id, graph_state.values.get("messages", []))
 
         if method == "snapshot":
             require(params, "thread_id")
@@ -223,13 +248,7 @@ class AgentLoop:
                 for item in task.interrupts
             ]
 
-            token_usage = usage_estimate(
-                values.get("messages", []),
-                self.settings.model,
-                self.desktop_options["max_context_tokens"],
-                self.desktop_options,
-                self.selected_skill_ids,
-            )
+            token_usage = await self.context_usage(thread_id, values.get("messages", []))
 
             checkpoint_values = graph_state.metadata
 
@@ -521,7 +540,7 @@ class AgentLoop:
 
         failure: Exception | None = None
 
-        details = ToolDetails()
+        details = ToolDetails((self.desktop_options or {}).get("max_context_tokens", 128_000))
 
         active_workflows: dict[str, dict[str, Any]] = {}
 
@@ -565,6 +584,12 @@ class AgentLoop:
             ):
                 async for event in events:
                     payload = event.model_dump(mode="json")
+
+                    if event.type == "model.completed" and event.operation_id in details.context_reports:
+                        report = details.context_reports.pop(event.operation_id)
+                        async with aopen_store(self.settings) as store:
+                            await store.aput(self._context_namespace(thread_id), "usage", report)
+                        payload["data"]["token_usage"] = report
 
                     last_seq = event.seq
 
@@ -674,9 +699,31 @@ loop = AgentLoop()
 class ToolDetails(AsyncCallbackHandler):
     run_inline = True
 
-    def __init__(self):
+    def __init__(self, maximum: int = 128_000):
         self.records: dict[str, dict[str, Any]] = {}
         self.started: dict[str, float] = {}
+        self.maximum = maximum
+        self.context_requests: dict[str, tuple[list[Any], list[Any]]] = {}
+        self.context_reports: dict[str, dict[str, Any]] = {}
+
+    async def on_chat_model_start(self, serialized, messages, *, run_id, metadata=None, invocation_params=None, **kwargs):
+        if (metadata or {}).get("lc_agent_name") == "vertical-agent" and messages:
+            self.context_requests[str(run_id)] = (messages[0], (invocation_params or {}).get("tools", []))
+
+    async def on_llm_end(self, response, *, run_id, **kwargs):
+        request = self.context_requests.pop(str(run_id), None)
+        if request is None:
+            return
+        messages, tools = request
+        message = response.generations[0][0].message
+        usage = getattr(message, "usage_metadata", None)
+        self.context_reports[str(run_id)] = usage_estimate(
+            [], "", self.maximum, request_messages=[*messages, message], tools=tools,
+            reported_tokens=usage["input_tokens"] + usage["output_tokens"] if usage else None,
+        )
+
+    async def on_llm_error(self, error, *, run_id, **kwargs):
+        self.context_requests.pop(str(run_id), None)
 
     async def on_tool_start(self, serialized, input_str, *, run_id, inputs=None, **kwargs):
         key = str(run_id)
@@ -743,6 +790,20 @@ def require_uuid(value: Any, field: str) -> str:
 
 
 async def main() -> None:
+    # The SDK's automatic Git probe inherits stdin and can block the JSON-RPC pipe.
+    if LangSmithSettings().tracing and not (
+        os.getenv("LANGSMITH_REVISION_ID") or os.getenv("LANGCHAIN_REVISION_ID")
+    ):
+        try:
+            revision = subprocess.run(
+                ["git", "describe", "--tags", "--always", "--dirty"],
+                stdin=subprocess.DEVNULL, capture_output=True, text=True, check=True, timeout=2,
+            )
+            revision_id = revision.stdout.strip() or "unknown"
+        except (OSError, subprocess.SubprocessError):
+            revision_id = "unknown"
+        os.environ["LANGSMITH_REVISION_ID"] = revision_id
+
     while line := await asyncio.to_thread(sys.stdin.readline):
         request = json.loads(line)
         request_id = request.get("id")

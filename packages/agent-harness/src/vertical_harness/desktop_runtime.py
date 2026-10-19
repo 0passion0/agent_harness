@@ -9,10 +9,12 @@ from importlib.metadata import entry_points
 from pathlib import Path
 from typing import Any
 
+from deepagents.middleware import SkillsMiddleware
 from dotenv import dotenv_values
 from langchain.agents.middleware import AgentMiddleware
-from langchain_core.messages import HumanMessage, ToolMessage
+from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
 from langchain_core.messages.utils import count_tokens_approximately
+from langchain_core.tools import tool
 from langgraph.types import interrupt
 
 from vertical_harness import (
@@ -27,6 +29,20 @@ from vertical_harness import (
 )
 from vertical_harness.engine.plugin_loader import PLUGIN_GROUP
 from vertical_harness.engine.policy import PluginAuthorizationGateway
+
+
+@tool
+def ask_user(question: str, options: list[str] | None = None) -> str:
+    """Ask for missing information or a choice. Users may pick an option or write their own answer.
+
+    This asks a question, never grants plugin or system permissions.
+    """
+    if not question.strip() or (options is not None and any(not option.strip() for option in options)):
+        raise ValueError("Questions and answer options must not be blank")
+    answer = interrupt({"kind": "question", "question": question, "options": options or []})
+    if not isinstance(answer, str) or not answer.strip():
+        raise ValueError("User answer must be non-empty text")
+    return answer
 
 
 class DesktopPlugin(DomainPlugin):
@@ -71,8 +87,9 @@ class DesktopPlugin(DomainPlugin):
             )
             static_content += "\n\n" + selected_plugin_instructions
         middleware: list[AgentMiddleware] = [
-            ContextLimitMiddleware(self.options["max_context_tokens"], static_content, []),
+            ContextLimitMiddleware(self.options["max_context_tokens"], static_content, [ask_user]),
             DesktopPermissionMiddleware(self.options["permission_mode"]),
+            RefreshSkillsMiddleware(),
         ]
         if self.options["permission_mode"] == "ask":
             middleware.append(DesktopApprovalMiddleware())
@@ -86,10 +103,24 @@ class DesktopPlugin(DomainPlugin):
             ],
             instructions="\n".join(
                 part
-                for part in (self.options["agent_content"], selected_plugin_instructions)
+                for part in (
+                    self.options["agent_content"], selected_plugin_instructions,
+                    "Use ask_user when essential information or a user choice is needed. "
+                    "Provide concise options when helpful; the user can also write a custom answer. "
+                    "Plugin execution approval is handled separately by the host gateway.",
+                )
                 if part
             ),
         )
+
+
+class RefreshSkillsMiddleware(AgentMiddleware):
+    """Re-discover enabled skills each turn instead of reusing checkpointed catalogs."""
+
+    state_schema = SkillsMiddleware.state_schema
+
+    def before_agent(self, state: Any, runtime: Any) -> dict[str, Any]:
+        return {"skills_metadata": None}
 
 
 class ContextLimitMiddleware(AgentMiddleware):
@@ -113,7 +144,7 @@ class ContextLimitMiddleware(AgentMiddleware):
 class DesktopPermissionMiddleware(AgentMiddleware):
     """Enforce read-only mode across every tool exposed by the composed agent."""
 
-    _READ_ONLY_TOOLS = frozenset({"read_file", "ls", "glob", "grep"})
+    _READ_ONLY_TOOLS = frozenset({"read_file", "ls", "glob", "grep", "ask_user"})
 
     def __init__(self, mode: str):
         self.mode = mode
@@ -251,8 +282,12 @@ def configured_settings(params: dict[str, Any]) -> tuple[HarnessSettings, dict[s
         "mcp_servers",
         "enabled_plugins",
     }
-    if set(options) != required:
+    if set(options) - {"authorized_plugins"} != required:
         raise ValueError("options must contain the declared desktop settings")
+    if not isinstance(options.get("authorized_plugins", []), list) or any(
+        not isinstance(plugin_id, str) for plugin_id in options.get("authorized_plugins", [])
+    ):
+        raise ValueError("authorized_plugins must be a list of plugin IDs")
     if options["permission_mode"] not in {"read_only", "ask", "full"}:
         raise ValueError("permission_mode must be read_only, ask, or full")
     if not isinstance(options["runtimes"], dict) or set(options["runtimes"]) != {"python", "node"}:
@@ -374,66 +409,78 @@ def usage_estimate(
     maximum: int = 128_000,
     options: dict[str, Any] | None = None,
     selected_skill_ids: frozenset[str] | None = None,
+    *,
+    request_messages: list[Any] | None = None,
+    tools: list[Any] | None = None,
+    reported_tokens: int | None = None,
 ) -> dict[str, Any]:
-    history_tokens = count_tokens_approximately(messages)
-    options = options or {}
-    selected_skills = [
-        skill
-        for skill in options.get("skills", [])
-        if selected_skill_ids is None or skill["id"] in selected_skill_ids
-    ]
-    system_content = options.get("agent_content", "")
-    skills_content = "\n".join(skill["content"] for skill in selected_skills)
-    known = {
-        "system_prompt": count_tokens_approximately([HumanMessage(content=system_content)]),
-        "skills": count_tokens_approximately([HumanMessage(content=skills_content)]),
-        "history": history_tokens,
+    captured = request_messages is not None
+    groups: dict[str, list[Any]] = {
+        name: [] for name in ("system_prompt", "skills", "mcp", "memory", "history")
     }
-    used = sum(known.values())
+    calls: dict[str, str] = {}
+    for message in request_messages if captured else messages:
+        if isinstance(message, SystemMessage):
+            for block in message.content_blocks:
+                content = block.get("text", "")
+                section = "system_prompt"
+                if "## Skills System" in content:
+                    section = "skills"
+                elif content.lstrip().startswith("User memory ("):
+                    section = "memory"
+                groups[section].append(SystemMessage(content=content))
+        else:
+            if isinstance(message, AIMessage):
+                for call in message.tool_calls:
+                    file_path = str(call.get("args", {}).get("file_path", ""))
+                    section = "history"
+                    if call["name"] == "read_file" and file_path.startswith("/skills/"):
+                        section = "skills"
+                    elif call["name"] == "recall_user_memory":
+                        section = "memory"
+                    calls[call["id"]] = section
+            section = calls.get(message.tool_call_id, "history") if isinstance(message, ToolMessage) else "history"
+            groups[section].append(message)
+    known = {name: count_tokens_approximately(items) if items else 0 for name, items in groups.items()}
+    known["mcp"] = count_tokens_approximately([], tools=tools) if tools else 0
+    estimated = sum(known.values())
+    # Providers report the total, not a per-section tokenizer breakdown.
+    used = reported_tokens if reported_tokens is not None else estimated
+    if reported_tokens is not None and estimated:
+        cumulative = 0
+        allocated = 0
+        for name, value in known.items():
+            cumulative += value
+            boundary = round(cumulative * used / estimated)
+            known[name], allocated = boundary - allocated, boundary
+    labels = {
+        "system_prompt": "系统提示词", "skills": "技能 (Skills)",
+        "mcp": "MCP 及工具", "memory": "记忆", "history": "历史对话",
+    }
     sections = {
         name: {
-            "name": name,
-            "tokens": value,
-            "bytes": len(content.encode("utf-8")),
-            "ratio_of_used": value / used if used else 0,
-            "ratio_of_max": value / maximum,
-            "description": description,
+            "name": labels[name],
+            "available": captured or name == "history",
+            "tokens": value if captured or name == "history" else None,
+            "bytes": None,
+            "ratio_of_used": (value / used if used else 0) if captured or name == "history" else None,
+            "ratio_of_max": value / maximum if captured or name == "history" else None,
+            "description": "按实际请求内容估算构成" if captured else "尚未采集实际模型请求",
         }
-        for name, value, content, description in (
-            (
-                "system_prompt",
-                known["system_prompt"],
-                system_content,
-                "Configured system instructions estimate",
-            ),
-            ("skills", known["skills"], skills_content, "Selected skills estimate"),
-            (
-                "history",
-                history_tokens,
-                str(messages),
-                "Provider usage metadata or content-length estimate",
-            ),
-        )
+        for name, value in known.items()
     }
-    sections.update(
-        {
-            name: {
-                "name": name,
-                "tokens": None,
-                "bytes": None,
-                "ratio_of_used": None,
-                "ratio_of_max": None,
-                "description": "Not available from the current desktop context",
-            }
-            for name in ("mcp", "memory")
-        }
-    )
+    remaining = max(0, maximum - used)
+    summary = "尚未采集实际模型请求；当前仅估算历史消息，其他区块未统计。"
+    if reported_tokens is not None:
+        summary = "最近一次主 Agent 请求及其输出；总量由模型上报，各项按内容比例估算。"
+    elif captured:
+        summary = "最近一次主 Agent 实际请求及其输出的内容估算；模型未返回用量。"
     return {
         "max_tokens": maximum,
         "used_tokens": used,
-        "remaining_tokens": maximum - used,
+        "remaining_tokens": remaining,
         "used_ratio": used / maximum,
-        "remaining_ratio": (maximum - used) / maximum,
+        "remaining_ratio": remaining / maximum,
         "sections": sections,
-        "summary_text": f"Estimated {used:,} / {maximum:,} known tokens",
+        "summary_text": summary,
     }

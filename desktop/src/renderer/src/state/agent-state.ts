@@ -149,6 +149,7 @@ export function reduceAgent(state: AgentState, action: Action): AgentState {
         phase: state.phase === 'idle' || state.phase === 'disconnected' ? 'running' : state.phase,
         runId: action.run_id,
         liveTotals: data.totals ?? state.liveTotals,
+        snapshot: data.token_usage && state.snapshot ? { ...state.snapshot, token_usage: data.token_usage } : state.snapshot,
         tools,
         stream,
         events: [...state.events.slice(-799), data],

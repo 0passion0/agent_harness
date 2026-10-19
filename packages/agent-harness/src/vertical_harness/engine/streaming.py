@@ -91,6 +91,11 @@ def _project(
             if phase == "stream" and not message.text:
                 return None
             projected = {"text": message.text, "message_id": message.id}
+            if phase == "end":
+                metadata = message.response_metadata
+                model = metadata.get("model_name") or metadata.get("model") or event.get("metadata", {}).get("ls_model_name")
+                if model:
+                    projected["model"] = model
             if phase == "end" and getattr(message, "usage_metadata", None) is not None:
                 projected["usage"] = _JSON.validate_python(message.usage_metadata)
             return (

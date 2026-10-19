@@ -147,6 +147,16 @@ export class DesktopStore {
     return ref
   }
 
+  authorizedPlugins(): string[] {
+    const grants = this.readJson<unknown>(path.join(this.accountDirectory, 'plugin-authorizations.json'), [])
+    if (!Array.isArray(grants) || grants.some(id => typeof id !== 'string')) throw new Error('Invalid plugin authorizations')
+    return grants
+  }
+
+  authorizePlugins(ids: string[]): void {
+    atomicJson(path.join(this.accountDirectory, 'plugin-authorizations.json'), [...new Set([...this.authorizedPlugins(), ...ids])])
+  }
+
   inspectConfig(scope: ConfigScope): ConfigView {
     const layers = this.configLayers(scope)
     const agentPath = layers.map(dir => path.join(dir, 'agent.md')).find(file => existsSync(file))
@@ -255,8 +265,12 @@ export class DesktopStore {
   recordUsage(projectId: string, sessionId: string, record: UsageRecord): void {
     const file = path.join(this.accountDirectory, 'usage.json')
     const records = this.readJson<Array<UsageRecord & { project_id: string; session_id: string }>>(file, [])
-    if (records.some(item => item.request_id === record.request_id)) return
-    atomicJson(file, [...records, { ...record, project_id: projectId, session_id: sessionId }])
+    const index = records.findIndex(item => item.request_id === record.request_id)
+    if (index >= 0) {
+      if (records[index].usage || !record.usage) return
+      records[index] = { ...records[index], ...record, requested_at: records[index].requested_at, cost_estimate: record.cost_estimate ?? records[index].cost_estimate }
+    } else records.push({ ...record, project_id: projectId, session_id: sessionId })
+    atomicJson(file, records)
   }
 
   usageStats(period: string, model: string, session?: { projectId: string; sessionId: string }): UsageStats {

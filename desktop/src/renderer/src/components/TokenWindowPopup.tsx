@@ -30,7 +30,7 @@ type Props = {
  */
 function formatTokens(tokens: number): string {
   if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(1).replace('.0', '')}M`
-  if (tokens >= 1000) return `${Math.round(tokens / 1000)}k`
+  if (tokens >= 1000) return `${(tokens / 1000).toFixed(1).replace('.0', '')}k`
   return String(tokens)
 }
 
@@ -97,7 +97,7 @@ export function TokenWindowPopup({ report, onOpenSettings }: Props) {
   let usedPctNum = 0
   if (usedRatio !== undefined) {
     const rawPct = usedRatio * 100
-    usedPctNum = rawPct
+    usedPctNum = Math.min(100, Math.max(0, rawPct))
     usedPctText = `${rawPct.toFixed(rawPct < 1 ? 1 : 0)}%`
   }
   const remPctText = report ? `${(report.remaining_ratio * 100).toFixed(0)}%` : '待加载'
@@ -210,7 +210,7 @@ export function TokenWindowPopup({ report, onOpenSettings }: Props) {
 
           {/* 各细项明细列表 */}
           <div className="token-sections-breakdown">
-            <div className="breakdown-header">Token 构成占比</div>
+            <div className="breakdown-header">Token 构成占比（估算）</div>
             {sectionsList.map(item => {
               const Icon = item.icon
               const usedRatioPct = item.ratio_of_used === null ? null : (item.ratio_of_used * 100).toFixed(1)
@@ -231,7 +231,7 @@ export function TokenWindowPopup({ report, onOpenSettings }: Props) {
           </div>
 
           <div className="token-bubble-counts">
-            根据当前配置与历史估算；未统计区块不计入总量，实际请求可能不同。
+            {report?.summary_text || '尚未采集实际模型请求；各项占比为估算。'}
           </div>
 
           {onOpenSettings && (

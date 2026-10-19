@@ -294,7 +294,7 @@ export function UserConfig({
             </div>
             <div className="pref-feature-line">
               <CheckCircle2 size={17}/>
-              <div><strong>能力按需启用</strong><small>插件可在对话输入框中手动选择，也可由 Agent 在任务中申请授权。</small></div>
+              <div><strong>能力按需启用</strong><small>插件首次使用需确认，授权后会记住当前账号的选择。</small></div>
             </div>
           </section>
         </>}
@@ -306,7 +306,7 @@ export function UserConfig({
             {application?.plugins.map(plugin => <div className="pref-setting-row" key={plugin.id}>
               <div>
                 <strong>{plugin.name}</strong>
-                <small>{plugin.description} · v{plugin.version} · {plugin.enabled ? '已启用' : '已停用'}</small>
+                <small>{plugin.description} · v{plugin.version} · {plugin.enabled ? '已启用' : '已停用'} · {plugin.authorized ? '已授权' : '首次使用时确认'}</small>
                 {plugin.workflows.map(workflow => <p className="pref-desc" key={workflow.name}>{workflow.name} · {workflow.description}</p>)}
               </div>
               <label className="pref-check">

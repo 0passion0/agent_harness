@@ -201,6 +201,7 @@ export type PluginDescriptor = {
  * 运行时插件状态（扩展自插件描述符）。
  */
 export type AppPlugin = PluginDescriptor & {
+  authorized?: boolean
   version: string
   workflows: Array<{ name: string; description: string }>
   /** 插件是否已在设置中开启 */
@@ -251,6 +252,8 @@ export type UserProfile = {
  * 智能体运行时向用户发起的交互式问题（如需确认或需要补充材料）。
  */
 export type Question = {
+  action_requests?: Array<{ name: string; args: Json }>
+  options?: string[]
   request_id?: string
   workflow_name?: string
   purpose?: string
@@ -292,6 +295,7 @@ export type RunRecord = {
   output?: Json
   /** 阶段性统计快照 */
   totals?: Snapshot['totals']
+  token_usage?: SessionTokenReport
   [key: string]: Json | undefined
 }
 

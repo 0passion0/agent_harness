@@ -583,14 +583,16 @@ class WorkflowContribution(StrictModel):
         assert self.runnable is not None
         target_runnable: Runnable[Any, Any] = self.runnable
         effective_durability = durability_override or self.durability
-        if enable_checkpointer and isinstance(target_runnable, CompiledStateGraph):
-            if target_runnable.checkpointer is None:
-                target_runnable = target_runnable.copy(update={"checkpointer": True})
-            if target_runnable.checkpointer is not False:
-                target_runnable = RunnableBinding(
-                    bound=target_runnable,
-                    kwargs={"durability": effective_durability},
-                )
+        # None inherits per-call checkpoints; True would reuse state across task calls.
+        if (
+            enable_checkpointer
+            and isinstance(target_runnable, CompiledStateGraph)
+            and target_runnable.checkpointer is not False
+        ):
+            target_runnable = RunnableBinding(
+                bound=target_runnable,
+                kwargs={"durability": effective_durability},
+            )
         compiled_spec: CompiledSubAgent = {
             "name": self.name,
             "description": self.description,

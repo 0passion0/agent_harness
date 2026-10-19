@@ -6,6 +6,9 @@ import asyncio
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+from langgraph.store.memory import InMemoryStore
+
 from vertical_harness import (
     HarnessSettings,
     RunContext,
@@ -138,3 +141,15 @@ def test_composite_backend_routes_memories_to_sqlite_store(tmp_path: Path) -> No
         assert read_mem.error is None
         assert read_mem.file_data is not None
         assert "Always check DOI." in read_mem.file_data["content"]
+
+
+def test_skill_assets_are_isolated_per_build_without_touching_workspace(tmp_path):
+    for store in (None, InMemoryStore()):
+        backend = compose_backend(tmp_path, store)
+        assert backend.upload_files([("/skills/demo/SKILL.md", b"skill instructions")])[0].error is None
+        assert "skill instructions" in backend.read("/skills/demo/SKILL.md").file_data["content"]
+        assert not (tmp_path / "skills").exists()
+        rebuilt = compose_backend(tmp_path, store)
+        assert rebuilt.read("/skills/demo/SKILL.md").error is not None
+    with pytest.raises(ValueError, match="reserved /skills/"):
+        compose_backend(tmp_path, InMemoryStore(), memory_route="/skills/")
