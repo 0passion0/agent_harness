@@ -159,12 +159,12 @@ export function SessionSidebar({
     {/* 关联物理文件夹按钮 */}
     <button
       className="workspace-item"
-      title={selectedProject?.path || '关联资料目录'}
+      title={selectedProject?.path ? `打开工作区：${selectedProject.path}` : '关联资料目录'}
       disabled={busy}
-      onClick={onChooseWorkspace}
+      onClick={() => selectedProject?.path ? void window.medpeer.openWorkspaceFolder(selectedProject.path) : onChooseWorkspace()}
     >
       {selectedProject?.path ? <FolderOpen size={15} /> : <Plus size={15} />}
-      <span>{selectedProject?.path?.split(/[\\/]/).at(-1) || '关联本地资料文件夹'}</span>
+      <span>{selectedProject?.path ? '打开工作区文件夹' : '关联本地资料文件夹'}</span>
     </button>
 
     <button className="project-add" disabled={busy} onClick={onChooseWorkspace}>
