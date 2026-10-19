@@ -13,6 +13,7 @@ from data_analysis.workflow import (
     DataAnalysisInputState,
     DataAnalysisInternalState,
     DataAnalysisOutputState,
+    DataAnalysisWorkflow,
     InternalState,
     build_data_analysis_workflow,
     build_data_analysis_workflow_contribution,
@@ -45,15 +46,13 @@ def _load_skill_asset() -> SkillAsset:
     :author: tongliga
     :date: 2026-10-19
     """
-    # 第一步：记录静态资源读取调试日志
     logger.debug("data_analysis_skill_resource_loading")
-    # 第二步：利用 importlib.resources 安全读取包内技能文档
+    # ponytail: 使用标准库 importlib.resources 安全读取技能文档
     skill_text = (
         files("data_analysis")
         .joinpath("skills", "scientific-data-analysis", "SKILL.md")
         .read_text(encoding="utf-8")
     )
-    # 第三步：组装标准 SkillAsset 资产结构并返回
     asset = SkillAsset(relative_path=SKILL_RELATIVE_PATH, content=skill_text)
     logger.debug(
         "data_analysis_skill_resource_loaded",
@@ -90,12 +89,10 @@ class DataAnalysisPlugin:
         :author: tongliga
         :date: 2026-10-19
         """
-        # 第一步：记录插件初始化参数调试日志
         logger.debug(
             "data_analysis_plugin_initialized",
             extra={"event_fields": {"include_tools": include_tools}},
         )
-        # 第二步：记录工作流模式与工具导出标志状态
         self._workflow_mode = workflow_mode
         self._include_tools = include_tools
 
@@ -147,6 +144,7 @@ __all__ = [
     "DataAnalysisInternalState",
     "DataAnalysisOutputState",
     "DataAnalysisPlugin",
+    "DataAnalysisWorkflow",
     "InternalState",
     "build_data_analysis_workflow",
     "build_data_analysis_workflow_contribution",

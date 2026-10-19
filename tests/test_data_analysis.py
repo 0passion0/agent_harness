@@ -21,6 +21,7 @@ from data_analysis import (
     DataAnalysisInternalState,
     DataAnalysisOutputState,
     DataAnalysisToolkit,
+    DataAnalysisWorkflow,
     InternalState,
     artifact_paths,
     build_data_analysis_workflow,
@@ -399,3 +400,125 @@ def test_data_analysis_workflow_hooks(tmp_path: Path) -> None:
         values={"file_path": str(csv_file), "task_type": "profile"},
     )
     assert retried["structured_response"]["status"] == "passed"
+
+
+def test_data_analysis_workflow_full_pipeline(tmp_path: Path) -> None:
+    """测试 DataAnalysisWorkflow 类封装、静态确定性拓扑与完整 8 阶段科研分析全流程。"""
+    csv_file = tmp_path / "clinical_cohort.csv"
+    csv_file.write_text("patient_id,biomarker_a,outcome\nP01,1.5,0\nP02,3.2,1\nP03,4.8,1\nP04,0.9,0\n", encoding="utf-8")
+
+    checkpointer = InMemorySaver()
+    workflow = DataAnalysisWorkflow(workspace_root=tmp_path, checkpointer=checkpointer)
+
+    # 验证类封装与属性完整性
+    assert workflow.workspace_root == tmp_path.resolve()
+    assert workflow.compile() is not None
+
+    # 执行完整的科研数据分析工作流任务 (默认全流程)
+    output = workflow.invoke(
+        {
+            "messages": [HumanMessage(content="请对该临床队列数据开展全流程科研分析并发布报告")],
+            "file_path": str(csv_file),
+            "research_question": "探究 biomarker_a 对结局 outcome 的预测效应",
+        },
+        config={"configurable": {"thread_id": "full-pipeline-thread-1"}},
+        durability="sync",
+    )
+
+    # 1. 验证符合三层输出状态契约
+    assert set(output.keys()) <= {"messages", "structured_response"}
+    resp = output["structured_response"]
+    assert resp["status"] == "passed"
+
+    # 2. 验证全表画像结果
+    assert "profile" in resp
+    assert resp["profile"]["row_count"] == 4
+    assert resp["profile"]["column_count"] == 3
+
+    # 3. 验证真实科学计算脚本与指标生成
+    assert (tmp_path / "scripts" / "analyze_data.py").is_file()
+    assert (tmp_path / "artifacts" / "analysis_summary.json").is_file()
+    assert "analysis" in resp
+    assert resp["analysis"]["row_count"] == 4
+
+    # 4. 验证凭据审计通过
+    assert "audit" in resp
+    assert resp["audit"]["status"] == "passed"
+
+    # 5. 验证包含 7 大段落的中文科研报告原子发布成功
+    assert "report" in resp
+    assert resp["report"]["status"] == "passed"
+    report_file = tmp_path / "artifacts" / "report.md"
+    assert report_file.is_file()
+    validation_file = tmp_path / "artifacts" / "report_validation.json"
+    assert validation_file.is_file()
+
+    report_content = report_file.read_text(encoding="utf-8")
+    for heading in ("## 研究问题", "## 数据说明", "## 分析方法", "## 结果", "## 讨论与局限", "## 结论", "## 复现信息"):
+        assert heading in report_content
+
+
+def test_data_analysis_workflow_create_agent_in_node(tmp_path: Path) -> None:
+    """测试在工作流节点内利用 create_agent 构建和调用专用子任务智能体。"""
+    from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
+    from langchain_core.messages import AIMessage
+
+    fake_report = (
+        "# 智能体生成报告\n\n"
+        "## 研究问题\n智能体澄清的研究问题。\n\n"
+        "## 数据说明\n包含 100 例患者数据。\n\n"
+        "## 分析方法\n多因素分析 [脚本](../scripts/analyze_data.py)。\n\n"
+        "## 结果\n显著相关 [结果](analysis_summary.json)。\n\n"
+        "## 讨论与局限\n单中心回顾性队列。\n\n"
+        "## 结论\n结论成立。\n\n"
+        "## 复现信息\nPython 3.12 虚拟环境。\n"
+    )
+
+    fake_model = GenericFakeChatModel(
+        messages=iter([
+            AIMessage(content="已完成研究设计澄清"),
+            AIMessage(content="分析执行摘要已生成"),
+            AIMessage(content="凭证审计通过，无数据泄漏"),
+            AIMessage(content=fake_report),
+        ])
+    )
+
+    checkpointer = InMemorySaver()
+    workflow = DataAnalysisWorkflow(workspace_root=tmp_path, model=fake_model, checkpointer=checkpointer)
+
+    # 验证 create_node_agent 方法可用
+    draft_agent = workflow.create_node_agent("draft_report")
+    assert draft_agent is not None
+
+    csv_file = tmp_path / "study_data.csv"
+    csv_file.write_text("a,b\n1,2\n3,4\n", encoding="utf-8")
+
+    output = workflow.invoke(
+        {
+            "messages": [HumanMessage(content="执行智能体辅助分析")],
+            "file_path": str(csv_file),
+        },
+        config={"configurable": {"thread_id": "create-agent-node-test"}},
+        durability="sync",
+    )
+    assert output["structured_response"]["status"] == "passed"
+    assert (tmp_path / "artifacts" / "report.md").is_file()
+
+
+def test_native_guides_loading() -> None:
+    """测试原生科研分析指南读取工具与映射函数。"""
+    from data_analysis import GUIDE_DESCRIPTIONS, read_analysis_guide
+
+    assert len(GUIDE_DESCRIPTIONS) == 7
+    assert "research-analysis" in GUIDE_DESCRIPTIONS
+    assert "tabular-data" in GUIDE_DESCRIPTIONS
+
+    # 验证读取原生指南正文
+    content = read_analysis_guide("research-analysis")
+    assert "Research analysis" in content or "research question" in content.lower()
+    assert len(content) > 100
+
+    # 验证 get_node_prompt 支持按指南名称查询
+    guide_prompt = get_node_prompt("tabular-data")
+    assert len(guide_prompt) > 50
+
