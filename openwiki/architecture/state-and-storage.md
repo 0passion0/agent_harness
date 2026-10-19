@@ -1,17 +1,17 @@
 ---
 type: concept
 title: 状态隔离与分层存储
-description: 剖析短时会话 Checkpointer、多租户命名空间字符清洗、SqliteStore 持久化生命周期以及 CompositeBackend 虚拟文件系统路由机制。
+description: 剖析短时会话 Checkpointer、多租户命名空间 SHA-256 身份隔离、SqliteStore 持久化生命周期以及 CompositeBackend 虚拟文件系统路由机制。
 tags: [storage, sqlite, state-management, multi-tenancy, backends]
 sources:
   - id: openwiki-source-92998700fd6d64010a4cecca
     resource: repo://packages/agent-harness/src/vertical_harness/storage/backends.py
   - id: openwiki-source-03421093e23299854e4dcf40
     resource: repo://packages/agent-harness/src/vertical_harness/storage/namespace.py
-generated: { by: "antigravity", at: "2026-10-18T10:47:09.347Z" }
 verified:
   - by: openwiki/0.7.2
-    at: 2026-10-18T12:40:07.975Z
+    at: 2026-10-19T02:30:03.285Z
+generated: { by: "antigravity", at: "2026-10-19T02:30:03.285Z" }
 ---
 
 # 状态隔离与分层存储
@@ -25,7 +25,7 @@ verified:
 1. **短期会话状态 (Thread State / Checkpointer)**：
    - 包含当前会话消息列表、Agent 执行计划、中间状态；
    - 关联具体的 `thread_id`；
-   - 本地开发与 CLI 默认使用 SQLite Checkpointer（`SqliteSaver` / `AsyncSqliteSaver`，路径 `<workspace_root>/.checkpoints/checkpoints.sqlite`），配合 `durability="sync"` 确保每个节点执行后同步落盘，支持跨进程恢复与 Time Travel 回放；生产部署可注入分布式持久化 Checkpointer（如 Postgres）。
+   - 本地开发与 CLI 默认使用 SQLite Checkpointer（`SqliteSaver` / `AsyncSqliteSaver`，路径 `<runtime_data_dir>/checkpoints.sqlite`），配合 `durability="sync"` 确保每个节点执行后同步落盘，支持跨进程恢复与 Time Travel 回放；生产部署可注入分布式持久化 Checkpointer（如 Postgres）。
 2. **长期记忆与偏好 (Long-term Store)**：
    - 存储跨线程的项目偏好、经过核准的专业记忆与业务策略；
    - 依托 LangGraph 原生 `BaseStore`（默认提供 `SqliteStore` 与 `AsyncSqliteStore`）；
@@ -34,23 +34,33 @@ verified:
    - 用户手稿、原始输入文件、分析草稿与不可变证据；
    - 存放在由 `FilesystemBackend` 托管的物理工作区磁盘目录中（默认 `./.agent-workspace`）。
 
-## 2. 多租户命名空间清洗与隔离 (`storage/namespace.py`)
+## 2. 多租户命名空间确定性哈希隔离 (`storage/namespace.py`)
 
-LangGraph 原生 `SqliteStore` 在底层使用点号 `.` 作为命名空间分段的拼接分隔符（例如 `ns1.ns2.ns3`）。如果租户 ID 或用户 ID 中包含点号（如 `lab.a`、`user.123`），将导致底层命名空间分段错误解析。
-
-在 [packages/agent-harness/src/vertical_harness/storage/namespace.py](../../packages/agent-harness/src/vertical_harness/storage/namespace.py) 中，系统设计了清洗逻辑：
+LangGraph 原生 `SqliteStore` 在底层使用点号 `.` 作为命名空间分段的拼接分隔符（例如 `ns1.ns2.ns3`）。为了彻底避免特殊字符破坏底层分隔符或在清洗过程中产生哈希碰撞，系统采用确定性 SHA-256 身份隔离机制：
 
 ```python
-_UNSAFE_NS_CHARS = re.compile(r"[^A-Za-z0-9\-_@+:~]")
+def _identity_segment(value: str | None) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError("Memory namespaces require nonempty trusted tenant/user/bucket IDs")
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
-def _sanitize_segment(value: str | None, fallback: str = "default") -> str:
-    if not value:
-        return fallback
-    cleaned = _UNSAFE_NS_CHARS.sub("_", value.strip())
-    return cleaned or fallback
+def tenant_memory_namespace(
+    runtime: Runtime[RunContext] | None = None,
+    *,
+    bucket: str = "memories",
+) -> tuple[str, ...]:
+    context = getattr(runtime, "context", None) if runtime is not None else None
+    return (
+        "file_memory_v2",
+        _identity_segment(getattr(context, "tenant_id", None)),
+        _identity_segment(getattr(context, "user_id", None)),
+        _identity_segment(bucket),
+    )
 ```
 
-通过 `tenant_memory_namespace` 函数，系统从 LangGraph 的 `Runtime[RunContext]` 中提取上下文，并输出清洗后的三元组 `(clean_tenant, clean_user, bucket)`，彻底隔绝越权访问与键值污染风险。
+- **Fail-Fast 强校验**：拒绝空值或全空白字符，杜绝未经授权共享或静默回退到全局默认租户。
+- **SHA-256 摘要隔离**：通过 `_identity_segment` 计算 UTF-8 编码的 64 位十六进制 SHA-256 哈希元组，避免命名空间注入攻击与字符污染。
+- **显式迁移工具 (`copy_memory_namespace`)**：提供安全的只读扫描与幂等写入迁移工具，在核准所有权后安全将历史条目复制至新命名空间，杜绝覆盖风险。
 
 ## 3. SqliteStore 生命周期管理 (`storage/backends.py`)
 
@@ -94,3 +104,4 @@ flowchart LR
 
 - [Harness 系统架构与核心组装](./overview.md)：查看 `build_agent` 如何调用 `compose_backend`。
 - [环境变量配置与运维部署](../operations/configuration.md)：查看存储后端配置与数据库路径推断规则。
+- [MedPeer 桌面前端工作台](../integrations/desktop-workbench.md)：了解桌面工作台的独立本地数据持久化与账户目录结构。

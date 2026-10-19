@@ -1,0 +1,41 @@
+/* The final, authoritative layout rules are kept separate from the visual theme. */
+.product-v3 .workspace-layout {position:relative;min-width:0;min-height:0}
+.product-v3 .workspace-layout > * {min-width:0;min-height:0}
+.product-v3 .task-main {overflow:hidden;display:flex;flex-direction:column}
+.product-v3 .task-header-left,.product-v3 .task-header-right {min-width:0}
+.product-v3 .task-header-left {flex:1;overflow:hidden}
+.product-v3 .task-header-left .header-path,.product-v3 .task-header-left strong {overflow:hidden;white-space:nowrap;text-overflow:ellipsis;min-width:0}
+.product-v3 .task-header-left strong {max-width:min(38vw,440px)}
+.product-v3 .task-header-right {flex:none}
+.product-v3 .task-composer,.product-v3 .task-bottom,.product-v3 .composer-bottom-row {min-width:0;max-width:100%}
+.product-v3 .composer-context {min-width:0;overflow:visible}
+.product-v3 .composer-model {min-width:0;max-width:min(28vw,220px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.product-v3 .task-detail {min-width:0;min-height:0;overflow:hidden}
+.product-v3 .detail-body {min-width:0;overflow-x:hidden;overflow-y:auto}
+.product-v3 .detail-section,.product-v3 .file-entry {min-width:0;overflow-wrap:anywhere}
+.product-v3 .settings-content-scroll {overscroll-behavior:contain}
+.product-v3 .settings-content-inner {width:100%;min-width:0}
+.product-v3 .pref-form,.product-v3 .pref-form > label {min-width:0}
+@media(max-width:1200px){
+  .product-v3 .workspace-layout.has-sidebar.has-detail {grid-template-columns:52px 240px minmax(0,1fr)}
+  .product-v3 .workspace-layout.has-detail {grid-template-columns:52px minmax(0,1fr)}
+  .product-v3 .workspace-layout.has-sidebar {grid-template-columns:52px 240px minmax(0,1fr)}
+  .product-v3 .workspace-layout .task-detail {position:absolute;right:0;top:0;bottom:0;width:min(var(--detail-width, 340px),calc(100vw - 52px));z-index:15;box-shadow:var(--float-shadow);background:var(--panel)}
+}
+@media(max-width:860px){
+  .product-v3 .workspace-layout.has-sidebar.has-detail,.product-v3 .workspace-layout.has-sidebar {grid-template-columns:52px minmax(0,1fr)}
+  .product-v3 .workspace-layout .sidebar {grid-column:auto;position:absolute;top:0;bottom:0;left:52px;width:min(278px,calc(100vw - 52px));z-index:17;box-shadow:var(--float-shadow)}
+  .product-v3 .workspace-layout .task-main {grid-column:2}
+  .product-v3 .task-header {padding:0 14px}
+  .product-v3 .task-header-left strong {max-width:28vw}
+  .product-v3 .task-bottom {padding-left:14px;padding-right:14px}
+}
+@media(max-width:720px){
+  .product-v3 .workspace-layout.has-sidebar.has-detail,.product-v3 .workspace-layout.has-sidebar,.product-v3 .workspace-layout.has-detail,.product-v3 .workspace-layout,.product-v3 .workspace-layout.view-settings {grid-template-columns:52px minmax(0,1fr)}
+  .product-v3 .task-header-left strong {max-width:25vw}
+  .product-v3 .codex-settings {min-height:0}
+  .product-v3 .settings-navigation {min-width:0}
+  .product-v3 .pref-setting-row {align-items:flex-start;flex-wrap:wrap}
+  .product-v3 .pref-toolbar label {flex-wrap:wrap}
+  .product-v3 .task-composer textarea {min-height:70px}
+}

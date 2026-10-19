@@ -14,10 +14,10 @@ sources:
     resource: repo://packages/research-citation/src/research_citation/models/audit.py
   - id: openwiki-source-721e3ae67db867a56eacdc71
     resource: repo://packages/research-citation/src/research_citation/plugin.py
-generated: { by: "antigravity", at: "2026-10-18T10:47:09.347Z" }
+generated: { by: "antigravity", at: "2026-10-19T02:30:03.285Z" }
 verified:
   - by: openwiki/0.7.2
-    at: 2026-10-18T12:40:07.975Z
+    at: 2026-10-19T02:30:03.285Z
 ---
 
 # 学术引用审计插件实现

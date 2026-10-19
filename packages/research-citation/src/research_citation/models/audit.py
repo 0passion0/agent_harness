@@ -61,8 +61,12 @@ class AuditFinding(BaseModel):
         """防止在缺乏可追溯证据源的情况下生成已核实的审计结论。
 
         :return: 验证通过后的当前 AuditFinding 实例。
+        :rtype: Self
         :raises ValueError: 当结论状态为 'verified'（已核实）却未提供任何证据时抛出。
+        :author: tongliga
+        :date: 2026-10-19
         """
+        # 第一步：记录核验状态与关联证据数量诊断日志
         logger.debug(
             "require_evidence_for_verification_checked",
             extra={
@@ -72,6 +76,7 @@ class AuditFinding(BaseModel):
                 }
             },
         )
+        # 第二步：断言强约束——已核实结论必须至少提供一条非空证据引用
         if self.status == FindingStatus.VERIFIED and not self.evidence:
             raise ValueError("Verified findings require at least one evidence reference")
         return self

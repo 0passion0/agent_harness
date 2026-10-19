@@ -1,0 +1,11 @@
+{
+  "services": {
+    "sso_user_origin": "http://user.xishanyigu.com",
+    "sso_project_origin": "http://www.xishanyigu.com",
+    "sso_login_path": "/user/index/login/",
+    "sso_callback_path": "/",
+    "sso_callback_project_id": "fp202206142235541387769029",
+    "sso_pt_cookie_path": "/pt/",
+    "sso_user_information_path": "/user/user_information/getUserInformation"
+  }
+}

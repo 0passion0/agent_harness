@@ -51,8 +51,13 @@ class CheckpointSummary(StrictModel):
         """从 LangGraph 原生 `StateSnapshot` 提取脱敏的检查点摘要。
 
         :param snapshot: LangGraph 状态快照对象。
+        :type snapshot: langgraph.types.StateSnapshot
         :return: 结构化的 CheckpointSummary 实例。
+        :rtype: CheckpointSummary
+        :author: tongliga
+        :date: 2026-10-19
         """
+        # 第一步：提取 configurable 配置与快照元数据
         configurable = snapshot.config.get("configurable", {}) if snapshot.config else {}
         parent_cfg = (
             snapshot.parent_config.get("configurable", {}) if snapshot.parent_config else {}
@@ -63,6 +68,8 @@ class CheckpointSummary(StrictModel):
         msg_count = len(messages) if isinstance(messages, list) else 0
         raw_step = metadata.get("step")
         raw_source = metadata.get("source")
+
+        # 第二步：实例化 CheckpointSummary 脱敏模型
         return cls(
             thread_id=str(configurable.get("thread_id", "")),
             checkpoint_id=str(configurable.get("checkpoint_id", "")),
@@ -90,10 +97,17 @@ def make_checkpoint_config(
     """构造用于状态查询、Time Travel 回放或 Fork 的 `RunnableConfig`。
 
     :param thread_id: 目标线程标识符。
+    :type thread_id: str
     :param checkpoint_id: 可选的历史检查点标识符。
+    :type checkpoint_id: str | None
     :param checkpoint_ns: 可选的子图检查点命名空间，默认为主图 ''。
+    :type checkpoint_ns: str
     :param callbacks: 可选的回调处理器序列。
+    :type callbacks: collections.abc.Sequence[typing.Any] | None
     :return: 标准 LangChain RunnableConfig 字典。
+    :rtype: langchain_core.runnables.RunnableConfig
+    :author: tongliga
+    :date: 2026-10-19
     """
     logger.debug(
         "make_checkpoint_config_invoked",
@@ -104,12 +118,15 @@ def make_checkpoint_config(
             }
         },
     )
+    # 第一步：组装包含线程与命名空间的 configurable 字典
     configurable: dict[str, Any] = {
         "thread_id": thread_id,
         "checkpoint_ns": checkpoint_ns,
     }
     if checkpoint_id is not None:
         configurable["checkpoint_id"] = checkpoint_id
+
+    # 第二步：构造 RunnableConfig 字典并附加可选回调
     config: RunnableConfig = {"configurable": configurable}
     if callbacks is not None:
         config["callbacks"] = list(callbacks)
@@ -126,13 +143,23 @@ def get_checkpoint_history(
     """查询指定线程的 Time Travel 检查点历史列表（按时间倒序，最新在前）。
 
     :param graph: 已绑定 Checkpointer 的编译状态图。
+    :type graph: langgraph.graph.state.CompiledStateGraph[typing.Any, typing.Any, typing.Any, typing.Any]
     :param thread_id: 线程标识符。
+    :type thread_id: str
     :param checkpoint_ns: 子图检查点命名空间，默认 ''。
+    :type checkpoint_ns: str
     :param limit: 可选返回的最大检查点条数。
+    :type limit: int | None
     :return: CheckpointSummary 列表。
+    :rtype: list[CheckpointSummary]
+    :author: tongliga
+    :date: 2026-10-19
     """
+    # 第一步：构造查询配置并同步拉取状态历史
     config = make_checkpoint_config(thread_id, checkpoint_ns=checkpoint_ns)
     snapshots = list(graph.get_state_history(config, limit=limit))
+
+    # 第二步：将状态快照映射为摘要模型列表
     summaries = [CheckpointSummary.from_snapshot(snap) for snap in snapshots]
     logger.debug(
         "time_travel_history_loaded",
@@ -151,11 +178,19 @@ async def aget_checkpoint_history(
     """异步查询指定线程的 Time Travel 检查点历史列表（按时间倒序，最新在前）。
 
     :param graph: 已绑定 Checkpointer 的编译状态图。
+    :type graph: langgraph.graph.state.CompiledStateGraph[typing.Any, typing.Any, typing.Any, typing.Any]
     :param thread_id: 线程标识符。
+    :type thread_id: str
     :param checkpoint_ns: 子图检查点命名空间，默认 ''。
+    :type checkpoint_ns: str
     :param limit: 可选返回的最大检查点条数。
+    :type limit: int | None
     :return: CheckpointSummary 列表。
+    :rtype: list[CheckpointSummary]
+    :author: tongliga
+    :date: 2026-10-19
     """
+    # 第一步：构造查询配置并异步拉取状态历史
     config = make_checkpoint_config(thread_id, checkpoint_ns=checkpoint_ns)
     summaries: list[CheckpointSummary] = []
     async for snap in graph.aget_state_history(config, limit=limit):
@@ -178,12 +213,20 @@ def get_checkpoint_snapshot(
     """获取指定线程及可选历史 `checkpoint_id` 的完整状态快照。
 
     :param graph: 已绑定 Checkpointer 的编译状态图。
+    :type graph: langgraph.graph.state.CompiledStateGraph[typing.Any, typing.Any, typing.Any, typing.Any]
     :param thread_id: 线程标识符。
+    :type thread_id: str
     :param checkpoint_id: 可选的历史检查点 ID；为 None 时获取最新检查点。
+    :type checkpoint_id: str | None
     :param checkpoint_ns: 检查点命名空间。
+    :type checkpoint_ns: str
     :param subgraphs: 是否同时拉取嵌套子图状态。
+    :type subgraphs: bool
     :return: 匹配的 StateSnapshot。
+    :rtype: langgraph.types.StateSnapshot
     :raises ValueError: 当指定的线程或历史检查点不存在时抛出。
+    :author: tongliga
+    :date: 2026-10-19
     """
     logger.debug(
         "get_checkpoint_snapshot_started",
@@ -194,8 +237,11 @@ def get_checkpoint_snapshot(
             }
         },
     )
+    # 第一步：构建状态查询配置并获取快照
     config = make_checkpoint_config(thread_id, checkpoint_id, checkpoint_ns=checkpoint_ns)
     snapshot = graph.get_state(config, subgraphs=subgraphs)
+
+    # 第二步：校验检查点存在性，不存在则 Fail-Fast 报错
     if not snapshot.values and not snapshot.next and snapshot.created_at is None:
         raise ValueError(
             f"Checkpoint not found for thread_id={thread_id!r}, checkpoint_id={checkpoint_id!r}"
@@ -214,12 +260,20 @@ async def aget_checkpoint_snapshot(
     """异步获取指定线程及可选历史 `checkpoint_id` 的完整状态快照。
 
     :param graph: 已绑定 Checkpointer 的编译状态图。
+    :type graph: langgraph.graph.state.CompiledStateGraph[typing.Any, typing.Any, typing.Any, typing.Any]
     :param thread_id: 线程标识符。
+    :type thread_id: str
     :param checkpoint_id: 可选的历史检查点 ID；为 None 时获取最新检查点。
+    :type checkpoint_id: str | None
     :param checkpoint_ns: 检查点命名空间。
+    :type checkpoint_ns: str
     :param subgraphs: 是否同时拉取嵌套子图状态。
+    :type subgraphs: bool
     :return: 匹配的 StateSnapshot。
+    :rtype: langgraph.types.StateSnapshot
     :raises ValueError: 当指定的线程或历史检查点不存在时抛出。
+    :author: tongliga
+    :date: 2026-10-19
     """
     logger.debug(
         "aget_checkpoint_snapshot_started",
@@ -230,8 +284,11 @@ async def aget_checkpoint_snapshot(
             }
         },
     )
+    # 第一步：构建状态查询配置并异步获取快照
     config = make_checkpoint_config(thread_id, checkpoint_id, checkpoint_ns=checkpoint_ns)
     snapshot = await graph.aget_state(config, subgraphs=subgraphs)
+
+    # 第二步：校验检查点存在性，不存在则 Fail-Fast 报错
     if not snapshot.values and not snapshot.next and snapshot.created_at is None:
         raise ValueError(
             f"Checkpoint not found for thread_id={thread_id!r}, checkpoint_id={checkpoint_id!r}"
@@ -259,19 +316,32 @@ def fork_checkpoint(
        完整克隆至新线程（不污染原线程历史），并可选应用 `values` 状态修改。
 
     :param graph: 已绑定 Checkpointer 的编译状态图。
+    :type graph: langgraph.graph.state.CompiledStateGraph[typing.Any, typing.Any, typing.Any, typing.Any]
     :param thread_id: 源线程标识符。
+    :type thread_id: str
     :param checkpoint_id: 要回溯的目标历史检查点 ID；为 None 时默认取源线程最新检查点。
+    :type checkpoint_id: str | None
     :param values: 可选在分叉点注入或覆盖的状态增量字典。
+    :type values: dict[str, typing.Any] | None
     :param as_node: 可选指定 `update_state` 伪装的来源节点名称。
+    :type as_node: str | None
     :param fork_thread_id: 可选的新分叉线程标识符；指定时克隆检查点到新线程。
+    :type fork_thread_id: str | None
     :param new_thread_id: `fork_thread_id` 的同义参数别名。
+    :type new_thread_id: str | None
     :param checkpoint_ns: 检查点命名空间，默认 ''。
+    :type checkpoint_ns: str
     :return: 指向新生成分叉检查点的 `RunnableConfig`。
+    :rtype: langchain_core.runnables.RunnableConfig
     :raises ValueError: 当源检查点不存在或图未配置 Checkpointer 时抛出。
+    :author: tongliga
+    :date: 2026-10-19
     """
+    # 第一步：前置校验图是否包含持久化检查点写入器
     if not isinstance(graph.checkpointer, object) or graph.checkpointer in (None, False):
         raise ValueError("Graph must be compiled with a checkpointer to support Time Travel Fork")
 
+    # 第二步：拉取源检查点快照与元数据配置
     target_fork_thread = fork_thread_id or new_thread_id
     snapshot = get_checkpoint_snapshot(graph, thread_id, checkpoint_id, checkpoint_ns=checkpoint_ns)
     source_cfg = snapshot.config
@@ -280,6 +350,7 @@ def fork_checkpoint(
         as_node if as_node is not None else ("__start__" if not snapshot.next else None)
     )
 
+    # 第三步：按跨线程分叉与同线程分叉分别执行深拷贝克隆或状态更新
     if target_fork_thread is not None and target_fork_thread != thread_id:
         tup = graph.checkpointer.get_tuple(source_cfg)
         if tup is None:
@@ -319,6 +390,7 @@ def fork_checkpoint(
     else:
         forked_cfg = graph.update_state(source_cfg, values, as_node=effective_as_node)
 
+    # 第四步：记录分叉日志并返回指向新检查点的 RunnableConfig
     fork_cid = forked_cfg.get("configurable", {}).get("checkpoint_id", "")
     logger.info(
         "time_travel_fork_created",
@@ -344,10 +416,35 @@ async def afork_checkpoint(
     new_thread_id: str | None = None,
     checkpoint_ns: str = "",
 ) -> RunnableConfig:
-    """异步从指定历史检查点执行 Time Travel Fork（同线程状态分叉或跨线程克隆分叉）。"""
+    """异步从指定历史检查点执行 Time Travel Fork（同线程状态分叉或跨线程克隆分叉）。
+
+    :param graph: 已绑定 Checkpointer 的编译状态图。
+    :type graph: langgraph.graph.state.CompiledStateGraph[typing.Any, typing.Any, typing.Any, typing.Any]
+    :param thread_id: 源线程标识符。
+    :type thread_id: str
+    :param checkpoint_id: 要回溯的目标历史检查点 ID；为 None 时默认取源线程最新检查点。
+    :type checkpoint_id: str | None
+    :param values: 可选在分叉点注入或覆盖的状态增量字典。
+    :type values: dict[str, typing.Any] | None
+    :param as_node: 可选指定 `update_state` 伪装的来源节点名称。
+    :type as_node: str | None
+    :param fork_thread_id: 可选的新分叉线程标识符；指定时克隆检查点到新线程。
+    :type fork_thread_id: str | None
+    :param new_thread_id: `fork_thread_id` 的同义参数别名。
+    :type new_thread_id: str | None
+    :param checkpoint_ns: 检查点命名空间，默认 ''。
+    :type checkpoint_ns: str
+    :return: 指向新生成分叉检查点的 `RunnableConfig`。
+    :rtype: langchain_core.runnables.RunnableConfig
+    :raises ValueError: 当源检查点不存在或图未配置 Checkpointer 时抛出。
+    :author: tongliga
+    :date: 2026-10-19
+    """
+    # 第一步：前置校验图是否包含持久化检查点写入器
     if not isinstance(graph.checkpointer, object) or graph.checkpointer in (None, False):
         raise ValueError("Graph must be compiled with a checkpointer to support Time Travel Fork")
 
+    # 第二步：拉取源检查点快照与元数据配置
     target_fork_thread = fork_thread_id or new_thread_id
     snapshot = await aget_checkpoint_snapshot(
         graph, thread_id, checkpoint_id, checkpoint_ns=checkpoint_ns
@@ -358,6 +455,7 @@ async def afork_checkpoint(
         as_node if as_node is not None else ("__start__" if not snapshot.next else None)
     )
 
+    # 第三步：异步跨线程克隆分叉或同线程更新分叉
     if target_fork_thread is not None and target_fork_thread != thread_id:
         tup = await graph.checkpointer.aget_tuple(source_cfg)
         if tup is None:
@@ -397,6 +495,7 @@ async def afork_checkpoint(
     else:
         forked_cfg = await graph.aupdate_state(source_cfg, values, as_node=effective_as_node)
 
+    # 第四步：记录分叉日志并返回指向新检查点的 RunnableConfig
     fork_cid = forked_cfg.get("configurable", {}).get("checkpoint_id", "")
     logger.info(
         "time_travel_fork_created",
@@ -419,10 +518,16 @@ def _resolve_invoke_args(
     """解析 `time_travel_invoke` 的位置与关键字参数，同时支持 (graph, thread_id) 与 (graph, inputs, *, thread_id=...)。
 
     :param thread_or_input: 位置参数传递的 thread_id 字符串或输入字典/命令。
+    :type thread_or_input: str | dict[str, typing.Any] | langgraph.types.Command[typing.Any] | None
     :param thread_id: 显式关键字传递的线程 ID。
+    :type thread_id: str | None
     :param input_state: 显式关键字传递的状态输入字典或命令。
+    :type input_state: dict[str, typing.Any] | langgraph.types.Command[typing.Any] | None
     :return: 二元组 (resolved_thread_id, resolved_input)。
+    :rtype: tuple[str, dict[str, typing.Any] | langgraph.types.Command[typing.Any] | None]
     :raises ValueError: 当未能提取到有效的 thread_id 时抛出。
+    :author: tongliga
+    :date: 2026-10-19
     """
     logger.debug(
         "resolve_invoke_args_started",
@@ -434,6 +539,7 @@ def _resolve_invoke_args(
             }
         },
     )
+    # 第一步：根据位置参数类型和显式关键字参数解析线程标识与输入载荷
     if isinstance(thread_or_input, str) and thread_id is None:
         return thread_or_input, input_state
     if thread_id is not None:
@@ -467,22 +573,41 @@ def time_travel_invoke(
       或注入新指令（`prompt` / `input_state`）分叉执行。
 
     :param graph: 编译后的状态图。
+    :type graph: langgraph.graph.state.CompiledStateGraph[typing.Any, typing.Any, typing.Any, typing.Any]
     :param thread_or_input: 目标线程标识符或输入字典。
+    :type thread_or_input: str | dict[str, typing.Any] | langgraph.types.Command[typing.Any] | None
     :param thread_id: 可选关键字线程标识符。
+    :type thread_id: str | None
     :param checkpoint_id: 可选的历史检查点 ID。
+    :type checkpoint_id: str | None
     :param prompt: 可选的用户指令提示词。
+    :type prompt: str | None
     :param input_state: 可选的输入字典或 Command。
+    :type input_state: dict[str, typing.Any] | langgraph.types.Command[typing.Any] | None
     :param values: 可选的分叉状态增量字典。
+    :type values: dict[str, typing.Any] | None
     :param as_node: 可选的更新来源节点名称。
+    :type as_node: str | None
     :param fork_thread_id: 可选的新分叉线程 ID。
+    :type fork_thread_id: str | None
     :param new_thread_id: 可选的新分叉线程 ID 别名。
+    :type new_thread_id: str | None
     :param checkpoint_ns: 检查点命名空间。
+    :type checkpoint_ns: str
     :param context: 可选的上下文对象。
+    :type context: typing.Any
     :param callbacks: 可选的回调处理器列表。
+    :type callbacks: collections.abc.Sequence[typing.Any] | None
     :param run_id: 可选的运行 ID。
+    :type run_id: typing.Any
     :param durability: 持久化级别，默认为 "sync"。
+    :type durability: langgraph.types.Durability
     :return: 状态图执行输出。
+    :rtype: dict[str, typing.Any] | typing.Any
+    :author: tongliga
+    :date: 2026-10-19
     """
+    # 第一步：解析目标线程标识与输入载荷
     resolved_thread_id, resolved_input = _resolve_invoke_args(
         thread_or_input, thread_id, input_state
     )
@@ -490,6 +615,8 @@ def time_travel_invoke(
     should_fork = values is not None or (
         target_fork_thread is not None and target_fork_thread != resolved_thread_id
     )
+
+    # 第二步：根据分叉条件或历史检查点构建运行配置
     if should_fork:
         run_config = fork_checkpoint(
             graph,
@@ -510,11 +637,13 @@ def time_travel_invoke(
             resolved_thread_id, checkpoint_id=None, checkpoint_ns=checkpoint_ns
         )
 
+    # 第三步：注入回调处理器与 run_id
     if callbacks is not None:
         run_config = {**run_config, "callbacks": list(callbacks)}
     if run_id is not None:
         run_config = {**run_config, "run_id": run_id}
 
+    # 第四步：组装最终的执行 payload
     payload: dict[str, Any] | Command[Any] | None
     if resolved_input is not None:
         payload = resolved_input
@@ -533,6 +662,7 @@ def time_travel_invoke(
             }
         },
     )
+    # 第五步：调用状态图执行并返回结果
     return graph.invoke(
         payload,
         config=run_config,
@@ -562,22 +692,41 @@ async def atime_travel_invoke(
     """结合 `durability="sync"` 异步执行智能体或工作流的 Time Travel 回放与 Time Travel Fork 重跑。
 
     :param graph: 编译后的状态图。
+    :type graph: langgraph.graph.state.CompiledStateGraph[typing.Any, typing.Any, typing.Any, typing.Any]
     :param thread_or_input: 目标线程标识符或输入字典。
+    :type thread_or_input: str | dict[str, typing.Any] | langgraph.types.Command[typing.Any] | None
     :param thread_id: 可选关键字线程标识符。
+    :type thread_id: str | None
     :param checkpoint_id: 可选的历史检查点 ID。
+    :type checkpoint_id: str | None
     :param prompt: 可选的用户指令提示词。
+    :type prompt: str | None
     :param input_state: 可选的输入字典或 Command。
+    :type input_state: dict[str, typing.Any] | langgraph.types.Command[typing.Any] | None
     :param values: 可选的分叉状态增量字典。
+    :type values: dict[str, typing.Any] | None
     :param as_node: 可选的更新来源节点名称。
+    :type as_node: str | None
     :param fork_thread_id: 可选的新分叉线程 ID。
+    :type fork_thread_id: str | None
     :param new_thread_id: 可选的新分叉线程 ID 别名。
+    :type new_thread_id: str | None
     :param checkpoint_ns: 检查点命名空间。
+    :type checkpoint_ns: str
     :param context: 可选的上下文对象。
+    :type context: typing.Any
     :param callbacks: 可选的回调处理器列表。
+    :type callbacks: collections.abc.Sequence[typing.Any] | None
     :param run_id: 可选的运行 ID。
+    :type run_id: typing.Any
     :param durability: 持久化级别，默认为 "sync"。
+    :type durability: langgraph.types.Durability
     :return: 状态图执行输出。
+    :rtype: dict[str, typing.Any] | typing.Any
+    :author: tongliga
+    :date: 2026-10-19
     """
+    # 第一步：解析目标线程标识与输入载荷
     resolved_thread_id, resolved_input = _resolve_invoke_args(
         thread_or_input, thread_id, input_state
     )
@@ -585,6 +734,8 @@ async def atime_travel_invoke(
     should_fork = values is not None or (
         target_fork_thread is not None and target_fork_thread != resolved_thread_id
     )
+
+    # 第二步：根据分叉条件或历史检查点异步构建运行配置
     if should_fork:
         run_config = await afork_checkpoint(
             graph,
@@ -605,11 +756,13 @@ async def atime_travel_invoke(
             resolved_thread_id, checkpoint_id=None, checkpoint_ns=checkpoint_ns
         )
 
+    # 第三步：注入回调处理器与 run_id
     if callbacks is not None:
         run_config = {**run_config, "callbacks": list(callbacks)}
     if run_id is not None:
         run_config = {**run_config, "run_id": run_id}
 
+    # 第四步：组装最终的执行 payload
     payload: dict[str, Any] | Command[Any] | None
     if resolved_input is not None:
         payload = resolved_input
@@ -628,6 +781,7 @@ async def atime_travel_invoke(
             }
         },
     )
+    # 第五步：异步调用状态图执行并返回结果
     return await graph.ainvoke(
         payload,
         config=run_config,

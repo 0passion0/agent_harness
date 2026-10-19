@@ -108,6 +108,9 @@ class HarnessSettings(BaseSettings):
         """解析并返回展开用户目录后的工作区绝对物理路径。
 
         :return: 工作区根目录的绝对 Path 对象。
+        :rtype: pathlib.Path
+        :author: tongliga
+        :date: 2026-10-19
         """
         return self.workspace_root.expanduser().resolve()
 
@@ -116,12 +119,18 @@ class HarnessSettings(BaseSettings):
         """解析 SQLite 数据库在磁盘上的目标路径或内存数据库标识符。
 
         :return: 解析后的 SQLite 数据库绝对 Path 对象，或内存数据库字面量 ':memory:'。
+        :rtype: pathlib.Path | typing.Literal[':memory:']
+        :author: tongliga
+        :date: 2026-10-19
         """
+        # 第一步：若未显式指定 store_db_path，检查是否有未迁移遗留数据库
         if self.store_db_path is None:
             self._check_legacy_database("store.sqlite", "VA_STORE_DB_PATH")
             return self.resolved_runtime_data_dir / "store.sqlite"
+        # 第二步：检查并返回内存模式标识
         if str(self.store_db_path) == ":memory:":
             return ":memory:"
+        # 第三步：展开并返回用户指定的物理路径
         return Path(self.store_db_path).expanduser().resolve()
 
     @property
@@ -129,14 +138,20 @@ class HarnessSettings(BaseSettings):
         """解析 LangGraph Checkpointer SQLite 数据库在磁盘上的目标路径或内存数据库标识符。
 
         :return: 解析后的检查点 SQLite 数据库绝对 Path 对象，或内存数据库字面量 ':memory:'。
+        :rtype: pathlib.Path | typing.Literal[':memory:']
+        :author: tongliga
+        :date: 2026-10-19
         """
+        # 第一步：未指定路径时，若为内存存储后端则默认使用内存检查点
         if self.checkpoint_db_path is None:
             if self.store_backend == StoreBackendType.MEMORY:
                 return ":memory:"
             self._check_legacy_database("checkpoints.sqlite", "VA_CHECKPOINT_DB_PATH")
             return self.resolved_runtime_data_dir / "checkpoints.sqlite"
+        # 第二步：检查内存模式字面量
         if str(self.checkpoint_db_path) == ":memory:":
             return ":memory:"
+        # 第三步：展开并返回指定的检查点数据库路径
         return Path(self.checkpoint_db_path).expanduser().resolve()
 
     @property
@@ -144,15 +159,28 @@ class HarnessSettings(BaseSettings):
         """返回规范化为 POSIX 虚拟目录格式的长期记忆路由前缀（如 '/memories/'）。
 
         :return: 前后均带单斜杠的 POSIX 路由前缀字符串。
+        :rtype: str
+        :author: tongliga
+        :date: 2026-10-19
         """
+        # 第一步：利用 PurePosixPath 规范化斜杠
         posix_route = PurePosixPath("/", self.memory_route.strip("/"))
+        # 第二步：确保以单个斜杠结尾
         return f"{posix_route}/"
 
     @property
     def resolved_runtime_data_dir(self) -> Path:
-        """Keep host databases outside the model-editable workspace by default."""
+        """解析并返回运行时数据目录绝对路径（默认将宿主数据库隔离在工作区之外）。
+
+        :return: 运行时数据目录绝对路径对象。
+        :rtype: pathlib.Path
+        :author: tongliga
+        :date: 2026-10-19
+        """
+        # 第一步：若显式配置了运行时数据目录，展开并直接返回
         if self.runtime_data_dir is not None:
             return self.runtime_data_dir.expanduser().resolve()
+        # 第二步：默认在工作区同级目录创建 .runtime 后缀的数据隔离目录
         root = self.resolved_workspace_root
         return root.with_name(f"{root.name}.runtime")
 
@@ -160,13 +188,21 @@ class HarnessSettings(BaseSettings):
         """检查工作区是否存在旧版未隔离的 SQLite 数据库文件，提示显式迁移。
 
         :param filename: 旧版数据库文件名（如 'store.sqlite'）。
+        :type filename: str
         :param env_name: 对应的显式环境变量名（如 'VA_STORE_DB_PATH'）。
+        :type env_name: str
+        :return: 无返回值。
+        :rtype: None
         :raises ValueError: 当工作区根目录下直接存在遗留数据库且未指定运行时数据目录时抛出。
+        :author: tongliga
+        :date: 2026-10-19
         """
+        # 第一步：记录遗留数据库检查调试日志
         logger.debug(
             "checking_legacy_database",
             extra={"event_fields": {"filename": filename, "env_name": env_name}},
         )
+        # 第二步：断言工作区根目录下不存在未隔离的旧数据库文件，阻断误读误写
         if self.runtime_data_dir is None and (self.resolved_workspace_root / filename).exists():
             raise ValueError(
                 f"Legacy {filename} exists in workspace; back it up and migrate, or explicitly set {env_name}. No data was moved."
@@ -177,11 +213,16 @@ class HarnessSettings(BaseSettings):
         """配置后置整体校验：确保动态模型成对配置、已配置插件均在启用白名单中。
 
         :return: 校验通过的当前配置实例。
+        :rtype: vertical_harness.config.settings.HarnessSettings
         :raises ValueError: 当动态模型未成对配置或存在未启用插件的孤立配置时抛出。
+        :author: tongliga
+        :date: 2026-10-19
         """
         logger.debug("validating_harness_configuration")
+        # 第一步：校验经济模型与高品质模型必须同时提供或同时缺省
         if bool(self.economy_model) != bool(self.quality_model):
             raise ValueError("Both VA_ECONOMY_MODEL and VA_QUALITY_MODEL must be set")
+        # 第二步：校验是否存在未在启用白名单中的孤立插件配置
         if unknown := self.plugin_config.keys() - set(self.enabled_plugins):
             raise ValueError(f"Configuration for disabled plugins: {sorted(unknown)}")
         logger.debug("harness_configuration_validated")
@@ -192,11 +233,16 @@ class HarnessSettings(BaseSettings):
         """构造传递给 LangChain `init_chat_model` 的连接凭证与端点参数字典。
 
         :return: 过滤掉 None 值后的模型初始化关键字参数字典。
+        :rtype: dict[str, typing.Any]
+        :author: tongliga
+        :date: 2026-10-19
         """
+        # 第一步：抽取 API 密钥与基础服务地址
         raw_options: dict[str, Any] = {
             "api_key": self.api_key.get_secret_value() if self.api_key is not None else None,
             "base_url": self.base_url,
         }
+        # 第二步：剔除空值项构造有效字典
         return {key: val for key, val in raw_options.items() if val is not None}
 
     @property
@@ -204,10 +250,15 @@ class HarnessSettings(BaseSettings):
         """校验并判断当前配置是否启用了双模型动态路由。
 
         :return: 若同时配置了经济模型与品质模型则返回 True，均未配置则返回 False。
+        :rtype: bool
         :raises ValueError: 当仅配置了经济模型或品质模型其中之一时抛出。
+        :author: tongliga
+        :date: 2026-10-19
         """
+        # 第一步：检查两类模型的配置状态
         has_economy = bool(self.economy_model)
         has_quality = bool(self.quality_model)
+        # 第二步：二者不一致时立即报错 Fail-Fast
         if has_economy != has_quality:
             raise ValueError("Both VA_ECONOMY_MODEL and VA_QUALITY_MODEL must be set")
         return has_economy and has_quality

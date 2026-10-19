@@ -26,8 +26,13 @@ class LangSmithSettings(BaseSettings):
         """基于已加载的凭据与端点创建 LangSmith 客户端实例。
 
         :param auto_batch_tracing: 是否在后台自动批量异步上报 Trace 数据。
+        :type auto_batch_tracing: bool
         :return: 初始化完成的 LangSmith Client 实例。
+        :rtype: langsmith.Client
+        :author: tongliga
+        :date: 2026-10-19
         """
+        # 第一步：记录创建客户端调试日志与配置参数
         logger.debug(
             "langsmith_client_creating",
             extra={
@@ -38,11 +43,13 @@ class LangSmithSettings(BaseSettings):
                 }
             },
         )
+        # 第二步：实例化 LangSmith 客户端并注入密钥与端点
         client = Client(
             api_key=self.api_key.get_secret_value() if self.api_key else None,
             api_url=self.endpoint,
             auto_batch_tracing=auto_batch_tracing,
         )
+        # 第三步：记录客户端创建完成调试日志并返回
         logger.debug("langsmith_client_created", extra={"event_fields": {"project": self.project}})
         return client
 
@@ -52,18 +59,27 @@ def tracing_session(settings: LangSmithSettings | None = None) -> Iterator[None]
     """管理链路追踪（Tracing）会话生命周期；尊重外层 SDK/evaluation 上下文；退出时发送剩余 trace 并释放连接。
 
     :param settings: 可选的 LangSmith 配置实例，未提供时从环境变量读取。
-    :return: 上下文管理器生成器。
+    :type settings: vertical_harness.observability.LangSmithSettings | None
+    :return: 链路追踪上下文管理器迭代器。
+    :rtype: collections.abc.Iterator[None]
+    :author: tongliga
+    :date: 2026-10-19
     """
+    # 第一步：检测是否存在外层正在运行的追踪上下文，若存在则直接复用
     if get_tracing_context().get("enabled") is not None:
         logger.debug("tracing_session_reusing_outer_context")
         yield
         return
+
+    # 第二步：解析配置；若配置显式关闭 tracing，则设置禁用上下文短路
     settings = settings or LangSmithSettings()
     if not settings.tracing:
         logger.debug("tracing_session_disabled")
         with tracing_context(enabled=False):
             yield
         return
+
+    # 第三步：启动活跃链路追踪会话，退出时确保清空刷新网络缓冲队列
     logger.debug("tracing_session_starting", extra={"event_fields": {"project": settings.project}})
     with closing(settings.create_client()) as client:
         try:

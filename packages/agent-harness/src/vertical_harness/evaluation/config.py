@@ -40,7 +40,10 @@ class EvaluationSettings(BaseSettings):
         """校验启用用户反馈回归测试集时必须指定回归测试集名称。
 
         :return: 校验合法的当前 EvaluationSettings 实例。
+        :rtype: EvaluationSettings
         :raises ValueError: 当启用回归测试集但未指定数据集名称时抛出。
+        :author: tongliga
+        :date: 2026-10-19
         """
         logger.debug(
             "validate_regression_dataset_started",
@@ -51,6 +54,7 @@ class EvaluationSettings(BaseSettings):
                 }
             },
         )
+        # 第一步：校验反馈回归特性开关与目标数据集名称匹配性
         if self.enable_feedback_regression and not self.regression_dataset:
             raise ValueError(
                 "VA_REGRESSION_DATASET is required when feedback regression is enabled"

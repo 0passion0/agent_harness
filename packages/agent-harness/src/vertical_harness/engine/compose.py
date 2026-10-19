@@ -141,16 +141,24 @@ def register_supervisor_harness_profile(
     LangGraph 工作流插件（CompiledSubAgent / AsyncSubAgent）完成任务调度。
 
     :param provider_or_model: 提供商前缀（如 'openai'、'deepseek'）或完整模型标识。
+    :type provider_or_model: str
     :param exclude_filesystem_tools: 是否屏蔽内置 ls/read_file/write_file/execute 等工具。
+    :type exclude_filesystem_tools: bool
     :param disable_general_purpose_subagent: 是否禁用默认自动注入的 general-purpose 子智能体。
+    :type disable_general_purpose_subagent: bool
     :return: 已注册的 HarnessProfile 实例。
+    :rtype: deepagents.HarnessProfile
+    :author: tongliga
+    :date: 2026-10-19
     """
+    # 第一步：构建纯监督者 HarnessProfile 配置
     profile = HarnessProfile(
         excluded_tools=SUPERVISOR_EXCLUDED_FS_TOOLS if exclude_filesystem_tools else frozenset(),
         general_purpose_subagent=GeneralPurposeSubagentProfile(
             enabled=not disable_general_purpose_subagent
         ),
     )
+    # 第二步：向框架注册该提供商/模型的 profile 并返回
     register_harness_profile(provider_or_model, profile)
     logger.debug(
         "supervisor_harness_profile_registered",
@@ -187,19 +195,34 @@ class AgentComposer:
         """遍历并注册所有已启用的领域插件贡献。
 
         :param plugins: 已发现并验证的领域插件序列。
+        :type plugins: collections.abc.Iterable[vertical_harness.plugins.contracts.DomainPlugin]
         :param services: 注入给插件 build() 方法的宿主服务集合。
+        :type services: vertical_harness.plugins.contracts.BuildServices
+        :param contributions: 可选的预构建插件贡献映射。
+        :type contributions: collections.abc.Mapping[str, vertical_harness.plugins.contracts.PluginContribution] | None
+        :return: 无返回值。
+        :rtype: None
+        :author: tongliga
+        :date: 2026-10-19
         """
+        # 第一步：遍历注册各插件贡献
         for plugin in plugins:
             self.register_plugin(
                 plugin, services, contribution=(contributions or {}).get(plugin.manifest.plugin_id)
             )
+        # 第二步：执行全局工作流依赖拓扑合法性校验
         self.validate_workflows()
 
     def validate_workflows(self) -> None:
         """全局校验所有已注册工作流贡献的拓扑依赖关系，独立于插件加载顺序。
 
         执行依赖拓扑排序与成环检测，确保没有缺失的前置工作流，且禁止异步模式声明复杂的依赖与幂等契约。
+
+        :return: 无返回值。
+        :rtype: None
         :raises ValueError: 当存在缺失依赖、循环依赖或异步模式配置违规时抛出。
+        :author: tongliga
+        :date: 2026-10-19
         """
         logger.debug(
             "workflow_validation_started",
@@ -208,6 +231,7 @@ class AgentComposer:
         visiting: set[str] = set()
         visited: set[str] = set()
 
+        # 第一步：定义深度优先遍历校验依赖闭包与有向无环图 (DAG)
         def visit(name: str) -> None:
             """深度优先遍历单个工作流节点，核验拓扑合法性。"""
             logger.debug("validating_workflow_node", extra={"event_fields": {"workflow_name": name}})
@@ -233,6 +257,7 @@ class AgentComposer:
             visiting.remove(name)
             visited.add(name)
 
+        # 第二步：遍历所有已注册工作流节点执行校验
         for name in self.workflows:
             visit(name)
         logger.debug("workflow_validation_completed")
@@ -247,12 +272,23 @@ class AgentComposer:
         """提取单个插件的贡献并执行唯一性及安全策略校验。
 
         :param plugin: 领域插件实例。
+        :type plugin: vertical_harness.plugins.contracts.DomainPlugin
         :param services: 宿主构建服务实例。
+        :type services: vertical_harness.plugins.contracts.BuildServices
+        :param contribution: 可选的预构建插件贡献对象。
+        :type contribution: vertical_harness.plugins.contracts.PluginContribution | None
+        :return: 无返回值。
+        :rtype: None
+        :raises ValueError: 当资源插件未通过 open_agent 加载或中间件/子智能体重复时抛出。
+        :raises TypeError: 当插件未返回 PluginContribution 时抛出。
+        :author: tongliga
+        :date: 2026-10-19
         """
         manifest = plugin.manifest
         logger.debug(
             "plugin_registration_started", extra={"event_fields": {"plugin_id": manifest.plugin_id}}
         )
+        # 第一步：校验生命周期上下文要求并提取 PluginContribution
         if contribution is None and any(
             callable(getattr(plugin, hook, None)) for hook in ("open", "aopen")
         ):
@@ -263,6 +299,7 @@ class AgentComposer:
         if not isinstance(contributed, PluginContribution):
             raise TypeError(f"Plugin '{manifest.plugin_id}' must return PluginContribution")
 
+        # 第二步：应用可能的提示词覆盖并提取系统指令
         if manifest.plugin_id in self.prompt_overrides:
             contributed = contributed.model_copy(
                 update={"instructions": self.prompt_overrides[manifest.plugin_id]}
@@ -271,6 +308,7 @@ class AgentComposer:
         if instruction := contributed.format_system_instruction(manifest.plugin_id):
             self.instructions.append(instruction)
 
+        # 第三步：依次注册工作流、工具、中间件、子智能体与技能
         for workflow in contributed.workflows:
             self._register_workflow(manifest.plugin_id, workflow)
 
@@ -310,9 +348,16 @@ class AgentComposer:
         """注册插件贡献的 LangGraph 工作流并转换为原生 CompiledSubAgent 或 AsyncSubAgent。
 
         :param plugin_id: 所属插件唯一标识符。
+        :type plugin_id: str
         :param workflow: 经契约校验的 WorkflowContribution 实例。
+        :type workflow: vertical_harness.plugins.contracts.WorkflowContribution
+        :return: 无返回值。
+        :rtype: None
         :raises ValueError: 当工作流名称重复或使用了保留名称时抛出。
+        :author: tongliga
+        :date: 2026-10-19
         """
+        # 第一步：校验工作流名称唯一性与保留字冲突
         name = workflow.name
         if (
             name in self.workflows
@@ -320,6 +365,8 @@ class AgentComposer:
             or name in RESERVED_SUBAGENT_NAMES
         ):
             raise ValueError(f"Duplicate/reserved subagent name: {name}")
+
+        # 第二步：解析运行模式并转换为子智能体规范注册
         resolved_mode = workflow.resolve_mode(self.settings.workflow_mode)
         spec = workflow.to_subagent_spec(
             preferred_mode=self.settings.workflow_mode,
@@ -327,6 +374,8 @@ class AgentComposer:
         )
         self.workflows[name] = workflow
         self._register_subagent(spec)
+
+        # 第三步：更新 HITL 中断审批配置
         self.interrupts.update(
             build_workflow_interrupt_configs(
                 self.workflows,
@@ -349,8 +398,14 @@ class AgentComposer:
         """注册单个 LangChain 工具，校验重名并配置 HITL 审批与技能门控。
 
         :param item: 插件工具贡献声明项。
+        :type item: vertical_harness.plugins.contracts.ToolContribution
+        :return: 无返回值。
+        :rtype: None
         :raises ValueError: 当工具重名或具有副作用的工具被配置为技能隐藏模式时抛出。
+        :author: tongliga
+        :date: 2026-10-19
         """
+        # 第一步：校验工具名称唯一性与保留字
         name = item.name
         logger.debug("tool_registration_started", extra={"event_fields": {"tool_name": name}})
         if name in _RESERVED_TOOL_NAMES:
@@ -359,11 +414,13 @@ class AgentComposer:
             raise ValueError(f"Duplicate tool name: {name}")
         self._tool_names.add(name)
 
+        # 第二步：校验审批要求并注入 HITL 中断配置
         if item.requires_approval:
             if item.exposure == Exposure.SKILL:
                 raise ValueError("Side-effect tools must be eager to enforce approvals")
             self.interrupts[name] = item.to_interrupt_config()
 
+        # 第三步：按暴露策略归入热装工具或技能门控工具
         if item.exposure == Exposure.SKILL and self.settings.enable_skill_gating:
             self.gated_tools.append(item.tool)
         else:
@@ -383,11 +440,18 @@ class AgentComposer:
         """注册插件贡献的子智能体，防止与保留名称或其他插件子智能体冲突。
 
         :param subagent: 子智能体规范字典或预编译实例。
+        :type subagent: vertical_harness.plugins.contracts.SubAgentSpec
+        :return: 无返回值。
+        :rtype: None
         :raises ValueError: 当子智能体名称重复或使用了保留名称时抛出。
+        :author: tongliga
+        :date: 2026-10-19
         """
+        # 第一步：提取名称并校验唯一性与保留字
         name = subagent["name"] if isinstance(subagent, dict) else subagent.name
         if name in self._subagent_names or name in RESERVED_SUBAGENT_NAMES:
             raise ValueError(f"Duplicate/reserved subagent name: {name}")
+        # 第二步：加入子智能体集合与列表
         self._subagent_names.add(name)
         self.subagents.append(subagent)
         logger.debug("subagent_registered", extra={"event_fields": {"subagent_name": name}})
@@ -396,12 +460,20 @@ class AgentComposer:
         """注册插件技能资产文件并隔离其虚拟文件系统挂载路径。
 
         :param plugin_id: 插件唯一标识符。
+        :type plugin_id: str
         :param skill: 技能资产对象。
+        :type skill: vertical_harness.plugins.contracts.SkillAsset
+        :return: 无返回值。
+        :rtype: None
         :raises ValueError: 当隔离后的虚拟路径发生冲突时抛出。
+        :author: tongliga
+        :date: 2026-10-19
         """
+        # 第一步：转换技能上传载荷并校验虚拟路径唯一性
         virtual_path, payload = skill.to_upload_payload(plugin_id)
         if virtual_path in self._skill_paths:
             raise ValueError(f"Duplicate skill path: {virtual_path}")
+        # 第二步：加入上传队列与路径记录集合
         self._skill_paths.add(virtual_path)
         self.uploads.append((virtual_path, payload))
         logger.debug(
@@ -416,8 +488,13 @@ class AgentComposer:
         """组装完整的 LangChain 与 Deep Agents 中间件链。
 
         :param backend: 组合后的虚拟文件系统后端实例。
+        :type backend: deepagents.backends.protocol.BackendProtocol
         :return: 按执行顺序排列的 AgentMiddleware 列表。
+        :rtype: list[langchain.agents.middleware.AgentMiddleware[typing.Any, typing.Any, typing.Any]]
+        :author: tongliga
+        :date: 2026-10-19
         """
+        # 第一步：装配基础调用上限、待办规划与模型路由中间件
         stack: list[AgentMiddleware[Any, Any, Any]] = [
             ModelCallLimitMiddleware(run_limit=self.settings.max_model_calls),
         ]
@@ -436,6 +513,7 @@ class AgentComposer:
         if (router := make_router(self.settings)) is not None:
             stack.append(router)
 
+        # 第二步：若包含工作流或纯监督模式，装配 SupervisorPolicyMiddleware 确定性策略
         if self.workflows or self.settings.supervisor_only:
             allowed_names = (
                 frozenset(self._subagent_names)
@@ -460,6 +538,7 @@ class AgentComposer:
                 )
             )
 
+        # 第三步：装配插件自定义中间件与技能门控中间件
         stack.extend(self.plugin_middleware)
         if self.settings.supervisor_only:
             compiled = [spec for spec in self.subagents if "runnable" in spec]
@@ -480,7 +559,11 @@ class AgentComposer:
         """合并基础系统提示词、监督者规范提示词与所有插件指令。
 
         :return: 完整系统提示词字符串。
+        :rtype: str
+        :author: tongliga
+        :date: 2026-10-19
         """
+        # 第一步：合并基础提示词、监督者提示词与各插件贡献指令
         prompt_parts = list(self.instructions)
         if (
             self.workflows or self.settings.supervisor_only
@@ -502,16 +585,32 @@ def build_agent(
     """从独立分发的领域插件组装原生框架对象并构建 Deep Agent Supervisor。
 
     :param settings: 经校验的宿主配置对象。
+    :type settings: vertical_harness.config.settings.HarnessSettings
     :param checkpointer: 可选的外部管理持久化检查点保存器（未指定时使用内存检查点 InMemorySaver）。
+    :type checkpointer: langgraph.checkpoint.base.BaseCheckpointSaver[typing.Any] | bool | None
     :param store: 调用方托管的存储；持久化配置必须传入或使用 open_agent/aopen_agent。
+    :type store: langgraph.store.base.BaseStore | None
     :param mcp_tools: 由异步宿主管理生命周期的 MCP 工具；通常使用 aopen_agent 自动加载。
+    :type mcp_tools: collections.abc.Iterable[vertical_harness.plugins.contracts.ToolContribution] | None
+    :param prompt_overrides: 可选的针对主智能体或插件的提示词覆盖字典。
+    :type prompt_overrides: dict[str, str] | None
+    :param plugins: 可选的显式插件列表；默认自动从配置发现。
+    :type plugins: collections.abc.Iterable[vertical_harness.plugins.contracts.DomainPlugin] | None
+    :param _contributions: 内部使用：预构建的插件贡献声明字典。
+    :type _contributions: collections.abc.Mapping[str, vertical_harness.plugins.contracts.PluginContribution] | None
     :return: 编译完成的 Deep Agent LangGraph 状态图可运行对象。
+    :rtype: langgraph.graph.state.CompiledStateGraph[typing.Any, vertical_harness.plugins.contracts.RunContext, typing.Any, typing.Any]
     :raises ValueError: 当工具名称、子智能体名称冲突，或技能路径重复、副作用工具暴露模式非法时抛出。
+    :raises RuntimeError: 当技能资产文件上传至虚拟文件系统失败时抛出。
+    :author: tongliga
+    :date: 2026-10-19
     """
     if settings.mcp_servers and not settings.supervisor_only and mcp_tools is None:
         raise ValueError("Configured MCP servers require async with aopen_agent(settings)")
     started = perf_counter()
     logger.info("agent_build_started")
+
+    # 第一步：准备工作区目录与持久化后端
     root = settings.resolved_workspace_root
     root.mkdir(parents=True, exist_ok=True)
     logger.debug("workspace_prepared")
@@ -530,6 +629,7 @@ def build_agent(
         workspace_root=root, store=active_store, plugin_config=settings.plugin_config
     )
 
+    # 第二步：构建 AgentComposer 并注册插件贡献与 MCP 工具
     overrides = prompt_overrides or {}
     unknown = set(overrides) - {"main", *settings.enabled_plugins}
     if unknown or any(not value.strip() for value in overrides.values()):
@@ -554,6 +654,7 @@ def build_agent(
             if source not in composer.skill_sources:
                 composer.skill_sources.append(source)
 
+    # 第三步：将插件技能资产上传至虚拟文件系统
     if composer.uploads:
         logger.debug(
             "skill_assets_upload_started",
@@ -571,6 +672,7 @@ def build_agent(
             "skill_assets_uploaded", extra={"event_fields": {"skill_count": len(composer.uploads)}}
         )
 
+    # 第四步：组装中间件调用链与虚拟文件系统安全边界
     middleware = composer.build_middleware_stack(backend)
     if settings.enable_memory:
         middleware.append(UserMemoryMiddleware(settings, active_store))
@@ -611,6 +713,7 @@ def build_agent(
             )
         )
 
+    # 第五步：调用 create_deep_agent 完成智能体图编译
     logger.debug("agent_compilation_started")
     agent = create_deep_agent(
         name="vertical-agent",
@@ -662,21 +765,33 @@ def open_agent(
     若未显式传入 store 或 checkpointer，则由本上下文管理器自动创建并在退出时安全释放。
 
     :param settings: 宿主运行配置对象。
+    :type settings: vertical_harness.config.settings.HarnessSettings
     :param checkpointer: 可选的外部检查点持久化器。
+    :type checkpointer: langgraph.checkpoint.base.BaseCheckpointSaver[typing.Any] | bool | None
     :param store: 可选的外部键值存储实例。
+    :type store: langgraph.store.base.BaseStore | None
     :param prompt_overrides: 可选的提示词覆盖字典。
+    :type prompt_overrides: dict[str, str] | None
     :return: 仅在当前上下文内有效的智能体状态图实例迭代器。
+    :rtype: collections.abc.Iterator[langgraph.graph.state.CompiledStateGraph[typing.Any, vertical_harness.plugins.contracts.RunContext, typing.Any, typing.Any]]
     :raises ValueError: 当配置了 MCP 服务却以同步方式调用时抛出（MCP 要求异步上下文）。
+    :author: tongliga
+    :date: 2026-10-19
     """
     logger.debug("open_agent_started")
+    # 第一步：校验运行环境模式与 MCP 约束
     if settings.mcp_servers and not settings.supervisor_only:
         raise ValueError("MCP requires async with aopen_agent(settings)")
+
+    # 第二步：进入追踪与存储检查点上下文
     with ExitStack() as stack:
         stack.enter_context(tracing_session())
         if store is None:
             store = stack.enter_context(open_store(settings))
         if checkpointer is None:
             checkpointer = stack.enter_context(open_checkpointer(settings))
+
+        # 第三步：发现插件并挂载同步资源生命周期钩子
         plugins = discover_plugins(settings.enabled_plugins)
         services = BuildServices(settings.resolved_workspace_root, store, settings.plugin_config)
         contributions = {}
@@ -685,6 +800,8 @@ def open_agent(
                 contributions[plugin.manifest.plugin_id] = stack.enter_context(hook(services))
             elif callable(getattr(plugin, "aopen", None)):
                 raise ValueError(f"Plugin '{plugin.manifest.plugin_id}' requires aopen_agent")
+
+        # 第四步：构建并在上下文生命周期内产生智能体实例
         try:
             yield build_agent(
                 settings,
@@ -714,12 +831,20 @@ async def aopen_agent(
     取消或正常退出时均释放；不得在另一个任务中退出此上下文。
 
     :param settings: 宿主运行配置对象。
+    :type settings: vertical_harness.config.settings.HarnessSettings
     :param checkpointer: 可选的外部检查点持久化器。
+    :type checkpointer: langgraph.checkpoint.base.BaseCheckpointSaver[typing.Any] | bool | None
     :param store: 可选的外部键值存储实例。
+    :type store: langgraph.store.base.BaseStore | None
     :param prompt_overrides: 可选的提示词覆盖字典。
+    :type prompt_overrides: dict[str, str] | None
     :return: 仅在当前上下文内有效的智能体状态图实例异步迭代器。
+    :rtype: collections.abc.AsyncIterator[langgraph.graph.state.CompiledStateGraph[typing.Any, vertical_harness.plugins.contracts.RunContext, typing.Any, typing.Any]]
+    :author: tongliga
+    :date: 2026-10-19
     """
     logger.debug("aopen_agent_started")
+    # 第一步：进入异步追踪、存储与 MCP 连接上下文
     async with AsyncExitStack() as stack:
         stack.enter_context(tracing_session())
         if store is None:
@@ -731,6 +856,8 @@ async def aopen_agent(
             if settings.supervisor_only
             else await stack.enter_async_context(aopen_mcp_tools(settings))
         )
+
+        # 第二步：发现插件并挂载异步资源生命周期钩子
         plugins = discover_plugins(settings.enabled_plugins)
         services = BuildServices(settings.resolved_workspace_root, store, settings.plugin_config)
         contributions = {}
@@ -741,6 +868,8 @@ async def aopen_agent(
                 )
             elif callable(hook := getattr(plugin, "open", None)):
                 contributions[plugin.manifest.plugin_id] = stack.enter_context(hook(services))
+
+        # 第三步：构建并在上下文生命周期内产生智能体实例
         try:
             yield build_agent(
                 settings,

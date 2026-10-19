@@ -1,14 +1,14 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:309362468dd599da4f05f080f7822d351875bda4bc8a486b6dbc7fc76da4a531",
+  "pageVersion": "sha256:5ecdd8eaba638b8e0ea11afcf683d7b9b37bb851c011019a9ec276aabc55efb2",
   "claims": [
     {
       "id": "claim_bf5acabc4c8b4c17995c46aaac446145",
       "statement": "HarnessSettings 使用 pydantic_settings 从以 VA_ 为前缀的环境变量与 .env 文件加载配置，必填 model (NonEmptyStr) 字段若未显式配置则抛出 ValidationError，杜绝硬编码默认模型回退。",
       "evidence": [
         {
-          "resource": "repo://packages/agent-harness/src/vertical_harness/config/settings.py#L29-L46",
-          "version": "repo-lines-v1:sha256:6fff3113f340dc583e80cb393f6a499487b06b04266457ef778de6f68041465c:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA0YmNiOWYyNWU2Y2FhMmZiOTQ2NzE1NzkyZjM3MWJmOTc3MTE3YmYyYWZhZDIzODRjYTMyZDM3ZjI2ZWI5NzAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI5NjhjMWIyMWI5NTAxNTQ2N2Q4NzI0OTViNDE0ZTljM2YwNGViY2NmY2UxYTIzNmViMmMxNGY2ZDE4NTllNGUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImRhOTNlNDU5YTNjN2Y3MTZlNTkzMDY1OGFlNTNhNWFjOWZkMzMzOGY5ODg3MTI0MzY4YWJjZDQ3NThmMTlkMWMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRhMDE3NGU5MWI3Njc1MTc1Y2U5MTY5Mjg4ODYyYTNmN2JmYTZhY2FiMTAyZmViMDc5NjIwOTEwNjg1M2FjMzIifQ"
+          "resource": "repo://packages/agent-harness/src/vertical_harness/config/settings.py#L37-L50",
+          "version": "repo-lines-v1:sha256:6e44d328d815b40e8847e126f2161b06ba4faa0c4df0633a117d21ebb6a6c7c8:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQxZjBkNDA0YTNmZjA1NDA5NjdhZTFiN2ZjOThlYTNmMzE3NWU4ODgwOWYxNGI2NzMyMjFiMmE2YWY5NjRmYzkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ3NmEwNWJhZmZkNzIwOTUwMzJjNTZmMDFjZWEwNmNjNTM5MzlkMGE4Y2FiMWQ2NjY4NzJmM2NiMTA0ZmM1ZjEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI4NjBhZmI3YjJiMjM1OGUzZjEzZTk3ZDc2NmQyNWZiOTA5N2U4NzMyZTRhN2ZjZGY0MGE0YTUyZTFiMjQ3MmMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjY2ZGE4MGI3YjZiYzJjZTAzZTc2YzcxNGE4MGUxODMwOGI4MGVlZDkyNWFhMWExZjQyNDA3MGNjZDIwMDM3MDcifQ"
         }
       ]
     },
@@ -17,28 +17,28 @@
       "statement": "HarnessSettings 使用 SecretStr 封装 api_key 以防敏感凭证意外暴露在日志中，并通过 model_init_kwargs 属性调用 get_secret_value() 显式解包明文与非空 base_url。",
       "evidence": [
         {
-          "resource": "repo://packages/agent-harness/src/vertical_harness/config/settings.py#L47-L48",
-          "version": "repo-lines-v1:sha256:38158bb2483530226b01f48dfd9b70c8e680ed874ecac6229423f9920b9ca706:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMGY4N2ExYzNhZDQ2NDE4N2ViYTQ3NjJjZDVmODBjNWJiNWMxZTY4YmI5NTAyYzE0OTQ2N2NlZDRmNDc5OTBlYSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNmM2Y2YzNjg1MDRjZDE4NmE2Yzg3MDk5ZTM1NWRhNzFiYmVhZTMzZThhMjNlMzNlNzgwMmMyMzRhOTczNmFiMCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNTUyNzJmNjM3NDcxZTYwYTUzMDFmNjdlNzQ0NGJiNTkwNTQ5NmIwNDJiYzA5MzkzNTgzODk5ZWE3ODc4YjM2NCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZDg2ZjE0MWJhODkwNTYxNDI3MDg3Yzg3NDU0OGU0ZjlkODM4ZTE0ZTQwM2VmYWQ4OWFkMDFjM2NiNzNlZmFiZCJ9"
+          "resource": "repo://packages/agent-harness/src/vertical_harness/config/settings.py#L231-L246",
+          "version": "repo-lines-v1:sha256:1e48071206888a409c0a361b3884f9dfada2e5ece7b8c36824b0bc700ba9af0b:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM4YmRhMjAzYTZiMmQ0Mjk5NjAyYTllNDdmMWJiZjJkMTM2ZmVhODQ3NDc3NDQ3ODNhOTRhY2Y3YjdlODU3YTYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQxZWVjNGExMjhmMDY2MTQ5Nzk2ZDg5ZTQ3Yzk5MTg0NjYxZGJhYTVhM2UyYjI0Yzg1ZDlhMWFiNmI4ODM4MjUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE2ZjgzNDZkZGNlOGY2Mzc3NTU1MmNjOTZlMWMxMjk5Y2MwMjhmMDI1NmE1NmYyNGQxZWVlMWNmNTMwMjc4ZTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQxZmE3ZGE1NzY3ZjRiMTNhNjFmYzc1NzgzMTNmNTI4NmFkZWIzNWU4YTI0NjYwZDU5NjMyY2M1MjAwMzQzMjkifQ"
         },
         {
-          "resource": "repo://packages/agent-harness/src/vertical_harness/config/settings.py#L139-L149",
-          "version": "repo-lines-v1:sha256:b26b6cd7417b7557eef309d74f6fcebd353243b85533d80ba8e26f3cdb706d17:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYzZDAwY2YyNzA5NjRkNDRhMTNkZmFjODc1MmIwOWZjYzQzNWIwZjE5YjMxNmFiY2Y4MWE3YWE2NGJiMTIyZDYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEyNjE4YTlhZDJmYTIwMWMyMzgzY2FlZGI2OWQ3ZWFlZjU4Y2QxZjNjNDUyNGE1MmUxMTk5OTU1NmVhYmRlMzkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjM4OGQ5Zjg3NDQ0OWJiM2U3YjNjMjk0ZWRjYzExNGVhZDM1YzhhNzgzNjVmNTA3YTUyOTgwYmYwYjk5Y2JlYzIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjVlNWY5NGE2YjQxZjlhN2UxNzk0MjA3ZDMxMTcwZjk5NjI3YzUxYWQxMzRmYTgxNTg2ZWE4MTk1ZTAzMDI4MTgifQ"
+          "resource": "repo://packages/agent-harness/src/vertical_harness/config/settings.py#L50-L53",
+          "version": "repo-lines-v1:sha256:ea87ab3bac68ec15e463089df7f166621a31b699658d7f98c6a6baed51fee9b3:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNDc2YTA1YmFmZmQ3MjA5NTAzMmM1NmYwMWNlYTA2Y2M1MzkzOWQwYThjYWIxZDY2Njg3MmYzY2IxMDRmYzVmMSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDEzY2IyZTFiNTU3YmQ2ZDhiYmNlOTdmYWRiNmZiMGRjMjEwZjg1NjliY2UzYTE2Y2M5ZmRlMjc4M2Q2MTk4ZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMzhjNTRiNGNmYmQ0Y2JjNDk3YzBjNDY4MjM4NjA2YmJlMjFhMmVkOWFhNjQ3OGEwOWRhMzIxYjRkMjkyZTY5ZSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMmE4MmQzNTc2MzEyZWI3NjNlNDliNzE1N2NmZTA2ZWFjMjBkNGVmODAyZThmYmM0ZmFiODljZWRlODNhNzU1MyJ9"
         }
       ]
     },
     {
       "id": "claim_02cb8affdbee448c98289cfa3b83d3f6",
-      "statement": "resolved_store_target 属性在未配置 store_db_path 时，自动将 SQLite 数据库目标解析为 resolved_workspace_root 目录下的 store.sqlite 文件。",
+      "statement": "resolved_store_target 属性在未配置 store_db_path 时，自动将 SQLite 数据库目标解析为 resolved_runtime_data_dir 目录下的 store.sqlite 文件。",
       "evidence": [
         {
-          "resource": "repo://packages/agent-harness/src/vertical_harness/config/settings.py#L104-L114",
-          "version": "repo-lines-v1:sha256:95b2243cc09502ed8f50158c40c7227c6d2c1bd41ef25ac86dd4c13735c0e28d:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYzZDAwY2YyNzA5NjRkNDRhMTNkZmFjODc1MmIwOWZjYzQzNWIwZjE5YjMxNmFiY2Y4MWE3YWE2NGJiMTIyZDYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMwNTE0NDYxZjgxMGQ3MDIwNTZhMjM2OWEwOTlkYjc3MDRhNDM3MDE2OWI5NWI4ZTEzNzY3M2I5NTIzZGVjY2YiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJmZTg4N2IwOTM1OGE2Y2Y1OTAyMDFjNmEwNzM1YjQ2NGEyYThhOTg0ZDZjYWEyNmJiMmY1OTdhOWIxMmE0NWEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJmOTJlMGE0YTIwN2JhMTJlMGUxMzBjNWQ5M2Q2ZGYxYzdjYThhZjQ0YTdmZjkzMTYwNWY3YWU4MzUwYTAwOWMifQ"
+          "resource": "repo://packages/agent-harness/src/vertical_harness/config/settings.py#L118-L135",
+          "version": "repo-lines-v1:sha256:1f3755ec27d6f9de9adaf8e7e99dde4101e9d301c8b35a97c018cbd339e29068:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM2YzcwYWY1YjQ1MzljOTFjYWNlODRmMmY3YzRiZDZjOWIyYzVhOGE0NmMyN2FlYWE0M2Q0Mzc2MGRjNzY2M2YiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdlYjcwMjU3NTkzZGEwNmY2ODJhM2RkZGE1NGE5ZDI2MGQ0ZmM1MTRmNjQ1MjM3ZjVjYTc0YjA4ZjhkYTYxYTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJiNGMyNzIzOTliOWVjODg3Yjg1ZTNlNTBmNzc0NDg0MmFiYzk3NTUyZWI3M2E0ZDRkOTBiNGI2MWU0ZmU0MzYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQ5YjAxMTdlN2JjZDQzZGM3OGU4MTU4MTE1NzQ1NmFlYWFiOWNkNmFkM2M1ZDdiMGExYmNkZmE4Zjk5NGFkYTkifQ"
         }
       ]
     }
   ],
   "verification": {
     "by": "openwiki/0.7.2",
-    "at": "2026-10-18T12:40:07.975Z"
+    "at": "2026-10-19T02:30:03.285Z"
   }
 }

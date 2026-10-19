@@ -37,7 +37,10 @@ class ReferenceAnswer(BaseModel):
         """校验回归参考答案必须包含 output 或 structured_response 之一。
 
         :return: 校验合法的当前 ReferenceAnswer 实例。
+        :rtype: ReferenceAnswer
         :raises ValueError: 当 output 与 structured_response 均为空时抛出。
+        :author: tongliga
+        :date: 2026-10-19
         """
         logger.debug(
             "validate_reference_answer_started",
@@ -48,6 +51,7 @@ class ReferenceAnswer(BaseModel):
                 }
             },
         )
+        # 第一步：校验 output 或 structured_response 至少包含一个有效答案
         if not (self.output and self.output.strip()) and not self.structured_response:
             raise ValueError("A regression reference requires output or structured_response")
         return self
@@ -73,14 +77,20 @@ def feedback_case(feedback: Any, run: Any) -> RegressionCase:
     """将一条带有显式修正的用户反馈和对应运行记录转换为 RegressionCase 回归测试用例。
 
     :param feedback: LangSmith 反馈记录对象。
+    :type feedback: typing.Any
     :param run: LangSmith 运行记录对象。
+    :type run: typing.Any
     :return: 提取构建的 RegressionCase 实例。
+    :rtype: vertical_harness.evaluation.datasets.RegressionCase
     :raises ValueError: 当反馈无修正答案或运行未完成时抛出。
+    :author: tongliga
+    :date: 2026-10-19
     """
     logger.debug(
         "feedback_case_conversion_started",
         extra={"event_fields": {"feedback_key": getattr(feedback, "key", "")}},
     )
+    # 第一步：校验反馈修正项与运行完成状态
     if feedback.key != USER_FEEDBACK_KEY or not feedback.correction:
         raise ValueError(
             "Only user feedback with an explicit correction can become a reference case"
@@ -88,8 +98,12 @@ def feedback_case(feedback: Any, run: Any) -> RegressionCase:
     if not run.end_time or run.inputs is None:
         raise ValueError("Feedback requires a completed run with available inputs")
     reference = ReferenceAnswer.model_validate(feedback.correction)
+
+    # 第二步：抽取纯净输入载荷与期望修正答案
     # 只重放调用输入，不将生产内部状态、用户评分或原错误回答喂给新智能体。
     inputs = input_payload(run.inputs)
+
+    # 第三步：构建 RegressionCase 并返回
     case = RegressionCase(
         inputs=inputs,
         outputs=reference.model_dump(exclude_none=True),
@@ -111,25 +125,37 @@ async def promote_feedback(
     """将单条修正后的用户反馈提升导入到指定的回归测试集中。
 
     :param client: LangSmith Client 客户端。
+    :type client: langsmith.Client
     :param feedback_id: 反馈标识符。
+    :type feedback_id: uuid.UUID | str
     :param dataset_name: 目标回归测试集名称。
+    :type dataset_name: str
     :param project: LangSmith 项目名称。
+    :type project: str
     :return: 新建或已存在的 Example 唯一标识符字符串。
+    :rtype: str
     :raises ValueError: 当反馈不属于指定追踪项目或未关联 run 时抛出。
+    :author: tongliga
+    :date: 2026-10-19
     """
     logger.info(
         "promote_feedback_started",
         extra={"event_fields": {"dataset_name": dataset_name, "project": project}},
     )
+    # 第一步：拉取反馈并验证项目匹配
     feedback = await asyncio.to_thread(client.read_feedback, feedback_id)
     if feedback.run_id is None:
         raise ValueError("Run feedback is required")
     project_info = await asyncio.to_thread(client.read_project, project_name=project)
     if feedback.session_id is not None and str(feedback.session_id) != str(project_info.id):
         raise ValueError("Feedback belongs to another tracing project")
+
+    # 第二步：检索对应的运行记录并转换为回归用例
     resource = await asyncio.to_thread(lambda: client.runs)
     run = await resource.retrieve(str(feedback.run_id), project_id=str(project_info.id))
     case = feedback_case(feedback, run)
+
+    # 第三步：获取或创建数据集，幂等注入 Example 样本
     dataset = await asyncio.to_thread(get_or_create_dataset, client, dataset_name)
     example_id = uuid5(NAMESPACE_URL, f"va-regression:{dataset.id}:{feedback.id}")
     try:
@@ -160,10 +186,17 @@ async def submit_feedback(
     """向 LangSmith 写入用户反馈，并在开启反馈回归机制时自动将其提升至回归测试集。
 
     :param client: LangSmith Client 客户端。
+    :type client: langsmith.Client
     :param feedback: 待提交的 UserFeedback 对象。
+    :type feedback: UserFeedback
     :param evaluation: 可选的评测配置实例。
+    :type evaluation: vertical_harness.evaluation.config.EvaluationSettings | None
     :param project: LangSmith 项目名称。
+    :type project: str
     :return: 包含 feedback_id 及可选 example_id 的结果字典。
+    :rtype: dict[str, typing.Any]
+    :author: tongliga
+    :date: 2026-10-19
     """
     logger.info(
         "submit_feedback_started",
@@ -175,6 +208,7 @@ async def submit_feedback(
             }
         },
     )
+    # 第一步：检索运行记录并向 LangSmith 创建用户反馈
     project_info = await asyncio.to_thread(client.read_project, project_name=project)
     resource = await asyncio.to_thread(lambda: client.runs)
     run = await resource.retrieve(str(feedback.run_id), project_id=str(project_info.id))
@@ -193,6 +227,8 @@ async def submit_feedback(
         start_time=run.start_time,
     )
     result: dict[str, Any] = {"feedback_id": str(recorded.id)}
+
+    # 第二步：若开启回归机制且包含修正，自动提升至回归测试集
     if evaluation and evaluation.enable_feedback_regression and feedback.correction:
         assert evaluation.regression_dataset is not None
         result["example_id"] = await promote_feedback(

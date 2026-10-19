@@ -31,9 +31,15 @@ def sampled(run_id: str, rate: float) -> bool:
     """基于 run_id 的 SHA-256 哈希值实现确定性、无偏伪随机抽样。
 
     :param run_id: 运行记录标识符字符串。
+    :type run_id: str
     :param rate: 采样率（0.0 - 1.0）。
+    :type rate: float
     :return: 若该 run 命中抽样区间则返回 True，否则返回 False。
+    :rtype: bool
+    :author: tongliga
+    :date: 2026-10-19
     """
+    # 第一步：计算哈希前缀的浮点映射并断言区间
     is_sampled = int.from_bytes(hashlib.sha256(run_id.encode()).digest()[:8], "big") / 2**64 < rate
     logger.debug(
         "run_sampling_checked",
@@ -53,22 +59,33 @@ async def project_runs(
     """异步流式查询项目中符合时间与名称筛选条件的已完成运行记录（自动分页）。
 
     :param client: LangSmith 客户端。
+    :type client: langsmith.Client
     :param project: LangSmith 项目名称。
+    :type project: str
     :param since: 起始时间窗口。
+    :type since: datetime.datetime
     :param names: 可选的智能体/工作流名称过滤列表。
+    :type names: list[str] | None
     :param feedback_changed: 是否根据反馈修改时间而非运行开始时间进行筛选。
+    :type feedback_changed: bool
     :yields: 符合条件的已完成 Run 对象。
+    :rtype: collections.abc.AsyncIterator[typing.Any]
+    :author: tongliga
+    :date: 2026-10-19
     """
     logger.debug(
         "querying_project_runs",
         extra={"event_fields": {"project": project, "feedback_changed": feedback_changed}},
     )
+    # 第一步：根据时间与目标名称构建查询过滤条件
     project_info = await asyncio.to_thread(client.read_project, project_name=project)
     resource = await asyncio.to_thread(lambda: client.runs)
     filters = [f"eq(name,{json.dumps(name)})" for name in names or []]
     options = {"min_feedback_modified_at" if feedback_changed else "min_start_time": since}
     if filters:
         options["filter"] = f"or({','.join(filters)})" if len(filters) > 1 else filters[0]
+
+    # 第二步：异步分页迭代已完成的 CHAIN 运行记录
     # SDK 自动分页，不截断到最新一页；以已完成的 trace 为评测对象。
     async for run in resource.query(
         project_ids=[str(project_info.id)],
@@ -97,13 +114,21 @@ async def evaluate_online_once(
     """执行一次在线评测扫描：对窗口内的已完成运行进行抽样评测，并异步写入评估反馈。
 
     :param settings: 宿主系统配置实例。
+    :type settings: vertical_harness.config.HarnessSettings
     :param evaluation: 评测配置实例。
+    :type evaluation: vertical_harness.evaluation.config.EvaluationSettings
     :param client: LangSmith 客户端。
+    :type client: langsmith.Client
     :param project: LangSmith 追踪项目名称。
+    :type project: str
     :return: 包含 evaluated、skipped、errors 计数的汇总字典。
+    :rtype: dict[str, int]
     :raises ValueError: 当未启用在线评测配置时抛出。
+    :author: tongliga
+    :date: 2026-10-19
     """
     logger.info("evaluate_online_once_started", extra={"event_fields": {"project": project}})
+    # 第一步：前置校验在线评测配置开关与目标智能体工作流名称
     if not evaluation.enable_online_evaluation:
         raise ValueError("Enable VA_ENABLE_ONLINE_EVALUATION before starting the online worker")
     names = ["vertical-agent"]
@@ -116,6 +141,8 @@ async def evaluate_online_once(
                 )
             ).workflows
         )
+
+    # 第二步：计算评测模型与 rubric 指纹以支持幂等键生成
     fingerprint = hashlib.sha256(
         json.dumps(
             [
@@ -131,9 +158,12 @@ async def evaluate_online_once(
     judge = None
     counts = {"evaluated": 0, "skipped": 0, "errors": 0}
     since = datetime.now(UTC) - timedelta(hours=evaluation.online_eval_lookback_hours)
+
+    # 第三步：异步流式查询窗口内已完成的 run
     # shortcut: 仅回看配置窗口内开始的 run，长时间停机后的回补需扩大 lookback 后 --once。
     async for run in project_runs(client, project, since=since, names=names):
         try:
+            # 第四步：执行无偏哈希抽样与重复评测过滤
             if not sampled(str(run.id), evaluation.online_eval_sample_rate):
                 counts["skipped"] += 1
                 continue
@@ -144,6 +174,8 @@ async def evaluate_online_once(
             ):
                 counts["skipped"] += 1
                 continue
+
+            # 第五步：执行确定性断言或 LLM-as-a-Judge 语义评测并写回 LangSmith 反馈
             with tracing_context(enabled=False):
                 outputs = normalize_outputs(run.outputs or {}, inputs=run.inputs)
                 if not deterministic_scores(outputs, None, error=run.error)[0]["score"]:
@@ -189,18 +221,27 @@ async def sync_feedback_dataset(
     """将时间窗口内发生更新的用户修正反馈同步提升至指定的回归测试集。
 
     :param client: LangSmith 客户端。
+    :type client: langsmith.Client
     :param project: LangSmith 项目名称。
+    :type project: str
     :param dataset: 目标回归测试集名称。
+    :type dataset: str
     :param since: 起始筛选时间。
+    :type since: datetime.datetime
     :return: 包含 promoted、skipped、errors 的处理统计字典。
+    :rtype: dict[str, int]
+    :author: tongliga
+    :date: 2026-10-19
     """
     logger.info(
         "sync_feedback_dataset_started",
         extra={"event_fields": {"project": project, "dataset": dataset}},
     )
+    # 第一步：查询窗口内反馈发生变更的运行记录
     counts = {"promoted": 0, "skipped": 0, "errors": 0}
     async for run in project_runs(client, project, since=since, feedback_changed=True):
         try:
+            # 第二步：提取带有显式修正的用户反馈并提升至回归测试集
             feedbacks = await asyncio.to_thread(
                 lambda run_id=run.id: list(
                     client.list_feedback(run_ids=[run_id], feedback_key=[USER_FEEDBACK_KEY])
@@ -230,19 +271,30 @@ async def run_online_worker(
     """运行独立的在线抽样评测后台服务 Worker，定期轮询并评估生产链路中的真实运行轨迹。
 
     :param settings: 宿主系统配置实例。
+    :type settings: vertical_harness.config.HarnessSettings
     :param evaluation: 评测配置实例。
+    :type evaluation: vertical_harness.evaluation.config.EvaluationSettings
     :param client: LangSmith 客户端。
+    :type client: langsmith.Client
     :param project: 目标追踪项目名称。
+    :type project: str
     :param once: 若为 True 则仅执行单次轮询后立即返回，适用于 CRON 调度器。
+    :type once: bool
     :return: 评测及同步结果字典。
+    :rtype: dict[str, typing.Any]
     :raises ValueError: 当未启用在线评测配置时抛出。
+    :author: tongliga
+    :date: 2026-10-19
     """
     logger.info(
         "online_eval_worker_started",
         extra={"event_fields": {"project": project, "once": once}},
     )
+    # 第一步：校验在线评测开关
     if not evaluation.enable_online_evaluation:
         raise ValueError("Enable VA_ENABLE_ONLINE_EVALUATION before starting the online worker")
+
+    # 第二步：在轮询循环中定期执行单次评测与反馈数据集同步
     while True:
         try:
             result = await evaluate_online_once(settings, evaluation, client, project=project)

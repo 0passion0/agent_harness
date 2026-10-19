@@ -10,10 +10,10 @@ sources:
     resource: repo://packages/agent-harness/src/vertical_harness/plugins/contracts.py
   - id: openwiki-source-22fd106252c69a22894fb255
     resource: repo://packages/agent-harness/src/vertical_harness/plugins/discovery.py
-generated: { by: "antigravity", at: "2026-10-18T10:47:09.347Z" }
 verified:
   - by: openwiki/0.7.2
-    at: 2026-10-18T12:40:07.975Z
+    at: 2026-10-19T02:30:03.285Z
+generated: { by: "antigravity", at: "2026-10-19T02:30:03.285Z" }
 ---
 
 # 插件机制与贡献契约
@@ -97,3 +97,4 @@ return [_instantiate_and_verify(identifier, matches[identifier]) for identifier 
 
 - [Harness 系统架构与核心组装](./overview.md)：了解插件在 `AgentComposer` 与 `build_agent` 中的组装逻辑。
 - [学术引用审计插件实现](../integrations/citation-plugin.md)：查看 `research.citations` 插件与 `ResearchCitationToolkit` 的实现范例。
+- [MedPeer 桌面前端工作台](../integrations/desktop-workbench.md)：了解桌面端动态插件与技能注入机制。

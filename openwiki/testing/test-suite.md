@@ -1,17 +1,17 @@
 ---
 type: concept
 title: 测试架构与质量保证
-description: 分析基于 pytest 的契约单元测试、解析器与 Toolkit 集成测试、安全防御校验（防目录穿越与严格模式）及 SQLite 存储生命周期回归测试。
-tags: [testing, pytest, quality-assurance, regression, contracts]
+description: 分析基于 pytest 的契约单元测试、解析器与 Toolkit 集成测试、安全防御校验（防目录穿越与严格模式）、SQLite 存储生命周期及桌面前端自动化测试。
+tags: [testing, pytest, quality-assurance, regression, contracts, desktop]
 sources:
   - id: openwiki-source-83ccb301171788f9ae087a4a
     resource: repo://tests/test_schema.py
   - id: openwiki-source-09d2a8f36f3ecb7ab9487ab2
     resource: repo://tests/test_store.py
-generated: { by: "antigravity", at: "2026-10-18T11:09:29.262Z" }
 verified:
   - by: openwiki/0.7.2
-    at: 2026-10-18T12:40:07.975Z
+    at: 2026-10-19T02:30:03.285Z
+generated: { by: "antigravity", at: "2026-10-19T02:30:03.285Z" }
 ---
 
 # 测试架构与质量保证
@@ -74,7 +74,7 @@ pytest -q
 - **工作区与记忆隔离 (`test_composite_backend_routes_memories_to_sqlite_store`)**：
   - 普通文件写入（如 `/draft.txt`）直接在本地磁盘工作区中创建物理文件。
   - 长期记忆文件（如 `/memories/AGENTS.md`）通过 `CompositeBackend` 被路由重定向至 `SqliteStore`，**磁盘上绝不会创建 `memories/` 物理文件夹**。
-  - 命名空间清洗验证：针对包含点号的租户 ID `lab.a` 与用户 ID `researcher.7`，断言其在存储中被自动清洗为 `lab_a` 与 `researcher_7`，避免破坏 LangGraph 命名空间分隔。
+  - 命名空间身份哈希隔离验证：针对包含点号的租户 ID `lab.a` 与用户 ID `researcher.7`，断言其在存储中通过确定性 SHA-256 摘要派生为合法的命名空间元组，避免破坏 LangGraph 命名空间分隔。
 
 ## 4. Supervisor 工作流与 Time Travel 回溯测试 (`test_supervisor_workflows_and_time_travel.py`)
 
@@ -110,14 +110,18 @@ pytest -q
 ### 5.3 连接容错与异常清理
 - **部分失败时连接全量释放 (`test_partial_discovery_failure_closes_all_connections`)**：当配置多个 MCP 服务且其中一个连接失败时，断言 `AsyncExitStack` 确保其他已打开的连接与子进程被立即清理，避免僵尸进程遗留。
 
-## 6. 质量保证与 CI 扩展建议
+## 6. 桌面前端测试套件 (`desktop/`)
 
-根据 [docs/ARCHITECTURE.md](../../docs/ARCHITECTURE.md)，在迈向生产级部署时，质量保证体系应进一步扩展：
-1. **LangSmith 链路追踪与评测**：接入 LangSmith Trace，对 Agent 运行延迟、成本和模型调用树进行可观测性监控。
-2. **黄金数据集评测 (Evaluator-Optimizer)**：维护 50–100 个典型学术文本样本构成的黄金基准集，结合确定性规则与 LLM-as-judge 对引用审计准确率进行回归评估。
+参考 [desktop/TESTING.md](../../desktop/TESTING.md)，桌面前端工程包含完整的端到端验证体系：
+
+- **TypeScript 类型核验与 Vitest 单测**：执行 `npm run typecheck` 与 `npm test` 验证渲染层状态机、协议序列化与组件逻辑。
+- **Electron 真实窗口冒烟测试**：执行 `npm run build && npm run test:smoke` 启动真实 Electron 窗口，利用预加载层与模拟后端验证应用启动生命周期。
+- **UI 渲染一致性校验**：通过 `node scripts/check-renderer-parity.mjs` 对比迁入组件与原版 UI 渲染树的一致性。
+- **真实模型集成测试**：通过设置 `$env:DESKTOP_LIVE_TEST='1'` 执行 `npx vitest run tests/live-runtime.test.ts`，验证 Python Bridge 与实际大模型调用链路。
 
 ## 相关页面
 
 - [插件机制与贡献契约](../architecture/plugin-system.md)：了解插件在白名单与清单校验上的契约约束。
 - [状态隔离与分层存储](../architecture/state-and-storage.md)：了解 `SqliteStore`、`SqliteSaver` 与 Time Travel Fork。
 - [数字引用审计端到端流程](../workflows/citation-audit.md)：查看被测端到端流程。
+- [MedPeer 桌面前端工作台](../integrations/desktop-workbench.md)：了解桌面工作台运行时的架构与测试细节。

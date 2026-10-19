@@ -48,11 +48,22 @@ class SupervisorStage(StrEnum):
 
 
 def _idempotency_key(subagent_type: str, description: str) -> str:
-    """计算 (工作流名称, 任务描述) 的确定性 SHA-256 幂等摘要键。"""
+    """计算 (工作流名称, 任务描述) 的确定性 SHA-256 幂等摘要键。
+
+    :param subagent_type: 子代理/工作流名称。
+    :type subagent_type: str
+    :param description: 任务描述字符串。
+    :type description: str
+    :return: 64 位 SHA-256 十六进制哈希串。
+    :rtype: str
+    :author: tongliga
+    :date: 2026-10-19
+    """
     logger.debug(
         "calculating_idempotency_key",
         extra={"event_fields": {"subagent_type": subagent_type}},
     )
+    # 第一步：拼装子代理类型与任务描述并计算 SHA-256 摘要
     payload = f"{subagent_type}::{description.strip()}".encode()
     return hashlib.sha256(payload).hexdigest()
 
@@ -61,10 +72,22 @@ def _extract_tool_message(
     result: ToolMessage | Command[Any],
     tool_call_id: str | None,
 ) -> ToolMessage | None:
-    """从工具执行返回值（ToolMessage 或 LangGraph Command）中提取对应的 ToolMessage。"""
+    """从工具执行返回值（ToolMessage 或 LangGraph Command）中提取对应的 ToolMessage。
+
+    :param result: 工具执行结果对象。
+    :type result: langchain_core.messages.ToolMessage | langgraph.types.Command[typing.Any]
+    :param tool_call_id: 工具调用唯一标识 ID。
+    :type tool_call_id: str | None
+    :return: 匹配到的 ToolMessage 实例，未找到返回 None。
+    :rtype: langchain_core.messages.ToolMessage | None
+    :author: tongliga
+    :date: 2026-10-19
+    """
     logger.debug("extracting_tool_message")
+    # 第一步：若直接为 ToolMessage 实例，直接返回
     if isinstance(result, ToolMessage):
         return result
+    # 第二步：若是 Command，则解析 update["messages"] 遍历匹配对应 ID
     if isinstance(result, Command) and isinstance(result.update, dict):
         messages = result.update.get("messages")
         if isinstance(messages, list):
@@ -83,8 +106,16 @@ def _inspect_history(
 
     通过直接从 `state["messages"]` 派生历史状态，保证在执行 Time Travel 或 Checkpoint Fork
     回溯到任意历史节点时，监督策略状态与检查点严格一致。
+
+    :param messages: 当前检查点的全量消息列表。
+    :type messages: list[langchain_core.messages.AnyMessage]
+    :return: (已委派次数计数器, 已完成工作流集合, 幂等输出缓存字典)。
+    :rtype: tuple[collections.Counter[str], set[str], dict[str, str]]
+    :author: tongliga
+    :date: 2026-10-19
     """
     logger.debug("inspecting_supervisor_history_started")
+    # 第一步：遍历历史消息，收集所有已发起的调度工具调用元数据
     call_meta: dict[str, tuple[str, str, str]] = {}
     for msg in messages:
         if not isinstance(msg, AIMessage) or not msg.tool_calls:
@@ -107,6 +138,7 @@ def _inspect_history(
     completed_workflows: set[str] = set()
     idempotent_cache: dict[str, str] = {}
 
+    # 第二步：遍历工具响应消息，审计成功与失败状态，构建完成集合与幂等缓存
     for msg in messages:
         if not isinstance(msg, ToolMessage) or msg.tool_call_id not in call_meta:
             continue
@@ -144,17 +176,35 @@ def _inspect_history(
 def _normalize_workflow_map(
     workflows: Mapping[str, WorkflowContribution] | Sequence[WorkflowContribution],
 ) -> dict[str, WorkflowContribution]:
-    """将工作流字典或序列统一规范化为 {name: WorkflowContribution} 字典。"""
+    """将工作流字典或序列统一规范化为 {name: WorkflowContribution} 字典。
+
+    :param workflows: 工作流映射或序列。
+    :type workflows: collections.abc.Mapping[str, vertical_harness.plugins.contracts.WorkflowContribution] | collections.abc.Sequence[vertical_harness.plugins.contracts.WorkflowContribution]
+    :return: 规范化后的工作流字典。
+    :rtype: dict[str, vertical_harness.plugins.contracts.WorkflowContribution]
+    :author: tongliga
+    :date: 2026-10-19
+    """
     logger.debug("normalizing_workflow_map")
+    # 第一步：区分 Mapping 与 Sequence 并统一转为字典映射
     if isinstance(workflows, Mapping):
         return dict(workflows)
     return {wf.name: wf for wf in workflows}
 
 
 def _make_workflow_interrupt_predicate(allowed: frozenset[str]) -> Any:
-    """构造同时兼容 ToolInterruptPredicate(tool_call, state, runtime) 与 ToolCallRequest 的审批谓词。"""
+    """构造同时兼容 ToolInterruptPredicate(tool_call, state, runtime) 与 ToolCallRequest 的审批谓词。
+
+    :param allowed: 需触发审批拦截的工作流名称集合。
+    :type allowed: frozenset[str]
+    :return: 审批拦截判定谓词函数。
+    :rtype: typing.Any
+    :author: tongliga
+    :date: 2026-10-19
+    """
     logger.debug("creating_workflow_interrupt_predicate")
 
+    # 第一步：构造并返回兼顾不同调用签名的断言判定函数
     def _predicate(first: Any, *_rest: Any) -> bool:
         logger.debug("evaluating_workflow_interrupt_predicate")
         tool_call = getattr(first, "tool_call", first)
@@ -177,14 +227,21 @@ def build_workflow_interrupt_configs(
     纯只读工作流自动放行。
 
     :param workflows: 已注册的工作流贡献字典或序列。
+    :type workflows: collections.abc.Mapping[str, vertical_harness.plugins.contracts.WorkflowContribution] | collections.abc.Sequence[vertical_harness.plugins.contracts.WorkflowContribution]
     :param preferred_mode: 宿主偏好的工作流运行模式。
+    :type preferred_mode: vertical_harness.plugins.contracts.WorkflowMode | str | None
     :return: 工具名称（'task' 或 'start_async_task'）到 InterruptOnConfig 的映射。
+    :rtype: dict[str, langchain.agents.middleware.InterruptOnConfig]
+    :author: tongliga
+    :date: 2026-10-19
     """
+    # 第一步：规范化工作流映射并筛选需要审批的工作流名称
     workflow_map = _normalize_workflow_map(workflows)
     approval_names = frozenset(wf.name for wf in workflow_map.values() if wf.requires_approval)
     if not approval_names:
         return {}
 
+    # 第二步：按 preferred_mode 分别筛选同步与异步审批工作流集合
     compiled_approval_names = (
         frozenset(
             wf.name
@@ -203,6 +260,8 @@ def build_workflow_interrupt_configs(
         if preferred_mode is not None
         else approval_names
     )
+
+    # 第三步：构造 InterruptOnConfig 配置字典
     configs: dict[str, InterruptOnConfig] = {}
     if compiled_approval_names:
         configs["task"] = InterruptOnConfig(
@@ -239,10 +298,21 @@ class SupervisorPolicyMiddleware(AgentMiddleware[Any, RunContext, Any]):
         """初始化 Supervisor 确定性策略中间件。
 
         :param workflows: 工作流名称到 WorkflowContribution 的映射或工作流贡献序列。
+        :type workflows: collections.abc.Mapping[str, vertical_harness.plugins.contracts.WorkflowContribution] | collections.abc.Sequence[vertical_harness.plugins.contracts.WorkflowContribution]
         :param allowed_subagents: 允许调用的全部子智能体名称集合（包含声明式子智能体与工作流）。
+        :type allowed_subagents: frozenset[str] | None
         :param enforce_allowlist: 是否严格拦截未在白名单中显式登记的子智能体（含默认 general-purpose）。
+        :type enforce_allowlist: bool
+        :param blocked_tools: 显式封禁的工具名称集合。
+        :type blocked_tools: frozenset[str]
+        :return: 无返回值。
+        :rtype: None
+        :author: tongliga
+        :date: 2026-10-19
         """
+        # 第一步：调用基类中间件构造函数
         super().__init__()
+        # 第二步：规整化工作流映射表与受限白名单集合
         self._workflows = _normalize_workflow_map(workflows)
         self._allowed_subagents = (
             frozenset(allowed_subagents)
@@ -258,10 +328,16 @@ class SupervisorPolicyMiddleware(AgentMiddleware[Any, RunContext, Any]):
         """同步拦截模型请求，过滤受限工具能力。
 
         :param request: 模型调用请求对象。
+        :type request: deepagents.core.ModelRequest
         :param handler: 下游调用处理器函数。
+        :type handler: collections.abc.Callable[..., deepagents.core.ModelResponse]
         :return: 模型响应对象。
+        :rtype: deepagents.core.ModelResponse
+        :author: tongliga
+        :date: 2026-10-19
         """
         logger.debug("supervisor_wrapping_model_call_sync")
+        # 第一步：过滤封禁工具列表并转发下游处理器
         return handler(
             request.override(
                 tools=[
@@ -280,10 +356,16 @@ class SupervisorPolicyMiddleware(AgentMiddleware[Any, RunContext, Any]):
         """异步拦截模型请求，过滤受限工具能力。
 
         :param request: 模型调用请求对象。
+        :type request: deepagents.core.ModelRequest
         :param handler: 下游异步调用处理器函数。
+        :type handler: collections.abc.Callable[..., collections.abc.Awaitable[deepagents.core.ModelResponse]]
         :return: 模型响应对象。
+        :rtype: deepagents.core.ModelResponse
+        :author: tongliga
+        :date: 2026-10-19
         """
         logger.debug("supervisor_wrapping_model_call_async")
+        # 第一步：过滤封禁工具列表并转发下游异步处理器
         return await handler(
             request.override(
                 tools=[
@@ -298,14 +380,25 @@ class SupervisorPolicyMiddleware(AgentMiddleware[Any, RunContext, Any]):
         self,
         request: ToolCallRequest,
     ) -> ToolMessage | None:
-        """在委派工作流前执行确定性策略检查；若拒绝或命中幂等缓存则直接返回 ToolMessage。"""
+        """在委派工作流前执行确定性策略检查；若拒绝或命中幂等缓存则直接返回 ToolMessage。
+
+        :param request: 工具调用请求对象。
+        :type request: langchain.agents.middleware.types.ToolCallRequest
+        :return: 若策略拦截或命中幂等缓存则返回 ToolMessage，放行则返回 None。
+        :rtype: langchain_core.messages.ToolMessage | None
+        :author: tongliga
+        :date: 2026-10-19
+        """
         tool_name = request.tool_call.get("name", "")
+        # 第一步：检查工具是否属于受封禁工具
         if tool_name in self._blocked_tools:
             return ToolMessage(
                 content="[SupervisorPolicy] Direct tool execution is disabled.",
                 tool_call_id=request.tool_call["id"],
                 status="error",
             )
+
+        # 第二步：审计异步子任务监控类工具权限
         if tool_name in _MONITOR_TOOLS:
             if tool_name == "update_async_task":
                 return ToolMessage(
@@ -337,6 +430,7 @@ class SupervisorPolicyMiddleware(AgentMiddleware[Any, RunContext, Any]):
             )
             return None
 
+        # 第三步：若非任务派发工具则放行
         if tool_name not in _DISPATCH_TOOLS:
             return None
 
@@ -348,6 +442,7 @@ class SupervisorPolicyMiddleware(AgentMiddleware[Any, RunContext, Any]):
         subagent_type = str(args.get("subagent_type", ""))
         description = str(args.get("description", ""))
 
+        # 第四步：检查子代理白名单约束
         if self._enforce_allowlist and subagent_type not in self._allowed_subagents:
             logger.warning(
                 "supervisor_policy_rejected",
@@ -385,7 +480,7 @@ class SupervisorPolicyMiddleware(AgentMiddleware[Any, RunContext, Any]):
                 status="error",
             )
 
-        # 1. 校验租户访问权限（RBAC）
+        # 第五步：校验租户访问权限（RBAC）
         if workflow.allowed_tenants is not None:
             context = getattr(request.runtime, "context", None)
             tenant_id = getattr(context, "tenant_id", "default")
@@ -412,7 +507,7 @@ class SupervisorPolicyMiddleware(AgentMiddleware[Any, RunContext, Any]):
         messages = list((request.state or {}).get("messages") or [])
         dispatch_counts, completed_workflows, idempotent_cache = _inspect_history(messages)
 
-        # 2. 校验前置工作流依赖关系（depends_on）
+        # 第六步：校验前置工作流依赖关系（depends_on）
         missing_deps = [dep for dep in workflow.depends_on if dep not in completed_workflows]
         if missing_deps:
             logger.warning(
@@ -434,7 +529,7 @@ class SupervisorPolicyMiddleware(AgentMiddleware[Any, RunContext, Any]):
                 status="error",
             )
 
-        # 3. 校验幂等缓存（若已成功执行过完全一致的任务描述，直接复用验收结果，不计入额外重试消耗）
+        # 第七步：校验幂等缓存（若已成功执行过完全一致的任务描述，直接复用验收结果）
         if workflow.idempotent and tool_name == "task":
             idem_key = _idempotency_key(subagent_type, description)
             if idem_key in idempotent_cache:
@@ -454,7 +549,7 @@ class SupervisorPolicyMiddleware(AgentMiddleware[Any, RunContext, Any]):
                     artifact={"supervisor_policy": {"dispatched": False}},
                 )
 
-        # Reserve earlier calls from the same model batch, even when they run in parallel.
+        # 第八步：同一模型批次调用预占与重复排重
         answered = {m.tool_call_id for m in messages if isinstance(m, ToolMessage)}
         batch = next(
             (
@@ -501,7 +596,7 @@ class SupervisorPolicyMiddleware(AgentMiddleware[Any, RunContext, Any]):
             if call.get("id") not in answered:
                 reserved += 1
 
-        # 4. 校验最大委派/重试次数上限（max_dispatches）
+        # 第九步：校验最大委派/重试次数上限（max_dispatches）
         if dispatch_counts[subagent_type] + reserved >= workflow.max_dispatches:
             logger.warning(
                 "supervisor_policy_rejected",
@@ -540,7 +635,18 @@ class SupervisorPolicyMiddleware(AgentMiddleware[Any, RunContext, Any]):
         request: ToolCallRequest,
         result: ToolMessage | Command[Any],
     ) -> ToolMessage | Command[Any]:
-        """在同步工作流返回后执行确定性输出模式验收（Validate 阶段）。"""
+        """在同步工作流返回后执行确定性输出模式验收（Validate 阶段）。
+
+        :param request: 工具调用请求对象。
+        :type request: langchain.agents.middleware.types.ToolCallRequest
+        :param result: 工具执行输出对象。
+        :type result: langchain_core.messages.ToolMessage | langgraph.types.Command[typing.Any]
+        :return: 模式校验通过的原结果或验收失败的错误 ToolMessage。
+        :rtype: langchain_core.messages.ToolMessage | langgraph.types.Command[typing.Any]
+        :author: tongliga
+        :date: 2026-10-19
+        """
+        # 第一步：仅对同步 task 工作流调用进行模式验收
         tool_name = request.tool_call.get("name", "")
         if tool_name != "task":
             return result
@@ -553,6 +659,7 @@ class SupervisorPolicyMiddleware(AgentMiddleware[Any, RunContext, Any]):
         if workflow is None:
             return result
 
+        # 第二步：获取该工作流要求的结果模式规范
         schema: type[BaseModel] | None = workflow.result_schema
         if (
             schema is None
@@ -563,6 +670,7 @@ class SupervisorPolicyMiddleware(AgentMiddleware[Any, RunContext, Any]):
         if schema is None:
             return result
 
+        # 第三步：提取输出 ToolMessage 并执行 Pydantic 校验
         tool_call_id = request.tool_call.get("id")
         tool_msg = _extract_tool_message(result, tool_call_id)
         if tool_msg is None or tool_msg.status == "error":
@@ -619,14 +727,27 @@ class SupervisorPolicyMiddleware(AgentMiddleware[Any, RunContext, Any]):
         request: ToolCallRequest,
         handler: Callable[[ToolCallRequest], ToolMessage | Command[Any]],
     ) -> ToolMessage | Command[Any]:
-        """同步拦截并监督工作流委派与结果验收。"""
+        """同步拦截并监督工作流委派与结果验收。
+
+        :param request: 工具调用请求对象。
+        :type request: langchain.agents.middleware.types.ToolCallRequest
+        :param handler: 下游工具调用执行处理器函数。
+        :type handler: collections.abc.Callable[[langchain.agents.middleware.types.ToolCallRequest], langchain_core.messages.ToolMessage | langgraph.types.Command[typing.Any]]
+        :return: 工具调用输出结果。
+        :rtype: langchain_core.messages.ToolMessage | langgraph.types.Command[typing.Any]
+        :author: tongliga
+        :date: 2026-10-19
+        """
         logger.debug("supervisor_wrapping_tool_call_sync")
+        # 第一步：执行委派前确定性策略检查
         short_circuit = self._pre_dispatch_check(request)
         if short_circuit is not None:
             return short_circuit.model_copy(
                 update={"artifact": {"supervisor_policy": {"dispatched": False}}}
             )
+        # 第二步：调用下游处理器执行工具
         result = handler(request)
+        # 第三步：执行后置输出模式验收与委派元数据标记
         return self._mark_dispatch(request, self._post_dispatch_validate(request, result))
 
     async def awrap_tool_call(
@@ -634,14 +755,27 @@ class SupervisorPolicyMiddleware(AgentMiddleware[Any, RunContext, Any]):
         request: ToolCallRequest,
         handler: Callable[[ToolCallRequest], Awaitable[ToolMessage | Command[Any]]],
     ) -> ToolMessage | Command[Any]:
-        """异步拦截并监督工作流委派与结果验收。"""
+        """异步拦截并监督工作流委派与结果验收。
+
+        :param request: 工具调用请求对象。
+        :type request: langchain.agents.middleware.types.ToolCallRequest
+        :param handler: 下游异步工具调用执行处理器函数。
+        :type handler: collections.abc.Callable[[langchain.agents.middleware.types.ToolCallRequest], collections.abc.Awaitable[langchain_core.messages.ToolMessage | langgraph.types.Command[typing.Any]]]
+        :return: 工具调用输出结果。
+        :rtype: langchain_core.messages.ToolMessage | langgraph.types.Command[typing.Any]
+        :author: tongliga
+        :date: 2026-10-19
+        """
         logger.debug("supervisor_wrapping_tool_call_async")
+        # 第一步：执行委派前确定性策略检查
         short_circuit = self._pre_dispatch_check(request)
         if short_circuit is not None:
             return short_circuit.model_copy(
                 update={"artifact": {"supervisor_policy": {"dispatched": False}}}
             )
+        # 第二步：调用下游异步处理器执行工具
         result = await handler(request)
+        # 第三步：执行后置输出模式验收与委派元数据标记
         return self._mark_dispatch(request, self._post_dispatch_validate(request, result))
 
     def _mark_dispatch(
@@ -650,15 +784,23 @@ class SupervisorPolicyMiddleware(AgentMiddleware[Any, RunContext, Any]):
         """为通过委派的工作流调用结果标记 dispatched=True 元数据。
 
         :param request: 原始工具调用请求对象。
+        :type request: langchain.agents.middleware.types.ToolCallRequest
         :param result: 工具执行输出对象。
+        :type result: langchain_core.messages.ToolMessage | langgraph.types.Command[typing.Any]
         :return: 注入元数据标记后的更新结果对象。
+        :rtype: langchain_core.messages.ToolMessage | langgraph.types.Command[typing.Any]
+        :author: tongliga
+        :date: 2026-10-19
         """
         logger.debug("supervisor_marking_dispatch")
+        # 第一步：若非任务委派工具直接放行
         if request.tool_call.get("name") not in _DISPATCH_TOOLS:
             return result
+        # 第二步：提取 ToolMessage，若未找到则放行
         msg = _extract_tool_message(result, request.tool_call.get("id"))
         if msg is None:
             return result
+        # 第三步：注入 supervisor_policy 标记并返回更新对象
         artifact = dict(msg.artifact) if isinstance(msg.artifact, dict) else {}
         artifact["supervisor_policy"] = {"dispatched": True}
         marked = msg.model_copy(update={"artifact": artifact})

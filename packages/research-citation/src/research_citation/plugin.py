@@ -38,13 +38,19 @@ def _load_skill_asset() -> SkillAsset:
     """从包内静态资源读取并缓存 numeric-citation-audit 技能的 SKILL.md 资产。
 
     :return: 经路径校验的 SkillAsset 实例。
+    :rtype: vertical_harness.plugins.contracts.SkillAsset
+    :author: tongliga
+    :date: 2026-10-19
     """
+    # 第一步：记录静态资源读取调试日志
     logger.debug("skill_resource_loading")
+    # 第二步：利用 importlib.resources 规范安全读取包内技能文档
     skill_text = (
         files("research_citation")
         .joinpath("skills", "numeric-citation-audit", "SKILL.md")
         .read_text(encoding="utf-8")
     )
+    # 第三步：组装标准 SkillAsset 资产结构
     asset = SkillAsset(relative_path=SKILL_RELATIVE_PATH, content=skill_text)
     logger.debug(
         "skill_resource_loaded", extra={"event_fields": {"skill_path": SKILL_RELATIVE_PATH}}
@@ -72,12 +78,20 @@ class ResearchCitationPlugin:
         """初始化引用审计插件。
 
         :param workflow_mode: 可选的工作流接入模式覆盖（compiled 或 async）。
+        :type workflow_mode: vertical_harness.plugins.contracts.WorkflowMode | None
         :param include_tools: 是否同时导出技能门控工具（纯 Supervisor 模式下可设为 False）。
+        :type include_tools: bool
+        :return: 无返回值。
+        :rtype: None
+        :author: tongliga
+        :date: 2026-10-19
         """
+        # 第一步：记录插件初始化参数调试日志
         logger.debug(
             "citation_plugin_initialized",
             extra={"event_fields": {"include_tools": include_tools}},
         )
+        # 第二步：记录工作流模式与工具导出标志状态
         self._workflow_mode = workflow_mode
         self._include_tools = include_tools
 
@@ -85,10 +99,16 @@ class ResearchCitationPlugin:
         """返回当前插件的 LangGraph 工作流、原生工具与技能文件声明，无需修改宿主核心逻辑。
 
         :param services: 宿主在构建期注入的服务实例（如工作区路径与存储对象）。
+        :type services: vertical_harness.plugins.contracts.BuildServices
         :return: 包含工作流、工具、技能资产与提示指令的声明式 Deep Agents 插件贡献对象。
+        :rtype: vertical_harness.plugins.contracts.PluginContribution
+        :author: tongliga
+        :date: 2026-10-19
         """
+        # 第一步：实例化学术引用核查工具包
         toolkit = ResearchCitationToolkit()
         logger.debug("citation_plugin_build_started")
+        # 第二步：声明并装配工作流贡献、工具导出、技能文档与引导指令
         return PluginContribution(
             workflows=[build_citation_workflow_contribution(mode=self._workflow_mode)],
             tools=(

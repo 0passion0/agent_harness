@@ -99,6 +99,9 @@ class SideEffect(StrEnum):
         """判定当前副作用级别是否必须触发 LangChain 人工审批中断。
 
         :return: 若为 WRITE 或 EXTERNAL 则返回 True，否则返回 False。
+        :rtype: bool
+        :author: tongliga
+        :date: 2026-10-19
         """
         return self in {SideEffect.WRITE, SideEffect.EXTERNAL}
 
@@ -138,6 +141,9 @@ class PluginManifest(StrictModel):
         """将插件 ID 规范化为虚拟文件系统安全的命名前缀（将 '.' 替换为 '-'）。
 
         :return: 规范化后的插件前缀字符串。
+        :rtype: str
+        :author: tongliga
+        :date: 2026-10-19
         """
         return self.plugin_id.replace(".", "-")
 
@@ -156,16 +162,22 @@ class SkillAsset(StrictModel):
         """验证技能资产的相对路径，防范目录遍历与绝对路径注入。
 
         :param value: 待校验的技能文件相对路径字符串。
+        :type value: str
         :return: 校验合法的相对路径字符串。
+        :rtype: str
         :raises ValueError: 当路径为绝对路径、包含 '.' 或 '..' 遍历路径、层级少于两级或包含非法特殊字符时抛出。
+        :author: tongliga
+        :date: 2026-10-19
         """
+        # 第一步：记录路径校验启动调试日志
         logger.debug(
             "validate_relative_path_started",
             extra={"event_fields": {"has_path": bool(value)}},
         )
         posix_path = PurePosixPath(value)
         parts = posix_path.parts
-        # 严禁绝对路径、反斜杠路径、包含 '.' 或 '..'，且路径至少包含两级（如 skill_name/file）
+
+        # 第二步：断言防范绝对路径注入、反斜杠与父级目录遍历
         if (
             "\\" in value
             or posix_path.is_absolute()
@@ -173,7 +185,8 @@ class SkillAsset(StrictModel):
             or len(parts) < 2
         ):
             raise ValueError("Skill path must be a relative path inside a skill directory")
-        # 路径各分段仅允许字母数字及破折号、下划线、点，且至少包含一个字母或数字
+
+        # 第三步：逐级校验路径分段字符合法性
         if any(_SAFE_SKILL_SEGMENT.fullmatch(part) is None for part in parts):
             raise ValueError("Invalid skill path component")
         return str(posix_path)
@@ -182,11 +195,18 @@ class SkillAsset(StrictModel):
         """结合插件 ID 生成命名空间隔离后的虚拟文件系统路径。
 
         :param plugin_id: 所属插件的唯一标识符。
+        :type plugin_id: str
         :param skills_root: 虚拟技能根目录路径，默认为 '/skills'。
+        :type skills_root: str
         :return: 隔离后的虚拟文件完整路径，如 '/skills/research-citations-numeric-citation-audit/SKILL.md'。
+        :rtype: str
+        :author: tongliga
+        :date: 2026-10-19
         """
+        # 第一步：计算带插件命名前缀的子目录名
         posix_path = PurePosixPath(self.relative_path)
         namespaced_dir = f"{plugin_id.replace('.', '-')}-{posix_path.parts[0]}"
+        # 第二步：拼接得到虚拟 POSIX 绝对路径
         virtual_path = str(PurePosixPath(skills_root, namespaced_dir, *posix_path.parts[1:]))
         logger.debug(
             "skill_virtual_path_computed",
@@ -198,10 +218,17 @@ class SkillAsset(StrictModel):
         """生成可直接传递给 Deep Agents Backend `upload_files` 的 (虚拟路径, UTF-8 字节流) 二元组。
 
         :param plugin_id: 所属插件的唯一标识符。
+        :type plugin_id: str
         :param skills_root: 虚拟技能根目录路径，默认为 '/skills'。
+        :type skills_root: str
         :return: (虚拟路径字符串, UTF-8 编码字节内容) 元组。
+        :rtype: tuple[str, bytes]
+        :author: tongliga
+        :date: 2026-10-19
         """
+        # 第一步：解析目标虚拟路径
         vpath = self.to_virtual_path(plugin_id, skills_root=skills_root)
+        # 第二步：将文本内容编码为 UTF-8 字节流
         encoded = self.content.encode("utf-8")
         logger.debug(
             "skill_upload_payload_generated",
@@ -225,6 +252,9 @@ class ToolContribution(StrictModel):
         """获取底层 LangChain BaseTool 的注册名称。
 
         :return: 工具名称字符串。
+        :rtype: str
+        :author: tongliga
+        :date: 2026-10-19
         """
         return self.tool.name
 
@@ -233,12 +263,21 @@ class ToolContribution(StrictModel):
         """判断该工具是否需要启用人工审批中断（Human-in-the-Loop）。
 
         :return: 若工具具有写或外部副作用则返回 True。
+        :rtype: bool
+        :author: tongliga
+        :date: 2026-10-19
         """
         return self.effect.requires_approval
 
     @property
     def mcp_annotations(self) -> dict[str, Any] | None:
-        """读取 MCPAdapter 保留的服务端注解（snake_case），不将提示作为授权依据。"""
+        """读取 MCPAdapter 保留的服务端注解（snake_case），不将提示作为授权依据。
+
+        :return: 注解信息字典，不存在时返回 None。
+        :rtype: dict[str, typing.Any] | None
+        :author: tongliga
+        :date: 2026-10-19
+        """
         value: Any = self.tool.metadata
         for key in ("mcp", "tool", "annotations"):
             if not isinstance(value, dict):
@@ -250,11 +289,16 @@ class ToolContribution(StrictModel):
         """构造 LangChain `HumanInTheLoopMiddleware` 原生兼容的审批中断配置字典。
 
         :return: 允许 approve 与 reject 决策的 InterruptOnConfig 配置。
+        :rtype: langchain.agents.middleware.InterruptOnConfig
+        :author: tongliga
+        :date: 2026-10-19
         """
+        # 第一步：记录中断配置构建调试日志
         logger.debug(
             "tool_interrupt_config_created",
             extra={"event_fields": {"tool_name": self.name, "effect": self.effect.value}},
         )
+        # 第二步：初始化支持 approve/reject 审批决策的配置字典
         config = InterruptOnConfig(allowed_decisions=["approve", "reject"])
         if annotations := self.mcp_annotations:
             config["description"] = (
@@ -275,15 +319,23 @@ class ToolContribution(StrictModel):
         """从 LangChain 标准 `BaseToolkit` 批量导出并包装工具贡献列表。
 
         :param toolkit: 遵循 LangChain BaseToolkit 接口的工具包实例。
+        :type toolkit: langchain_core.tools.BaseToolkit
         :param effect: 批量应用的工具副作用分类，默认只读 READ。
+        :type effect: vertical_harness.plugins.contracts.SideEffect
         :param exposure: 批量应用的工具暴露模式，默认直接暴露 EAGER。
+        :type exposure: vertical_harness.plugins.contracts.Exposure
         :return: 包装后的 ToolContribution 实例列表。
+        :rtype: list[vertical_harness.plugins.contracts.ToolContribution]
+        :author: tongliga
+        :date: 2026-10-19
         """
+        # 第一步：调用工具包接口导出全部原生工具
         tools = toolkit.get_tools()
         logger.debug(
             "tools_from_toolkit_extracted",
             extra={"event_fields": {"tool_count": len(tools), "effect": effect.value}},
         )
+        # 第二步：统一构造为 ToolContribution 实例列表
         return [cls(tool=t, effect=effect, exposure=exposure) for t in tools]
 
 
@@ -291,7 +343,11 @@ def _schema_has_messages_key(schema: type[Any]) -> bool:
     """检查给定的 TypedDict / BaseModel / 类型注解是否包含 Deep Agents 要求的 `messages` 键。
 
     :param schema: 待检测的模式类型或模型类。
+    :type schema: type[typing.Any]
     :return: 若包含 messages 键或字段则返回 True，否则返回 False。
+    :rtype: bool
+    :author: tongliga
+    :date: 2026-10-19
     """
     annotations = getattr(schema, "__annotations__", None)
     if isinstance(annotations, dict) and "messages" in annotations:
@@ -362,8 +418,12 @@ class WorkflowContribution(StrictModel):
         """校验工作流插件声明的完整性、三层状态契约（InternalState/input_schema/output_schema）与模式一致性。
 
         :return: 校验通过的当前 WorkflowContribution 实例。
+        :rtype: Self
         :raises ValueError: 当名称保留、缺少 runnable/graph_id、缺少三层状态模式或模式配置矛盾时抛出。
+        :author: tongliga
+        :date: 2026-10-19
         """
+        # 第一步：校验工作流名称非内置保留字，且至少配置 runnable 或 graph_id 之一
         if self.name in _RESERVED_SUBAGENT_NAMES:
             raise ValueError(f"Reserved workflow subagent name: {self.name}")
         if self.runnable is None and self.graph_id is None:
@@ -381,7 +441,7 @@ class WorkflowContribution(StrictModel):
         if self.name in self.depends_on:
             raise ValueError(f"Workflow '{self.name}' cannot depend on itself")
 
-        # 若传入了 CompiledStateGraph 且未显式填写状态 schema，可从图构建器提取并严格核验
+        # 第二步：若传入了 CompiledStateGraph 且未显式指定三层 schema，从 StateGraph 提取并严格核对
         if isinstance(self.runnable, CompiledStateGraph):
             builder = self.runnable.builder
             if self.internal_state is None:
@@ -403,6 +463,7 @@ class WorkflowContribution(StrictModel):
                     f"Workflow '{self.name}' output_schema does not match StateGraph output_schema"
                 )
 
+        # 第三步：断言三层状态模式必须完全独立定义，严禁复用同一对象
         if self.internal_state is None or self.input_schema is None or self.output_schema is None:
             raise ValueError(
                 f"Workflow '{self.name}' must define 'internal_state', 'input_schema', and 'output_schema'"
@@ -412,6 +473,7 @@ class WorkflowContribution(StrictModel):
                 f"Workflow '{self.name}' must define distinct 'internal_state', 'input_schema', and 'output_schema'"
             )
 
+        # 第四步：检查输入与输出 schema 是否包含 messages 契约键
         if not _schema_has_messages_key(self.input_schema):
             raise ValueError(
                 f"Workflow '{self.name}' input_schema must include a 'messages' key for Deep Agents delegation"
@@ -431,6 +493,9 @@ class WorkflowContribution(StrictModel):
         """返回当前工作流默认生效的接入模式。
 
         :return: WorkflowMode.COMPILED 或 WorkflowMode.ASYNC。
+        :rtype: vertical_harness.plugins.contracts.WorkflowMode
+        :author: tongliga
+        :date: 2026-10-19
         """
         if self.mode is not None:
             return self.mode
@@ -441,6 +506,9 @@ class WorkflowContribution(StrictModel):
         """判断委派该工作流是否需要人工审批（Human-in-the-Loop）。
 
         :return: 若副作用为 WRITE 或 EXTERNAL 则返回 True。
+        :rtype: bool
+        :author: tongliga
+        :date: 2026-10-19
         """
         return self.effect.requires_approval
 
@@ -448,8 +516,13 @@ class WorkflowContribution(StrictModel):
         """结合宿主偏好解析最终接入模式（若插件同时提供 runnable 与 graph_id 可按宿主策略切换）。
 
         :param preferred_mode: 宿主偏好的工作流模式（'compiled' 或 'async'）。
+        :type preferred_mode: vertical_harness.plugins.contracts.WorkflowMode | str | None
         :return: 最终解析出的 WorkflowMode。
+        :rtype: vertical_harness.plugins.contracts.WorkflowMode
+        :author: tongliga
+        :date: 2026-10-19
         """
+        # 第一步：优先尊重工作流显式声明的接入模式
         if self.mode is not None:
             resolved = self.mode
         elif preferred_mode == WorkflowMode.ASYNC and self.graph_id is not None:
@@ -458,6 +531,7 @@ class WorkflowContribution(StrictModel):
             resolved = WorkflowMode.COMPILED
         else:
             resolved = self.effective_mode
+        # 第二步：记录解析模式调试日志并返回
         logger.debug(
             "workflow_mode_resolved",
             extra={"event_fields": {"workflow_name": self.name, "resolved_mode": resolved.value}},
@@ -474,15 +548,23 @@ class WorkflowContribution(StrictModel):
         """转换为 Deep Agents 原生支持的 `CompiledSubAgent` 或 `AsyncSubAgent` 规范字典。
 
         :param preferred_mode: 宿主全局偏好的接入模式（仅当插件未强制锁死 mode 且具备对应字段时生效）。
+        :type preferred_mode: vertical_harness.plugins.contracts.WorkflowMode | str | None
         :param durability_override: 可选覆盖的检查点同步策略（默认使用工作流自身的 durability="sync"）。
+        :type durability_override: langgraph.types.Durability | None
         :param enable_checkpointer: 是否为本地 CompiledStateGraph 自动启用父检查点继承与 durability 绑定。
+        :type enable_checkpointer: bool
         :return: 符合 Deep Agents `create_deep_agent(subagents=...)` 契约的子智能体规范。
+        :rtype: deepagents.CompiledSubAgent | deepagents.AsyncSubAgent
+        :author: tongliga
+        :date: 2026-10-19
         """
+        # 第一步：根据偏好与具备能力解析目标运行模式
         target_mode = self.resolve_mode(preferred_mode)
         logger.debug(
             "workflow_to_subagent_spec_generating",
             extra={"event_fields": {"workflow_name": self.name, "mode": target_mode.value}},
         )
+        # 第二步：若为异步模式，构造 AsyncSubAgent 规范字典
         if target_mode == WorkflowMode.ASYNC:
             assert self.graph_id is not None
             async_spec: AsyncSubAgent = {
@@ -497,6 +579,7 @@ class WorkflowContribution(StrictModel):
                 async_spec["headers"] = dict(self.headers)
             return async_spec
 
+        # 第三步：若为预编译模式，绑定检查点持久化策略并构造 CompiledSubAgent
         assert self.runnable is not None
         target_runnable: Runnable[Any, Any] = self.runnable
         effective_durability = durability_override or self.durability
@@ -539,26 +622,46 @@ class WorkflowContribution(StrictModel):
         """从预编译 LangGraph 状态图构造 `CompiledSubAgent` 工作流插件贡献。
 
         :param name: 工作流唯一名称。
+        :type name: str
         :param description: 工作流描述说明。
+        :type description: str
         :param runnable: 预编译的 LangGraph 状态图或可运行对象。
+        :type runnable: langchain_core.runnables.Runnable[typing.Any, typing.Any]
         :param internal_state: 内部流转状态模式。
+        :type internal_state: type[typing.Any] | None
         :param input_schema: 输入参数数据模式。
+        :type input_schema: type[typing.Any] | None
         :param output_schema: 输出结果数据模式。
+        :type output_schema: type[typing.Any] | None
         :param graph_id: 可选的远程图标识符。
+        :type graph_id: str | None
         :param context_mode: 上下文传递模式。
+        :type context_mode: vertical_harness.plugins.contracts.SubAgentContextMode
         :param durability: 检查点持久化级别。
+        :type durability: langgraph.types.Durability
         :param effect: 工作流副作用等级。
+        :type effect: vertical_harness.plugins.contracts.SideEffect
         :param depends_on: 前置依赖的工作流列表。
+        :type depends_on: tuple[str, ...]
         :param max_dispatches: 最大允许委派次数。
+        :type max_dispatches: int
         :param idempotent: 是否启用结果幂等复用。
+        :type idempotent: bool
         :param allowed_tenants: 允许调用的租户白名单。
+        :type allowed_tenants: frozenset[str] | None
         :param result_schema: 结构化输出结果验证模型。
+        :type result_schema: type[pydantic.BaseModel] | None
         :return: 构造完成的 WorkflowContribution 实例。
+        :rtype: vertical_harness.plugins.contracts.WorkflowContribution
+        :author: tongliga
+        :date: 2026-10-19
         """
+        # 第一步：记录构造预编译工作流贡献日志
         logger.debug(
             "workflow_from_compiled_graph_created",
             extra={"event_fields": {"workflow_name": name, "has_graph_id": graph_id is not None}},
         )
+        # 第二步：实例化 WorkflowContribution
         return cls(
             name=name,
             description=description,
@@ -602,27 +705,48 @@ class WorkflowContribution(StrictModel):
         """从 Agent Protocol `graph_id` 构造 `AsyncSubAgent` 异步工作流插件贡献。
 
         :param name: 工作流唯一名称。
+        :type name: str
         :param description: 工作流描述说明。
+        :type description: str
         :param graph_id: 远程图标识符。
+        :type graph_id: str
         :param internal_state: 内部流转状态模式。
+        :type internal_state: type[typing.Any]
         :param input_schema: 输入参数数据模式。
+        :type input_schema: type[typing.Any]
         :param output_schema: 输出结果数据模式。
+        :type output_schema: type[typing.Any]
         :param url: 远程服务端地址。
+        :type url: str | None
         :param headers: 远程服务请求头字典。
+        :type headers: dict[str, str] | None
         :param runnable: 可选的本地备用可运行对象。
+        :type runnable: langchain_core.runnables.Runnable[typing.Any, typing.Any] | None
         :param context_mode: 上下文传递模式。
+        :type context_mode: vertical_harness.plugins.contracts.SubAgentContextMode
         :param effect: 工作流副作用等级。
+        :type effect: vertical_harness.plugins.contracts.SideEffect
         :param depends_on: 前置依赖的工作流列表。
+        :type depends_on: tuple[str, ...]
         :param max_dispatches: 最大允许委派次数。
+        :type max_dispatches: int
         :param idempotent: 是否启用结果幂等复用。
+        :type idempotent: bool
         :param allowed_tenants: 允许调用的租户白名单。
+        :type allowed_tenants: frozenset[str] | None
         :param result_schema: 结构化输出结果验证模型。
+        :type result_schema: type[pydantic.BaseModel] | None
         :return: 构造完成的 WorkflowContribution 实例。
+        :rtype: vertical_harness.plugins.contracts.WorkflowContribution
+        :author: tongliga
+        :date: 2026-10-19
         """
+        # 第一步：记录构造异步工作流贡献日志
         logger.debug(
             "workflow_from_async_graph_created",
             extra={"event_fields": {"workflow_name": name, "graph_id": graph_id}},
         )
+        # 第二步：实例化 WorkflowContribution
         return cls(
             name=name,
             description=description,
@@ -664,13 +788,19 @@ class PluginContribution(StrictModel):
         """生成带有插件命名空间标识的系统提示词段落。
 
         :param plugin_id: 插件唯一标识符。
+        :type plugin_id: str
         :return: 若配置了 instructions 则返回带前缀的指令字符串，否则返回 None。
+        :rtype: str | None
+        :author: tongliga
+        :date: 2026-10-19
         """
+        # 第一步：去除首尾空白字符
         cleaned = self.instructions.strip()
         logger.debug(
             "plugin_system_instruction_formatted",
             extra={"event_fields": {"plugin_id": plugin_id, "has_instruction": bool(cleaned)}},
         )
+        # 第二步：若包含有效指令，附加命名空间前缀输出
         return f"[{plugin_id}] {cleaned}" if cleaned else None
 
 
@@ -688,12 +818,18 @@ class BuildServices:
         """为插件本地模式验证返回隔离的配置副本。
 
         :param plugin_id: 启用的插件标识符。
+        :type plugin_id: str
         :return: 插件专用配置字典，不存在时返回空字典。
+        :rtype: dict[str, typing.Any]
+        :author: tongliga
+        :date: 2026-10-19
         """
+        # 第一步：记录配置获取调试日志
         logger.debug(
             "build_services_config_retrieved",
             extra={"event_fields": {"plugin_id": plugin_id}},
         )
+        # 第二步：深拷贝插件专属配置避免外部副作用修改
         return deepcopy(self.plugin_config.get(plugin_id, {}))
 
 
@@ -711,8 +847,13 @@ class RunContext:
     def __post_init__(self) -> None:
         """校验可信边界处的关键租户与用户身份标识非空。
 
+        :return: 无返回值。
+        :rtype: None
         :raises ValueError: 当租户或用户标识为空，或任务层级非法时抛出。
+        :author: tongliga
+        :date: 2026-10-19
         """
+        # 第一步：记录初始化校验日志
         logger.debug(
             "run_context_initialized",
             extra={
@@ -723,11 +864,13 @@ class RunContext:
                 }
             },
         )
+        # 第二步：断言租户与用户标识非空
         if any(
             not isinstance(value, str) or not value.strip()
             for value in (self.tenant_id, self.user_id)
         ):
             raise ValueError("RunContext requires nonempty trusted tenant_id and user_id")
+        # 第三步：断言任务层级属于 economy 或 quality
         if self.task_tier not in {"economy", "quality"}:
             raise ValueError("task_tier must be economy or quality")
 
@@ -743,7 +886,11 @@ class DomainPlugin(Protocol):
         """创建该插件向 Deep Agents / LangChain 提供的原生贡献。
 
         :param services: 宿主在构建期注入的服务实例集合。
+        :type services: vertical_harness.plugins.contracts.BuildServices
         :return: 包含工作流、工具、技能、中间件、子智能体与系统指令的插件贡献声明对象。
+        :rtype: vertical_harness.plugins.contracts.PluginContribution
+        :author: tongliga
+        :date: 2026-10-19
         """
         ...
 

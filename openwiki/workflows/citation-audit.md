@@ -8,10 +8,10 @@ sources:
     resource: repo://packages/agent-harness/src/vertical_harness/cli.py
   - id: openwiki-source-21ddae62bfa0ad804a7ed2b8
     resource: repo://packages/research-citation/src/research_citation/skills/numeric-citation-audit/SKILL.md
-generated: { by: "antigravity", at: "2026-10-18T10:47:09.347Z" }
 verified:
   - by: openwiki/0.7.2
-    at: 2026-10-18T12:40:07.975Z
+    at: 2026-10-19T02:30:03.285Z
+generated: { by: "antigravity", at: "2026-10-19T02:30:03.285Z" }
 ---
 
 # 数字引用审计端到端流程
@@ -27,15 +27,15 @@ sequenceDiagram
     autonumber
     actor User as 用户 / 上层调用者
     participant CLI as vertical-agent CLI (_invoke_prompt)
-    participant Harness as build_agent / AgentComposer
+    participant Harness as aopen_agent(settings)
     participant Agent as Deep Agents 运行时
     participant SkillsMW as SkillsMiddleware
     participant Tool as scan_numeric (evaluate_references)
 
     User->>CLI: vertical-agent "检查正文 [1] 和 [3]；参考文献 A、B"
-    CLI->>Harness: 打开 open_store(settings) 并调用 build_agent()
-    Harness-->>CLI: 编译出包含 SkillsMiddleware 与门控工具的 Agent
-    CLI->>Agent: agent.invoke(messages, config=RunnableConfig, context=RunContext)
+    CLI->>Harness: 异步进入 aopen_agent(settings) 上下文
+    Harness-->>CLI: 编译出包含 SkillsMiddleware 与门控工具的 Agent 实例
+    CLI->>Agent: agent.ainvoke(messages, config=RunnableConfig, context=RunContext)
     Agent->>SkillsMW: 检索匹配技能
     SkillsMW-->>Agent: 加载 numeric-citation-audit/SKILL.md
     Note over SkillsMW,Agent: 根据 include_tools 动态暴露 research_citations_scan_numeric
@@ -51,8 +51,8 @@ sequenceDiagram
 在 [packages/agent-harness/src/vertical_harness/cli.py](../../packages/agent-harness/src/vertical_harness/cli.py) 的 `main` 与 `_invoke_prompt` 函数中：
 - 用户输入通过 `_build_parser()` 解析后的命令行参数传入，支持 `--list-plugins`、`--list-workflows` 与 `--history` 快速查看元数据。
 - `_invoke_prompt` 构造包含 `thread_id` 的 `RunnableConfig` 以及包含 `tenant_id`、`user_id` 和 `task_tier` 的 `RunContext`。
-- 系统使用 `open_store(settings)` 与 `open_checkpointer(settings)` 打开持久化存储与 SQLite 检查点，调用 `build_agent(settings, store=store, checkpointer=checkpointer)`。
-- 若指定了 `--checkpoint-id`、`--fork-thread-id` 或 `--update-state`，路由至 `time_travel_invoke` 执行 Time Travel 回溯或状态分叉；否则执行常规 `agent.invoke` 并绑定 `durability="sync"`，保证每一步中间状态严格落盘。
+- 系统使用异步上下文管理器 `aopen_agent(settings)` 统一管理存储、SQLite 检查点与 MCP 连接的生命周期。
+- 若指定了 `--checkpoint-id`、`--fork-thread-id` 或 `--update-state`，路由至 `atime_travel_invoke` 执行 Time Travel 回溯或状态分叉；否则执行常规 `agent.ainvoke` 并绑定 `durability="sync"`，保证每一步中间状态严格落盘。
 
 ### 2.2 双接入路径：Supervisor 确定性工作流委派 vs 渐进式技能门控
 系统支持两种维度的引用核查接入：
@@ -92,3 +92,4 @@ sequenceDiagram
 - [快速开始与任务导航](../quickstart.md)：查看完整的安装与 CLI 运行指令。
 - [学术引用审计插件实现](../integrations/citation-plugin.md)：查看 `scan_numeric` 与数据模式的源码实现。
 - [测试架构与质量保证](../testing/test-suite.md)：查看针对引用核查工具的单元测试。
+- [MedPeer 桌面前端工作台](../integrations/desktop-workbench.md)：了解桌面工作台运行时的端到端调用交互。

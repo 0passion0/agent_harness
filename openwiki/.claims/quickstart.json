@@ -1,14 +1,14 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:f5e4a101b19506155882c61f82f4089b73b184a991d0a20b8a16a4917d84f45f",
+  "pageVersion": "sha256:8fbcb882e80a58a739c182c937fc475d678f0d84e0acd5fd40c8832a6d08c8b3",
   "claims": [
     {
       "id": "claim_23a03da13b1b4c58b070571a35c8ed53",
       "statement": "README.md 规定仓库采用双独立 Python distribution：通用 vertical-agent-harness 与演示插件 vertical-plugin-research-citation，并支持同时以可编辑模式 pip install 安装。",
       "evidence": [
         {
-          "resource": "repo://README.md#L1-L16",
-          "version": "repo-lines-v1:sha256:24e684a9388c30630f6a68e4d2bab21ded37274ef987c3f30e5ca643d7860d77:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc3NzJmMTlhNDY3OWQxNzRkMGVlZTU5NzJjNjg5MjMwYmM3ZjBkNmIzODA5YTdhNWViZmZjY2EyNzBjNjBiMDEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRlOGU4MzQyNjBkYzY4ZWNmOTQ2NWZmZDAwOWZjNjlmNDIzMDU4YTk5M2ExMDI5M2Y0YTk1YjE2M2MwMjNkN2EifQ"
+          "resource": "repo://README.md#L1-L19",
+          "version": "repo-lines-v1:sha256:609c96b5e771bc28edd2a7676f9c4d2c4eef8ad4d20f62ff025680ccd20b5b02:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc3NzJmMTlhNDY3OWQxNzRkMGVlZTU5NzJjNjg5MjMwYmM3ZjBkNmIzODA5YTdhNWViZmZjY2EyNzBjNjBiMDEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ3YzA2YzU2MWQ1YzMyNzM0MzY4NTI2OGE0NmIzMzkxZjM5OThlZWU4OTBkMmJlNTFmMGQyMWNjNGE1M2FlNmQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjI3MjMyZjk1NzkyMjg1ZmU3OWVhNWVmMWIzNWM4OTlkMTJlZDU3NDkwNmUxNWRhZjRkN2VjNGY0N2JkY2NkZGIifQ"
         }
       ]
     },
@@ -17,8 +17,8 @@
       "statement": "cli.py 的 _build_parser 函数定义命令行 --list-plugins、--list-workflows、--history、--thread-id、--checkpoint-id、--fork-thread-id、--update-state、--as-node、--durability、--tenant-id、--user-id 以及 --task-tier 选项，默认 task-tier 为 TaskTier.QUALITY.value (quality)。",
       "evidence": [
         {
-          "resource": "repo://packages/agent-harness/src/vertical_harness/cli.py#L32-L99",
-          "version": "repo-lines-v1:sha256:3d39ab17d56cc8bd93bbf5e28795a6abe8a9da8b4564b559f17fc112bc244310:eyJzZWxlY3RlZExpbmVDb3VudCI6NjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE3ZDZiMGIyNTE1OTA1MDY5YzYzNzdkN2RhMDM5ZTc3ZGVkYzdhMWYyYjk2ZTdmMGNhMDg3MDRjNmVlY2ZkMGMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU5MjU4Y2Q4ZWRhYjY1MGE2OTYwMjEyMzlkZGQxZTI0YmNjMzBhZmU1ZWY2YTRlOWQzYTY5NTE1OGJmMjc1NDkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjcyOGRhYTliMjhhMGVmODU4OGQyMzBiNDgxODljZGVmYWYxODljMjU2MTE4NjA4MTk1ODY3MmE1Zjc0Njg5MDQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFjMjU1YjE3ZTBiZjAyZjU3ZmM4ZmVlNTdjODRjYTJlNGRiYzJkY2EyMjg0NTk2ZTdiNmZlZGQxMjNmM2I0ZDMifQ"
+          "resource": "repo://packages/agent-harness/src/vertical_harness/cli.py#L81-L180",
+          "version": "repo-lines-v1:sha256:e8cc8f98d038201ade157eac36f1e374a07ac9d9244acc1c179c302150611165:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAwLCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiJiZjVjZDFiMDJhMjgzODVjOTJjNmE4OWUxOGE5NTI2ODYzYWI2N2QxODgxOTEyOGJhY2QyOWZiMWE5YTUwNmFmIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiIwMWJhNDcxOWM4MGI2ZmU5MTFiMDkxYTdjMDUxMjRiNjRlZWVjZTk2NGUwOWMwNThlZjhmOTgwNWRhY2E1NDZiIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI0ZmJkMDA5MzE0YmMyNzA4NDE2NzM0YTAyYWU1ZmYzOWExZTQ4YTA1MGJlOTFmNDNiMmZhYTkyMDAyYzYyYmZjIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiI0NjM2Mjg2MjAwZWM3NzBiMDE2MWNjODlkYzAxZDhkMWMxNTZlNzk0NWE5YTdkMGIwZTZjNWE5MTU4MWQ0MTdjIn0"
         }
       ]
     },
@@ -35,6 +35,6 @@
   ],
   "verification": {
     "by": "openwiki/0.7.2",
-    "at": "2026-10-18T12:40:07.975Z"
+    "at": "2026-10-19T02:30:03.285Z"
   }
 }

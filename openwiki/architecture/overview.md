@@ -10,10 +10,10 @@ sources:
     resource: repo://packages/agent-harness/src/vertical_harness/engine/compose.py
   - id: openwiki-source-eda43ae96b105fae785c7609
     resource: repo://packages/agent-harness/src/vertical_harness/plugins/contracts.py
-generated: { by: "antigravity", at: "2026-10-18T11:09:29.262Z" }
 verified:
   - by: openwiki/0.7.2
-    at: 2026-10-18T12:40:07.975Z
+    at: 2026-10-19T02:30:03.285Z
+generated: { by: "antigravity", at: "2026-10-19T02:30:03.285Z" }
 ---
 
 # Harness 系统架构与核心组装
@@ -94,3 +94,4 @@ graph TD
 - [插件机制与贡献契约](./plugin-system.md)：深入探究插件发现与 Pydantic 贡献契约。
 - [状态隔离与分层存储](./state-and-storage.md)：了解 SqliteStore 与 CompositeBackend。
 - [动态模型路由与模型适配](./model-routing.md)：查看基于 task_tier 的动态模型分流。
+- [MedPeer 桌面前端工作台](../integrations/desktop-workbench.md)：了解基于 Harness 的桌面工作台与运行时适配。

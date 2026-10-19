@@ -1,0 +1,1 @@
+内置科研分析与报告工具默认可用；需要统计分析或表格报告时，使用 inspect_table、read_analysis_guide 与 finalize_report，不能凭空编造结果。

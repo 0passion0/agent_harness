@@ -6,10 +6,10 @@ tags: [operations, configuration, pydantic-settings, environment-variables, depl
 sources:
   - id: openwiki-source-20e6f612e4230e00fcfd13ac
     resource: repo://packages/agent-harness/src/vertical_harness/config/settings.py
-generated: { by: "antigravity", at: "2026-10-18T11:09:29.262Z" }
 verified:
   - by: openwiki/0.7.2
-    at: 2026-10-18T12:40:07.975Z
+    at: 2026-10-19T02:30:03.285Z
+generated: { by: "antigravity", at: "2026-10-19T02:30:03.285Z" }
 ---
 
 # 环境变量配置与运维部署
@@ -46,6 +46,7 @@ class HarnessSettings(BaseSettings):
 | `VA_ECONOMY_MODEL` | `NonEmptyStr` (可选) | 动态路由经济型模型标识符 |
 | `VA_QUALITY_MODEL` | `NonEmptyStr` (可选) | 动态路由高品质型模型标识符 |
 | `VA_WORKSPACE_ROOT` | `Path` (`./.agent-workspace`) | Agent 本地文件系统工作区物理根路径 |
+| `VA_RUNTIME_DATA_DIR` | `Path` (可选) | 运行时持久化数据隔离目录，默认在工作区同级目录创建 `.runtime` 目录 |
 | `VA_STORE_BACKEND` | `Literal["sqlite", "memory"]` (`sqlite`) | 状态存储后端类型（默认 `StoreBackendType.SQLITE`） |
 | `VA_STORE_DB_PATH` | `Path` / `":memory:"` (可选) | 自定义 SQLite 数据库文件绝对或相对路径 |
 | `VA_CHECKPOINT_DB_PATH` | `Path` / `":memory:"` (可选) | 自定义 LangGraph Checkpointer 检查点 SQLite 数据库路径 |
@@ -69,12 +70,13 @@ class HarnessSettings(BaseSettings):
 `HarnessSettings` 提供了多个规范化计算属性：
 
 - **`resolved_workspace_root`**：展开用户目录并解析为工作区绝对物理路径 `self.workspace_root.expanduser().resolve()`。
+- **`resolved_runtime_data_dir`**：解析运行时数据目录绝对路径；未显式指定时，默认在工作区同级目录创建带有 `.runtime` 后缀的隔离目录（`root.with_name(f"{root.name}.runtime")`），将数据库与用户业务文件完全隔开。
 - **`resolved_store_target`**：自动推断 Long-term Store SQLite 物理落盘位置：
-  - **默认工作区挂载**：若 `store_db_path is None`，默认返回 `self.resolved_workspace_root / "store.sqlite"`。
+  - **默认隔离数据目录挂载**：若 `store_db_path is None`，检查旧版未隔离数据库后默认返回 `self.resolved_runtime_data_dir / "store.sqlite"`。
   - **纯内存数据库**：若配置值为 `":memory:"`，直接返回字符串字面量 `":memory:"`。
   - **显式指定文件路径**：其余情况展开并解析为绝对路径 `Path(self.store_db_path).expanduser().resolve()`。
 - **`resolved_checkpoint_target`**：自动推断 Checkpointer 检查点 SQLite 物理落盘位置：
-  - **默认工作区挂载**：若 `checkpoint_db_path is None`，且 `store_backend != "memory"`，默认返回 `self.resolved_workspace_root / "checkpoints.sqlite"`；若存储为内存模式则回退为 `":memory:"`。
+  - **默认隔离数据目录挂载**：若 `checkpoint_db_path is None`，且 `store_backend != "memory"`，默认返回 `self.resolved_runtime_data_dir / "checkpoints.sqlite"`；若存储为内存模式则回退为 `":memory:"`。
   - **显式配置**：解析为绝对路径或 `":memory:"`。
 - **`normalized_memory_route`**：通过 `PurePosixPath` 将 `memory_route` 规范化为前后均带单斜杠的 POSIX 虚拟目录格式（如 `"/memories/"`）。
 
@@ -82,9 +84,11 @@ class HarnessSettings(BaseSettings):
 
 1. **凭证隔离**：生产环境中切勿将包含真实密钥的 `.env` 提交至版本库；主包的 [engine/compose.py](../../packages/agent-harness/src/vertical_harness/engine/compose.py) 在 `DEFAULT_FILESYSTEM_PERMISSIONS` 中配置了强制规则，大模型在任何情况下均被禁止读取或修改 `/**/.env` 与 `/**/.env.*` 文件。
 2. **多进程并发**：当前 CLI 与演示环境适合单进程或轻量开发；生产环境若多进程共享同一工作区，建议将 `store_backend` 指向独立的数据库服务（或由应用层注入共享 Postgres Checkpointer 与 Store）。
+3. **桌面端运行时兼容**：桌面前端工作台（`desktop/`）通过 `desktop/runtime.py` 复用 `HarnessSettings`，并在此基础上增加了基于账户哈希的应用数据独立隔离目录。
 
 ## 相关页面
 
 - [快速开始与任务导航](../quickstart.md)：查看从 `.env.example` 复制配置并运行 CLI 的步骤。
 - [动态模型路由与模型适配](../architecture/model-routing.md)：了解经济型与品质型模型的配置要求。
 - [状态隔离与分层存储](../architecture/state-and-storage.md)：了解 `SqliteStore` 的底层表结构与命名空间。
+- [MedPeer 桌面前端工作台](../integrations/desktop-workbench.md)：了解桌面工作台运行时的专属环境配置。

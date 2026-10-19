@@ -75,9 +75,15 @@ def _message_content_to_text(message: AnyMessage | dict[str, Any]) -> str:
     """将 LangChain 消息对象或消息字典安全提取为纯文本。
 
     :param message: LangChain 消息对象或字典。
+    :type message: langchain_core.messages.AnyMessage | dict[str, typing.Any]
     :return: 提取出的纯文本字符串。
+    :rtype: str
+    :author: tongliga
+    :date: 2026-10-19
     """
+    # 第一步：安全获取字典 content 键或对象属性
     content = message.get("content", "") if isinstance(message, dict) else getattr(message, "content", "")
+    # 第二步：针对字符串、多块列表或未知对象进行规范化展平
     if isinstance(content, str):
         text = content
     elif isinstance(content, list):
@@ -87,6 +93,7 @@ def _message_content_to_text(message: AnyMessage | dict[str, Any]) -> str:
         )
     else:
         text = str(content)
+    # 第三步：记录提取文本长度日志并返回
     logger.debug(
         "message_content_extracted",
         extra={"event_fields": {"text_length": len(text)}},
@@ -98,12 +105,18 @@ def _extract_json_dict(text: str) -> dict[str, Any] | None:
     """从任务描述文本中提取 JSON 对象字典（支持纯 JSON、代码块 JSON 或内嵌大括号 JSON）。
 
     :param text: 待提取的原始文本。
+    :type text: str
     :return: 成功解析出的字典，若解析失败则返回 None。
+    :rtype: dict[str, typing.Any] | None
+    :author: tongliga
+    :date: 2026-10-19
     """
+    # 第一步：去除文本首尾空白并执行空串短路检查
     stripped = text.strip()
     if not stripped:
         return None
 
+    # 第二步：收集所有可能包含有效 JSON 的候选字符串片段
     candidates: list[str] = [stripped]
     fenced_match = _FENCED_JSON_RE.search(stripped)
     if fenced_match is not None:
@@ -116,6 +129,7 @@ def _extract_json_dict(text: str) -> dict[str, Any] | None:
         if brace_slice not in candidates:
             candidates.append(brace_slice)
 
+    # 第三步：逐一尝试候选片段的反序列化并验证字典类型
     for candidate in candidates:
         try:
             loaded = json.loads(candidate)
@@ -137,15 +151,21 @@ def parse_and_validate_input(state: CitationInternalState) -> dict[str, Any]:
     所有业务数据必须通过本入口节点完成参数转换与边界校验后方可进入内部状态。
 
     :param state: 当前工作流状态快照。
+    :type state: research_citation.workflow.CitationInternalState
     :return: 更新 `validated_input` 与 `validation_error` 的内部状态增量。
+    :rtype: dict[str, typing.Any]
+    :author: tongliga
+    :date: 2026-10-19
     """
     logger.info("parse_and_validate_input_started")
+    # 第一步：提取 input_schema 显式传递的正文与文献列表
     raw_payload: dict[str, Any] = {}
     if "manuscript_text" in state and state["manuscript_text"] is not None:
         raw_payload["manuscript_text"] = state["manuscript_text"]
     if "bibliography" in state and state["bibliography"] is not None:
         raw_payload["bibliography"] = state["bibliography"]
 
+    # 第二步：若缺少直接参数，回退检查最后一轮 messages 中的 JSON 负载
     if "manuscript_text" not in raw_payload or "bibliography" not in raw_payload:
         messages = state.get("messages") or []
         if messages:
@@ -154,6 +174,7 @@ def parse_and_validate_input(state: CitationInternalState) -> dict[str, Any]:
             if parsed_json is not None:
                 raw_payload = {**parsed_json, **raw_payload}
 
+    # 第三步：校验必填载荷是否存在，若为空则直接记录校验失败
     if not raw_payload:
         error_msg = (
             "Missing citation check parameters: provide 'manuscript_text' and 'bibliography' "
@@ -166,6 +187,7 @@ def parse_and_validate_input(state: CitationInternalState) -> dict[str, Any]:
             "evaluation_result": None,
         }
 
+    # 第四步：执行 Pydantic 强类型 schema 校验
     try:
         validated = ReferenceCheckInput.model_validate(raw_payload)
     except ValidationError as exc:
@@ -179,6 +201,7 @@ def parse_and_validate_input(state: CitationInternalState) -> dict[str, Any]:
             "evaluation_result": None,
         }
 
+    # 第五步：校验成功，构造受保护的 validated_input 字典返回
     logger.info(
         "parse_and_validate_input_completed",
         extra={
@@ -204,12 +227,18 @@ def _route_after_validation(
     """根据入口节点校验结果决定后续确定性路由分支。
 
     :param state: 当前内部状态。
+    :type state: research_citation.workflow.CitationInternalState
     :return: 下一节点名称（'evaluate_citations' 或 'finalize_output'）。
+    :rtype: typing.Literal['evaluate_citations', 'finalize_output']
+    :author: tongliga
+    :date: 2026-10-19
     """
+    # 第一步：根据校验错误标记与载荷有效性判断分支
     if state.get("validation_error") is None and state.get("validated_input") is not None:
         route = "evaluate_citations"
     else:
         route = "finalize_output"
+    # 第二步：记录路由跳转决策日志并返回节点标识
     logger.debug(
         "citation_workflow_routed",
         extra={"event_fields": {"next_node": route}},
@@ -221,9 +250,14 @@ def evaluate_citations(state: CitationInternalState) -> dict[str, Any]:
     """工作流核心计算节点：基于内部已校验参数执行确定性引用序号范围与覆盖率评估。
 
     :param state: 包含 `validated_input` 的内部工作流状态。
+    :type state: research_citation.workflow.CitationInternalState
     :return: 更新 `evaluation_result` 的内部状态增量。
+    :rtype: dict[str, typing.Any]
+    :author: tongliga
+    :date: 2026-10-19
     """
     logger.info("evaluate_citations_started")
+    # 第一步：防御性检查内部输入载荷是否存在
     validated_input = state.get("validated_input")
     if validated_input is None:
         logger.error("evaluate_citations_missing_validated_input")
@@ -231,10 +265,12 @@ def evaluate_citations(state: CitationInternalState) -> dict[str, Any]:
             "validation_error": "Internal state missing 'validated_input'",
             "evaluation_result": None,
         }
+    # 第二步：调用底层比对函数执行学术引用与参考文献比对
     result = evaluate_references(
         manuscript_text=validated_input["manuscript_text"],
         bibliography=validated_input["bibliography"],
     )
+    # 第三步：记录完成审计指标并将结果模型转换为 JSON 兼容字典返回
     logger.info(
         "evaluate_citations_completed",
         extra={
@@ -253,11 +289,17 @@ def finalize_output(state: CitationInternalState) -> dict[str, Any]:
     """工作流出口节点：将内部评估结果封装为符合 `CitationOutputState` 的标准响应。
 
     :param state: 当前内部工作流状态。
+    :type state: research_citation.workflow.CitationInternalState
     :return: 仅包含 `messages` 与 `structured_response` 的输出状态字典。
+    :rtype: dict[str, typing.Any]
+    :author: tongliga
+    :date: 2026-10-19
     """
     logger.info("finalize_output_started")
+    # 第一步：提取中间评估结果与校验错误
     evaluation_result = state.get("evaluation_result")
     validation_error = state.get("validation_error")
+    # 第二步：若存在错误，生成标准错误 payload 与对应的 AIMessage 响应
     if validation_error is not None or evaluation_result is None:
         error_payload: dict[str, Any] = {
             "status": "invalid_input",
@@ -269,6 +311,7 @@ def finalize_output(state: CitationInternalState) -> dict[str, Any]:
             "structured_response": error_payload,
         }
 
+    # 第三步：校验成功，构造经 Pydantic 规范化序列化的成功响应并返回
     verified = ReferenceCheckResult.model_validate(evaluation_result)
     logger.info("finalize_output_success", extra={"event_fields": {"status": verified.status.value}})
     return {
@@ -289,21 +332,28 @@ def build_citation_workflow(
     - `output_schema=CitationOutputState`
 
     :param checkpointer: 可选的检查点保存器或父图继承布尔标记。
+    :type checkpointer: langgraph.checkpoint.base.BaseCheckpointSaver[typing.Any] | bool | None
     :return: 预编译的 `CompiledStateGraph` 实例。
+    :rtype: langgraph.graph.state.CompiledStateGraph[typing.Any, typing.Any, typing.Any, typing.Any]
+    :author: tongliga
+    :date: 2026-10-19
     """
     logger.info(
         "build_citation_workflow_started",
         extra={"event_fields": {"has_checkpointer": checkpointer is not None}},
     )
+    # 第一步：创建严格声明三层状态架构的 StateGraph 构造器
     builder: StateGraph[Any, Any, Any, Any] = StateGraph(
         CitationInternalState,
         input_schema=CitationInputState,
         output_schema=CitationOutputState,
     )
+    # 第二步：注册入口、评估与出口三类业务处理节点
     builder.add_node("parse_and_validate_input", parse_and_validate_input)
     builder.add_node("evaluate_citations", evaluate_citations)
     builder.add_node("finalize_output", finalize_output)
 
+    # 第三步：配置拓扑连线与分支条件路由
     builder.add_edge(START, "parse_and_validate_input")
     builder.add_conditional_edges(
         "parse_and_validate_input",
@@ -316,6 +366,7 @@ def build_citation_workflow(
     builder.add_edge("evaluate_citations", "finalize_output")
     builder.add_edge("finalize_output", END)
 
+    # 第四步：编译并命名工作流图实例返回
     compiled = builder.compile(checkpointer=checkpointer, name=CITATION_WORKFLOW_NAME)
     logger.info("build_citation_workflow_compiled")
     return compiled
@@ -332,12 +383,17 @@ def build_citation_workflow_contribution(
     """构造 `citation_audit` 工作流插件贡献声明（同时支持 `CompiledSubAgent` 与 `AsyncSubAgent`）。
 
     :param mode: 可选强制指定的接入模式（默认随宿主 `workflow_mode` 自动解析）。
+    :type mode: vertical_harness.plugins.contracts.WorkflowMode | None
     :return: 经过三层状态模式校验的 `WorkflowContribution` 实例。
+    :rtype: vertical_harness.plugins.contracts.WorkflowContribution
+    :author: tongliga
+    :date: 2026-10-19
     """
     logger.info(
         "build_citation_workflow_contribution_started",
         extra={"event_fields": {"mode": str(mode)}},
     )
+    # 第一步：构造并返回符合三层状态规范的插件工作流贡献对象
     return WorkflowContribution(
         name=CITATION_WORKFLOW_NAME,
         description=(

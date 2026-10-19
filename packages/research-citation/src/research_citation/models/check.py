@@ -50,11 +50,17 @@ class ReferenceCheckInput(BaseModel):
         """在工具或工作流执行前预解析并校验手稿正文中的数字引用格式。
 
         :param value: 待校验的手稿纯文本。
+        :type value: str
         :return: 校验通过的手稿纯文本。
+        :rtype: str
         :raises ValueError: 当引用包含非法或超长数字标号时抛出。
+        :author: tongliga
+        :date: 2026-10-19
         """
+        # 第一步：延迟导入解析器以避免模块循环依赖
         from research_citation.checker.parser import extract_cited_indices
 
+        # 第二步：调用纯函数解析器提取并触发格式与跨度校验
         extract_cited_indices(value)
         return value
 

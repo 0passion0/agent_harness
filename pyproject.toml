@@ -11,7 +11,7 @@ addopts = "-ra -q"
 [tool.ruff]
 target-version = "py311"
 line-length = 100
-src = ["packages/agent-harness/src", "packages/research-citation/src", "tests"]
+src = ["packages/agent-harness/src", "packages/research-citation/src", "packages/data-analysis/src", "tests"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "C4", "RUF"]
