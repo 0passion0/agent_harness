@@ -1,5 +1,5 @@
 [tool.uv.workspace]
-members = ["packages/*"]
+members = ["packages/agent-harness"]
 
 [tool.uv.sources]
 vertical-agent-harness = { workspace = true }

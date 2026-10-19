@@ -4,10 +4,10 @@
 
 ## 启动
 
-先按仓库根目录说明安装 `.venv` 及工作区 Python 依赖，再安装桌面插件与附件解析依赖。动态插件目录会加载已安装插件，数据分析插件需要其现有的 DuckDB 可选依赖：
+先按仓库根目录说明安装 `.venv` 及工作区 Python 依赖。桌面会枚举所有已安装插件，因此需要 `analysis` extra；附件解析依赖由 `desktop` extra 提供：
 
 ```powershell
-uv pip install --python .venv\Scripts\python.exe -r desktop\requirements.txt
+uv sync --frozen --all-packages --extra dev --extra analysis --extra desktop
 ```
 
 仓库根目录 `.env` 使用当前后端的 `VA_MODEL`、`VA_API_KEY` 和 `VA_BASE_URL`。密钥只由 Python 主进程读取，不写入前端代码。设置页可保存模型名称并实际测试连接。
