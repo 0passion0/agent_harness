@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path, PurePosixPath
 from typing import (
+    TYPE_CHECKING,
     Annotated,
     Any,
     Literal,
@@ -17,7 +18,6 @@ from typing import (
     Protocol,
     Self,
     TypeAlias,
-    TypedDict,
     runtime_checkable,
 )
 
@@ -31,6 +31,7 @@ from langgraph.graph.state import CompiledStateGraph
 from langgraph.store.base import BaseStore
 from langgraph.types import Durability
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from typing_extensions import TypedDict
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +49,13 @@ SemVerStr = Annotated[str, Field(pattern=r"^\d+\.\d+\.\d+$")]
 # 子智能体上下文传递模式：isolated（仅传递任务描述）或 fork（继承父对话上下文快照）
 SubAgentContextMode: TypeAlias = Literal["isolated", "fork"]
 # 子智能体规范联合类型（兼容 Deep Agents SubAgent/AsyncSubAgent 字典规范及预编译 CompiledSubAgent）
-SubAgentSpec: TypeAlias = dict[str, Any] | CompiledSubAgent | AsyncSubAgent
+# 注意：Python < 3.12 下 Pydantic 拒绝为标准库 typing.TypedDict（如 deepagents 中的 CompiledSubAgent/AsyncSubAgent）
+# 生成 schema，导致包含 list[SubAgentSpec] 的 Pydantic 模型（PluginContribution）在类构建时抛出 PydanticUserError。
+# 为确保静态类型检查与运行时跨 Python 版本完全兼容，静态分析（TYPE_CHECKING）保留完整联合类型，运行时采用 dict[str, Any]。
+if TYPE_CHECKING:
+    SubAgentSpec: TypeAlias = dict[str, Any] | CompiledSubAgent | AsyncSubAgent
+else:
+    SubAgentSpec: TypeAlias = dict[str, Any]
 
 
 class WorkflowInputState(TypedDict):
