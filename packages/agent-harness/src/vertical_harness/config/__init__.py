@@ -4,7 +4,6 @@ from vertical_harness.config.mcp import MCPHttpServer, MCPServerConfig, MCPStdio
 from vertical_harness.config.settings import (
     HarnessSettings,
     MemoryRouteStr,
-    ModelCallLimit,
     NonEmptyStr,
     StoreBackendType,
     TaskTier,
@@ -16,7 +15,6 @@ __all__ = [
     "MCPServerConfig",
     "MCPStdioServer",
     "MemoryRouteStr",
-    "ModelCallLimit",
     "NonEmptyStr",
     "StoreBackendType",
     "TaskTier",

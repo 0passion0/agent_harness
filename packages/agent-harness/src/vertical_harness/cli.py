@@ -211,7 +211,8 @@ def _print_workflows(settings: HarnessSettings) -> None:
     logger.debug("printing_workflows_started")
     # 第一步：初始化构建服务容器
     services = BuildServices(
-        workspace_root=settings.resolved_workspace_root, plugin_config=settings.plugin_config
+        workspace_root=settings.resolved_workspace_root, plugin_config=settings.plugin_config,
+        python_executable=settings.python_executable,
     )
     entries = []
 

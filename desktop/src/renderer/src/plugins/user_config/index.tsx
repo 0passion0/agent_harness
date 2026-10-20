@@ -100,7 +100,7 @@ export function UserConfig({
   const [tab, setTab] = useState<Tab>(initialTab)
   const [scope, setScope] = useState<ConfigScope>('global')
   const [modelCode, setModelCode] = useState(application?.model?.model ?? '')
-  const [maxTokens, setMaxTokens] = useState(String(application?.max_context_tokens ?? 128000))
+  const [maxTokens, setMaxTokens] = useState(String(application?.max_context_tokens ?? 475000))
   const [pythonPath, setPythonPath] = useState('')
   const [nodePath, setNodePath] = useState('')
   const [agentContent, setAgentContent] = useState('')
@@ -340,7 +340,7 @@ export function UserConfig({
                     <p>设置会话上下文背景信息窗口的最大 Token 限制</p>
                   </div>
                   <span className="pref-state ok">
-                    <CheckCircle2 size={14} /> {application?.max_context_tokens ? `${application.max_context_tokens.toLocaleString()} Token` : '默认 128,000 Token'}
+                    <CheckCircle2 size={14} /> {application?.max_context_tokens ? `${application.max_context_tokens.toLocaleString()} Token` : '默认 475,000 Token'}
                   </span>
                 </div>
                 <div className="pref-form">
@@ -349,8 +349,10 @@ export function UserConfig({
                     <input
                       type="number"
                       value={maxTokens}
+                      min="1"
+                      max="475000"
                       disabled={busy}
-                      placeholder="128000"
+                      placeholder="475000"
                       onChange={e => setMaxTokens(e.target.value)}
                     />
                   </label>
@@ -358,15 +360,14 @@ export function UserConfig({
                 <div className="pref-actions">
                   <button
                     className="pref-primary"
-                    disabled={busy || !maxTokens.trim() || Number(maxTokens) === application?.max_context_tokens}
+                    disabled={busy || !maxTokens.trim() || Number(maxTokens) < 1 || Number(maxTokens) > 475000 || Number(maxTokens) === application?.max_context_tokens}
                     onClick={() => void run(() => apply('context.configure', { max_tokens: maxTokens.trim() }), '最大 Token 预算已保存')}
                   >
                     保存 Token 限制
                   </button>
-                  <button disabled={busy} onClick={() => setMaxTokens('128000')}>设为默认 128k</button>
-                  <button disabled={busy} onClick={() => setMaxTokens('475000')}>设为 475k</button>
+                  <button disabled={busy} onClick={() => setMaxTokens('475000')}>设为默认 475k</button>
                 </div>
-                <p className="pref-hint">用于控制输入提示词、技能、MCP、记忆和历史对话的上下文窗口预算。</p>
+                <p className="pref-hint">用于控制输入提示词、技能、MCP、记忆和历史对话的上下文窗口预算。在有效窗口的 90% 自动压缩历史；模型容量较小时使用模型窗口。</p>
               </section>
 
               {/* 统一配置原则 */}

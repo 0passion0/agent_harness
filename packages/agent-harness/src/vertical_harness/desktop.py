@@ -62,7 +62,7 @@ class AgentLoop:
 
     async def context_usage(self, thread_id: str, messages: list[Any]) -> dict[str, Any]:
         assert self.settings is not None
-        maximum = (self.desktop_options or {}).get("max_context_tokens", 128_000)
+        maximum = (self.desktop_options or {}).get("max_context_tokens", 475_000)
         async with aopen_store(self.settings) as store:
             saved = await store.aget(self._context_namespace(thread_id), "usage")
         if saved is None:
@@ -540,7 +540,7 @@ class AgentLoop:
 
         failure: Exception | None = None
 
-        details = ToolDetails((self.desktop_options or {}).get("max_context_tokens", 128_000))
+        details = ToolDetails((self.desktop_options or {}).get("max_context_tokens", 475_000))
 
         active_workflows: dict[str, dict[str, Any]] = {}
 
@@ -699,7 +699,7 @@ loop = AgentLoop()
 class ToolDetails(AsyncCallbackHandler):
     run_inline = True
 
-    def __init__(self, maximum: int = 128_000):
+    def __init__(self, maximum: int = 475_000):
         self.records: dict[str, dict[str, Any]] = {}
         self.started: dict[str, float] = {}
         self.maximum = maximum

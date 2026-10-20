@@ -15,9 +15,12 @@ import hashlib
 import json
 import logging
 import math
+import os
+import subprocess
 from pathlib import Path
 from statistics import fmean, median, stdev
 from typing import Any, NotRequired
+from uuid import uuid4
 
 import duckdb
 from langchain_core.messages import AIMessage, HumanMessage
@@ -280,6 +283,146 @@ def _compute_pearson(xs: list[float], ys: list[float]) -> float | None:
         return None
     r = num / (den_x * den_y)
     return round(max(-1.0, min(1.0, r)), 6)
+
+
+def compute_analysis(
+    validated: dict[str, Any], profile: dict[str, Any], target_file: Path
+) -> dict[str, Any]:
+    """根据已校验输入、表格画像与数据文件计算结构化分析结果。"""
+    columns_meta = profile.get("columns") or []
+    col_map = {str(col["name"]): col for col in columns_meta if "name" in col}
+    analysis_type = str(validated.get("analysis_type") or "descriptive")
+    target_columns = [str(c) for c in (validated.get("target_columns") or [])]
+    group_column = validated.get("group_column")
+    effective_goal = str(
+        validated.get("research_question")
+        or validated.get("analysis_goal")
+        or validated.get("effective_goal")
+        or "数据表特征分布与描述性统计分析"
+    )
+
+    descriptive_numeric: dict[str, dict[str, Any]] = {}
+    categorical_summary: dict[str, list[dict[str, Any]]] = {}
+    selected_for_desc = target_columns if target_columns else list(col_map.keys())
+    for col_name in selected_for_desc:
+        c_info = col_map[col_name]
+        num_info = c_info.get("numeric_subset") or c_info.get("numeric")
+        numeric_count = int(
+            c_info.get("numeric_count")
+            or (num_info.get("count") if isinstance(num_info, dict) else 0)
+            or 0
+        )
+        if isinstance(num_info, dict) and numeric_count > 0:
+            quantiles = num_info.get("approx_quartiles") or []
+            descriptive_numeric[col_name] = {
+                "count": numeric_count,
+                "null_count": int(c_info.get("missing_count") or c_info.get("null_count") or 0),
+                "mean": num_info.get("mean"),
+                "std": num_info.get("std"),
+                "min": num_info.get("min"),
+                "q25": quantiles[0] if len(quantiles) > 0 else num_info.get("q25"),
+                "median": quantiles[1] if len(quantiles) > 1 else num_info.get("median"),
+                "q75": quantiles[2] if len(quantiles) > 2 else num_info.get("q75"),
+                "max": num_info.get("max"),
+            }
+        top_vals = c_info.get("frequent_values") or c_info.get("top_values")
+        if top_vals:
+            categorical_summary[col_name] = list(top_vals)
+
+    selected_sheet = profile.get("selected_sheet") or validated.get("sheet_name")
+    correlations: list[dict[str, Any]] = []
+    group_comparisons: list[dict[str, Any]] = []
+    inference_note: str | None = None
+
+    if analysis_type == "correlation":
+        rows = _load_table_columns(target_file, target_columns, sheet_name=selected_sheet)
+        for idx_a, col_a in enumerate(target_columns):
+            for col_b in target_columns[idx_a + 1 :]:
+                paired_x: list[float] = []
+                paired_y: list[float] = []
+                for row in rows:
+                    fx = _to_float(row.get(col_a))
+                    fy = _to_float(row.get(col_b))
+                    if fx is not None and fy is not None:
+                        paired_x.append(fx)
+                        paired_y.append(fy)
+                correlations.append(
+                    {
+                        "column_x": col_a,
+                        "column_y": col_b,
+                        "n": len(paired_x),
+                        "pearson_r": _compute_pearson(paired_x, paired_y),
+                    }
+                )
+    elif analysis_type == "group_comparison":
+        grp_col = str(group_column)
+        rows = _load_table_columns(
+            target_file, [grp_col, *target_columns], sheet_name=selected_sheet
+        )
+        for target_col in target_columns:
+            grouped_vals: dict[str, list[float]] = {}
+            for row in rows:
+                group_raw = row.get(grp_col)
+                if group_raw is None or (isinstance(group_raw, str) and not group_raw.strip()):
+                    continue
+                value = _to_float(row.get(target_col))
+                if value is not None:
+                    grouped_vals.setdefault(str(group_raw).strip(), []).append(value)
+
+            group_stats: dict[str, dict[str, Any]] = {}
+            for group_name, values in sorted(grouped_vals.items()):
+                if not values:
+                    continue
+                group_stats[group_name] = {
+                    "n": len(values),
+                    "mean": round(fmean(values), 6),
+                    "std": round(stdev(values), 6) if len(values) > 1 else 0.0,
+                    "median": round(float(median(values)), 6),
+                    "min": round(min(values), 6),
+                    "max": round(max(values), 6),
+                }
+            welch_t: float | None = None
+            mean_diff: float | None = None
+            group_names = list(group_stats.keys())
+            if len(group_names) >= 2:
+                g1, g2 = group_stats[group_names[0]], group_stats[group_names[1]]
+                mean_diff = round(float(g1["mean"]) - float(g2["mean"]), 6)
+                if int(g1["n"]) >= 2 and int(g2["n"]) >= 2:
+                    se_sq = (float(g1["std"]) ** 2) / int(g1["n"]) + (float(g2["std"]) ** 2) / int(
+                        g2["n"]
+                    )
+                    if se_sq > 0:
+                        welch_t = round(mean_diff / math.sqrt(se_sq), 6)
+            group_comparisons.append(
+                {
+                    "target_column": target_col,
+                    "group_column": grp_col,
+                    "groups": group_stats,
+                    "compared_groups": group_names[:2] if len(group_names) >= 2 else group_names,
+                    "mean_difference": mean_diff,
+                    "welch_t": welch_t,
+                }
+            )
+    elif any(kw in effective_goal.lower() for kw in _INFERENCE_KEYWORDS):
+        inference_note = (
+            "未提供显式的统计检验类型（correlation / group_comparison）及对应变量参数，"
+            "本次仅输出确定性描述性统计，不自动假设或编造统计检验结论。"
+        )
+
+    return {
+        "task": "scientific_data_analysis",
+        "source": profile.get("source", str(validated["file_path"])),
+        "selected_sheet": selected_sheet,
+        "research_question": effective_goal,
+        "analysis_type": analysis_type,
+        "row_count": int(profile.get("row_count") or 0),
+        "column_count": int(profile.get("column_count") or 0),
+        "descriptive_statistics": descriptive_numeric,
+        "categorical_frequencies": categorical_summary,
+        "correlations": correlations,
+        "group_comparisons": group_comparisons,
+        "inference_note": inference_note,
+    }
 
 
 class AnalysisWorkflowResult(ReportValidationResult):
@@ -695,7 +838,6 @@ class DataAnalysisWorkflow(BaseWorkflow):
         :date: 2026-10-19
         """
         logger.info("analyze_data_started")
-        # 第一步：若为纯报告校验且已有执行记录，直接复用已有执行凭证
         validated = self._merge_editable_state(state)
         if validated.get("task_type") == "validate_report" and "file_path" not in validated:
             return {"analysis_result": {"status": "skipped_for_report_validation"}}
@@ -705,7 +847,6 @@ class DataAnalysisWorkflow(BaseWorkflow):
             profile.get("all_columns") or profile.get("columns") or []
         )
         col_map = {str(col["name"]): col for col in columns_meta if "name" in col}
-
         analysis_type = str(validated.get("analysis_type") or "descriptive")
         target_columns = [str(c) for c in (validated.get("target_columns") or [])]
         group_column = validated.get("group_column")
@@ -716,7 +857,7 @@ class DataAnalysisWorkflow(BaseWorkflow):
             or "数据表特征分布与描述性统计分析"
         )
 
-        # 第二步：校验显式指定的分析列是否存在且包含有效数值
+        # 校验显式指定的分析列是否存在
         if target_columns:
             missing_cols = [c for c in target_columns if c not in col_map]
             if missing_cols:
@@ -729,146 +870,34 @@ class DataAnalysisWorkflow(BaseWorkflow):
                 "validation_error": f"Specified group_column {group_column!r} not found in table.",
                 "error_status": "invalid_input",
             }
+        if analysis_type == "correlation" and len(target_columns) < 2:
+            return {
+                "validation_error": "Correlation analysis requires at least 2 numeric target_columns.",
+                "error_status": "invalid_input",
+            }
+        if analysis_type == "group_comparison" and (not group_column or not target_columns):
+            return {
+                "validation_error": "Group comparison requires explicit 'group_column' and 'target_columns'.",
+                "error_status": "invalid_input",
+            }
 
-        # 第三步：提取全表真实描述性统计（数值列均值/标准差/分位数与分类列频次）
-        descriptive_numeric: dict[str, dict[str, Any]] = {}
-        categorical_summary: dict[str, list[dict[str, Any]]] = {}
-        selected_for_desc = target_columns if target_columns else list(col_map.keys())
-        for col_name in selected_for_desc:
-            c_info = col_map[col_name]
-            num_info = c_info.get("numeric_subset") or c_info.get("numeric")
-            numeric_count = int(
-                c_info.get("numeric_count")
-                or (num_info.get("count") if isinstance(num_info, dict) else 0)
-                or 0
-            )
-            if isinstance(num_info, dict) and numeric_count > 0:
-                quantiles = num_info.get("approx_quartiles") or []
-                descriptive_numeric[col_name] = {
-                    "count": numeric_count,
-                    "null_count": int(c_info.get("missing_count") or c_info.get("null_count") or 0),
-                    "mean": num_info.get("mean"),
-                    "std": num_info.get("std"),
-                    "min": num_info.get("min"),
-                    "q25": quantiles[0] if len(quantiles) > 0 else num_info.get("q25"),
-                    "median": quantiles[1] if len(quantiles) > 1 else num_info.get("median"),
-                    "q75": quantiles[2] if len(quantiles) > 2 else num_info.get("q75"),
-                    "max": num_info.get("max"),
-                }
-            top_vals = c_info.get("frequent_values") or c_info.get("top_values")
-            if top_vals:
-                categorical_summary[col_name] = list(top_vals)
-
-        # 第四步：根据显式 analysis_type 执行真实相关分析或组间比较计算
         target_file = self.context.resolve_workspace_path(str(validated["file_path"]))
         selected_sheet = profile.get("selected_sheet") or validated.get("sheet_name")
-        correlations: list[dict[str, Any]] = []
-        group_comparisons: list[dict[str, Any]] = []
-        inference_note: str | None = None
-
-        if analysis_type == "correlation":
-            if len(target_columns) < 2:
-                return {
-                    "validation_error": "Correlation analysis requires at least 2 numeric target_columns.",
-                    "error_status": "invalid_input",
-                }
-            rows = _load_table_columns(target_file, target_columns, sheet_name=selected_sheet)
-            for idx_a, col_a in enumerate(target_columns):
-                for col_b in target_columns[idx_a + 1 :]:
-                    paired_x: list[float] = []
-                    paired_y: list[float] = []
-                    for r in rows:
-                        fx = _to_float(r.get(col_a))
-                        fy = _to_float(r.get(col_b))
-                        if fx is not None and fy is not None:
-                            paired_x.append(fx)
-                            paired_y.append(fy)
-                    r_val = _compute_pearson(paired_x, paired_y)
-                    correlations.append(
-                        {
-                            "column_x": col_a,
-                            "column_y": col_b,
-                            "n": len(paired_x),
-                            "pearson_r": r_val,
-                        }
-                    )
-        elif analysis_type == "group_comparison":
-            if not group_column or not target_columns:
-                return {
-                    "validation_error": "Group comparison requires explicit 'group_column' and 'target_columns'.",
-                    "error_status": "invalid_input",
-                }
-            grp_col = str(group_column)
-            rows = _load_table_columns(
-                target_file, [grp_col, *target_columns], sheet_name=selected_sheet
-            )
-            for t_col in target_columns:
-                grouped_vals: dict[str, list[float]] = {}
-                for r in rows:
-                    g_raw = r.get(grp_col)
-                    if g_raw is None or (isinstance(g_raw, str) and not g_raw.strip()):
-                        continue
-                    f_val = _to_float(r.get(t_col))
-                    if f_val is not None:
-                        grouped_vals.setdefault(str(g_raw).strip(), []).append(f_val)
-
-                group_stats: dict[str, dict[str, Any]] = {}
-                for g_name, vals in sorted(grouped_vals.items()):
-                    if not vals:
-                        continue
-                    group_stats[g_name] = {
-                        "n": len(vals),
-                        "mean": round(fmean(vals), 6),
-                        "std": round(stdev(vals), 6) if len(vals) > 1 else 0.0,
-                        "median": round(float(median(vals)), 6),
-                        "min": round(min(vals), 6),
-                        "max": round(max(vals), 6),
-                    }
-                # 若恰好存在两个或以上有效分组，计算前两个主分组的均值差与 Welch t 统计量
-                welch_t: float | None = None
-                mean_diff: float | None = None
-                group_names = list(group_stats.keys())
-                if len(group_names) >= 2:
-                    g1, g2 = group_stats[group_names[0]], group_stats[group_names[1]]
-                    mean_diff = round(float(g1["mean"]) - float(g2["mean"]), 6)
-                    if int(g1["n"]) >= 2 and int(g2["n"]) >= 2:
-                        se_sq = (float(g1["std"]) ** 2) / int(g1["n"]) + (
-                            float(g2["std"]) ** 2
-                        ) / int(g2["n"])
-                        if se_sq > 0:
-                            welch_t = round(mean_diff / math.sqrt(se_sq), 6)
-                group_comparisons.append(
-                    {
-                        "target_column": t_col,
-                        "group_column": grp_col,
-                        "groups": group_stats,
-                        "compared_groups": group_names[:2] if len(group_names) >= 2 else group_names,
-                        "mean_difference": mean_diff,
-                        "welch_t": welch_t,
-                    }
-                )
-        else:
-            # 默认描述性统计：若用户在问题中提及推断检验但未提供显式检验参数，明确记录说明，绝不编造推断结果
-            if any(kw in effective_goal.lower() for kw in _INFERENCE_KEYWORDS):
-                inference_note = (
-                    "未提供显式的统计检验类型（correlation / group_comparison）及对应变量参数，"
-                    "本次仅输出确定性描述性统计，不自动假设或编造统计检验结论。"
-                )
-
-        # 第五步：汇总结构化分析结果并落盘可复现 Python 分析脚本与 JSON 结果产物
-        summary_data: dict[str, Any] = {
-            "task": "scientific_data_analysis",
+        selected_for_desc = target_columns if target_columns else list(col_map.keys())
+        analysis_profile = {
             "source": profile.get("source", str(validated["file_path"])),
             "selected_sheet": selected_sheet,
-            "research_question": effective_goal,
+            "row_count": profile.get("row_count"),
+            "column_count": profile.get("column_count"),
+            "columns": [col_map[name] for name in selected_for_desc],
+        }
+        analysis_input = {
             "analysis_type": analysis_type,
-            "row_count": int(profile.get("row_count") or 0),
-            "column_count": int(profile.get("column_count") or 0),
-            "descriptive_statistics": descriptive_numeric,
-            "categorical_frequencies": categorical_summary,
-            "correlations": correlations,
-            "group_comparisons": group_comparisons,
-            "inference_note": inference_note,
+            "target_columns": target_columns,
+            "group_column": group_column,
+            "research_question": effective_goal,
+            "file_path": validated["file_path"],
+            "sheet_name": selected_sheet,
         }
 
         scripts_dir = self.workspace_root / "scripts"
@@ -878,34 +907,67 @@ class DataAnalysisWorkflow(BaseWorkflow):
 
         script_file = scripts_dir / "analyze_data.py"
         summary_file = artifacts_dir / "analysis_summary.json"
-        summary_json_text = json.dumps(summary_data, ensure_ascii=False, allow_nan=False, indent=2)
-        summary_file.write_text(summary_json_text, encoding="utf-8")
-
+        config_json_text = json.dumps(
+            {
+                "validated": analysis_input,
+                "profile": analysis_profile,
+                "target_file": str(target_file),
+            },
+            ensure_ascii=False,
+            allow_nan=False,
+        )
         script_content = (
             '"""自动生成的可复现表格统计分析脚本。"""\n\n'
-            "from __future__ import annotations\n\n"
             "import json\n"
-            "from pathlib import Path\n\n"
-            f"ANALYSIS_CONFIG = { {'source': summary_data['source'], 'analysis_type': analysis_type, 'target_columns': target_columns, 'group_column': group_column}!r}\n"
-            f"COMPUTED_SUMMARY = json.loads({summary_json_text!r})\n\n"
+            "from pathlib import Path\n"
+            "from vertical_plugins.data_analysis.workflow.pipeline import compute_analysis\n\n"
+            f"ANALYSIS_CONFIG = json.loads({config_json_text!r})\n\n"
             "def main() -> None:\n"
+            "    summary = compute_analysis(\n"
+            "        ANALYSIS_CONFIG['validated'],\n"
+            "        ANALYSIS_CONFIG['profile'],\n"
+            "        Path(ANALYSIS_CONFIG['target_file']),\n"
+            "    )\n"
             "    out = Path(__file__).resolve().parents[1] / 'artifacts' / 'analysis_summary.json'\n"
             "    out.parent.mkdir(parents=True, exist_ok=True)\n"
-            "    out.write_text(json.dumps(COMPUTED_SUMMARY, ensure_ascii=False, allow_nan=False, indent=2), encoding='utf-8')\n\n"
+            "    out.write_text(json.dumps(summary, ensure_ascii=False, allow_nan=False, indent=2), encoding='utf-8')\n\n"
             "if __name__ == '__main__':\n"
             "    main()\n"
         )
         script_file.write_text(script_content, encoding="utf-8")
 
-        # 第六步：仅为当前已授权的分析运行记录真实 SHA256 执行凭证
+        # 将完整输出保存在工作区，避免子进程日志占用宿主内存
+        run_dir = self.workspace_root / "runs" / "data_analysis" / uuid4().hex
+        run_dir.mkdir(parents=True)
+        stdout_path, stderr_path = run_dir / "stdout.txt", run_dir / "stderr.txt"
+        env = {
+            key: value
+            for key, value in os.environ.items()
+            if key.upper() in {"PATH", "SYSTEMROOT", "WINDIR", "TEMP", "TMP", "HOME", "USERPROFILE"}
+        }
+        env.update(PYTHONIOENCODING="utf-8", PYTHONUTF8="1")
+        with stdout_path.open("wb") as stdout_file, stderr_path.open("wb") as stderr_file:
+            result = subprocess.run(
+                [self.context.python_executable, "-X", "utf8", "-I", str(script_file)],
+                cwd=self.workspace_root,
+                env=env,
+                stdin=subprocess.DEVNULL,
+                stdout=stdout_file,
+                stderr=stderr_file,
+                timeout=120,
+                check=True,
+            )
+
+        summary_data = json.loads(summary_file.read_text(encoding="utf-8"))
+        summary_json_text = json.dumps(summary_data, ensure_ascii=False, allow_nan=False, indent=2)
         evidence_recorder = AnalysisEvidence(self.workspace_root)
         receipt = evidence_recorder.record_script_execution(
             script_rel_path="scripts/analyze_data.py",
             artifact_rel_paths=["artifacts/analysis_summary.json"],
-            exit_code=0,
+            exit_code=result.returncode,
         )
 
-        # 第七步：若上下文绑定了语言模型，可选生成结果解释摘要
+        # 若上下文绑定了语言模型，可选生成结果解释摘要
         active_model = self.model
         if active_model is not None and hasattr(active_model, "invoke"):
             try:

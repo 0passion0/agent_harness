@@ -8,6 +8,7 @@
     "predev": "install-electron",
     "dev": "electron-vite dev",
     "build": "electron-vite build",
+    "prepare:python": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-python-runtime.ps1",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:smoke": "npm run build && node tests/smoke-runner.cjs"

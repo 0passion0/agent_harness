@@ -10,7 +10,8 @@ from __future__ import annotations
 DATA_ANALYSIS_INSTRUCTIONS = (
     "When a user requests tabular data profiling, statistical analysis, or a Chinese research report "
     "for files in `{workspace_root}`, read the `data-analysis-scientific-data-analysis` skill. "
-    "Choose one execution route: use run_python directly for advanced methods when available, "
+    "Choose one execution route: write a complete .py script with write_file/edit_file and "
+    "run it with execute_python_file for advanced methods when available, "
     "including the initial compact local table summary; do not delegate profile pages first. "
     "For this plugin's supported basic analyses, use the task tool with "
     "subagent_type='data_analysis_workflow' and a JSON-only description containing "
@@ -24,10 +25,10 @@ DATA_ANALYSIS_INSTRUCTIONS = (
     "and group_comparison requires target_columns plus group_column. "
     "task_type selects profile, full_analysis, or validate_report, not the analysis method. "
     "Advanced methods such as logistic regression, Firth, MICE, and restricted cubic splines "
-    "are not implemented by this workflow. If run_python is available, perform requested "
+    "are not implemented by this workflow. If execute_python_file is available, perform requested "
     "advanced calculations with appropriate installed libraries and verify actual outputs. "
     "Otherwise state the missing execution capability. Never describe an unexecuted method as done. "
-    "For Python analysis, inspect the workbook schema compactly with run_python; repeated "
+    "For Python analysis, save and run a compact schema-inspection script; repeated "
     "profile pages are unnecessary. Do not dispatch a basic full_analysis as a substitute "
     "for a requested advanced method."
 )

@@ -1,6 +1,6 @@
 # MedPeer 桌面前端
 
-桌面工作台的 Python JSON-RPC 后端作为 `vertical_harness.desktop` 随核心包安装；Electron 主进程使用仓库 `.venv` 启动该模块。页面保留现有风格，聊天内展示工作流、节点和工具状态；桌面专用运行配置和附件处理位于核心包的 `vertical_harness.desktop_runtime` 与 `vertical_harness.desktop_attachments`。
+桌面工作台的 Python JSON-RPC 后端作为 `vertical_harness.desktop` 随核心包安装；开发时 Electron 主进程使用仓库 `.venv` 启动该模块，发布包使用随包运行时。页面保留现有风格，聊天内展示工作流、节点和工具状态；桌面专用运行配置和附件处理位于核心包的 `vertical_harness.desktop_runtime` 与 `vertical_harness.desktop_attachments`。
 
 ## 启动
 
@@ -9,6 +9,14 @@
 ```powershell
 uv sync --frozen --all-packages --extra dev --extra analysis --extra desktop
 ```
+
+发布包中的 Python 运行时优先于设置页填写的解释器，用于运行桌面后端和用户保存的分析脚本。准备 Windows 发布运行时需要已安装 `uv`，执行：
+
+```powershell
+npm run prepare:python
+```
+
+脚本使用 `uv.lock` 中 `vertical-agent-harness` 的锁定依赖，并将其 wheel 与 `analysis`、`desktop` extras 安装到 Python 3.12 standalone runtime，验证后放入 `resources/python`；Electron 打包配置会将其复制到应用资源目录。该脚本只准备运行时，仓库当前没有 Electron 安装包构建命令。运行 `prepare:python` 前需确保目标目录不存在。开发时桌面后端继续使用仓库 `.venv`；未打包运行时，保存脚本可回退到设置页中的 Python 路径。
 
 仓库根目录 `.env` 使用当前后端的 `VA_MODEL`、`VA_API_KEY` 和 `VA_BASE_URL`。密钥只由 Python 主进程读取，不写入前端代码。设置页可保存模型名称并实际测试连接。
 
@@ -19,7 +27,7 @@ npm ci
 npm run dev
 ```
 
-需要 Node.js/npm。启动脚本使用当前仓库 `.venv\Scripts\python.exe`，没有安装包和系统 Python 回退。
+需要 Node.js/npm。开发启动脚本使用当前仓库 `.venv\Scripts\python.exe`，没有系统 Python 回退。
 
 ## 登录和数据
 

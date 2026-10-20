@@ -246,7 +246,7 @@ export class DesktopApplication {
       runtimes: settings?.runtimes ?? { python: '', node: '' },
       permission_mode: settings?.permission_mode ?? 'ask',
       data_dir: this.directory,
-      max_context_tokens: settings?.max_context_tokens ?? 128000
+      max_context_tokens: settings?.max_context_tokens ?? 475000
     }
   }
 
@@ -679,7 +679,7 @@ export class DesktopApplication {
       case 'context.configure': {
         this.idle()
         const max = Number(params.max_tokens)
-        if (!Number.isSafeInteger(max) || max < 1) throw new Error('上下文窗口必须为正整数')
+        if (!Number.isSafeInteger(max) || max < 1 || max > 475000) throw new Error('上下文窗口必须为 1 到 475,000 之间的整数')
         files.saveSettings({ max_context_tokens: max })
         break
       }

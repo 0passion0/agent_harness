@@ -22,6 +22,33 @@ class ToolBindableFakeModel(FakeListChatModel):
         return super()._generate(messages, stop=stop, run_manager=run_manager, **kwargs)
 
 
+@pytest.mark.parametrize("history_messages,expected_calls", [(80, 1), (88, 2)])
+def test_native_compaction_waits_until_ninety_percent_of_475k(
+    tmp_path, history_messages, expected_calls,
+):
+    model = ToolBindableFakeModel(
+        responses=["Done."] if expected_calls == 1 else ["History summary.", "Done."],
+        profile={"max_input_tokens": 1_000_000},
+    )
+    agent = create_deep_agent(
+        model=model, backend=FilesystemBackend(root_dir=tmp_path),
+        middleware=[_summarization_middleware(model, FilesystemBackend(root_dir=tmp_path))],
+        checkpointer=InMemorySaver(),
+    )
+    config = {"configurable": {"thread_id": "475k-context"}}
+    history = [
+        HumanMessage(content=f"Historical request {i}: " + "x" * 20_000)
+        for i in range(history_messages)
+    ]
+
+    result = agent.invoke({"messages": history}, config)
+
+    assert result["messages"][-1].content == "Done."
+    assert len(model.seen_messages) == expected_calls
+    assert ("Historical request 0:" in repr(model.seen_messages[-1])) == (expected_calls == 1)
+    assert "Historical request 0:" in repr(agent.get_state(config).values["messages"])
+
+
 def test_native_summarization_compacts_model_view_and_preserves_checkpoint_history(
     tmp_path,
 ) -> None:
@@ -32,7 +59,7 @@ def test_native_summarization_compacts_model_view_and_preserves_checkpoint_histo
     backend = FilesystemBackend(root_dir=tmp_path)
     middleware = _summarization_middleware(model, backend)
 
-    # Large old tool input forces argument truncation; long history crosses the early trigger.
+    # Large old tool input forces argument truncation; long history crosses the 90% trigger.
     old_args = "OLD_ARG_SENTINEL " + ("x" * 40_000)
     history = [
         AIMessage(
@@ -51,7 +78,7 @@ def test_native_summarization_compacts_model_view_and_preserves_checkpoint_histo
             message
             for i in range(8)
             for message in (
-                HumanMessage(content=f"Earlier request {i}. " + "context " * 4_000),
+                HumanMessage(content=f"Earlier request {i}. " + "context " * 8_000),
                 AIMessage(content=f"Verified result {i} was recorded."),
             )
         ],
@@ -138,32 +165,57 @@ def test_completed_script_is_trimmed_before_the_next_model_call(tmp_path) -> Non
     assert (tmp_path / "analysis.py").read_text(encoding="utf-8") == script
 
 
-def test_summarization_thresholds_are_early_and_respect_small_model_profile(tmp_path) -> None:
+def test_summarization_threshold_respects_small_model_profile(tmp_path) -> None:
     large = FakeListChatModel(responses=["ok"], profile={"max_input_tokens": 100_000})
     large_middleware = _summarization_middleware(large, FilesystemBackend(root_dir=tmp_path))
-    assert large_middleware._lc_helper.trigger == [
-        ("fraction", 0.85),
-        ("tokens", 24_000),
-    ]
-    assert large_middleware._lc_helper.keep == ("tokens", 8_000)
+    assert large_middleware._lc_helper.trigger == ("tokens", 90_000)
+    assert large_middleware._lc_helper.keep == ("tokens", 10_000)
     assert large_middleware._truncate_args_trigger == ("tokens", 8_000)
     assert large_middleware._truncate_args_keep == ("messages", 1)
     assert large_middleware._max_arg_length == 1_200
 
     small = FakeListChatModel(responses=["ok"], profile={"max_input_tokens": 20_000})
     small_middleware = _summarization_middleware(small, FilesystemBackend(root_dir=tmp_path))
-    assert small_middleware._lc_helper.trigger == [
-        ("fraction", 0.85),
-        ("tokens", 17_000),
-    ]
+    assert small_middleware._lc_helper.trigger == ("tokens", 18_000)
     assert small_middleware._lc_helper.keep == ("tokens", 2_000)
     assert small_middleware._truncate_args_trigger == ("tokens", 8_000)
 
 
 @pytest.mark.parametrize("profile", [None, {}])
-def test_unprofiled_model_uses_native_trigger_or_early_token_trigger(tmp_path, profile) -> None:
+def test_unprofiled_model_uses_475k_context_budget(tmp_path, profile) -> None:
     middleware = _summarization_middleware(
         FakeListChatModel(responses=["ok"], profile=profile),
         FilesystemBackend(root_dir=tmp_path),
     )
-    assert middleware._lc_helper.trigger == [("tokens", 170_000), ("tokens", 24_000)]
+    assert middleware._lc_helper.trigger == ("tokens", 427_500)
+    assert middleware._lc_helper.keep == ("tokens", 47_500)
+
+
+@pytest.mark.parametrize(
+    "profile_limit,configured_limit,trigger,keep,arg_trigger",
+    [
+        (None, 1, 1, 1, 1),
+        (None, 4_096, 3_686, 409, 3_686),
+        (None, 475_000, 427_500, 47_500, 8_000),
+        (20_000, 1, 1, 1, 1),
+        (20_000, 4_096, 3_686, 409, 3_686),
+        (20_000, 475_000, 18_000, 2_000, 8_000),
+        (100_000, 1, 1, 1, 1),
+        (100_000, 4_096, 3_686, 409, 3_686),
+        (100_000, 475_000, 90_000, 10_000, 8_000),
+        (1_000_000, 475_000, 427_500, 47_500, 8_000),
+    ],
+)
+def test_summarization_respects_configured_context_limit(
+    tmp_path, profile_limit, configured_limit, trigger, keep, arg_trigger
+):
+    model = FakeListChatModel(
+        responses=["ok"],
+        profile={"max_input_tokens": profile_limit} if profile_limit else None,
+    )
+    middleware = _summarization_middleware(
+        model, FilesystemBackend(root_dir=tmp_path), configured_limit
+    )
+    assert middleware._lc_helper.trigger == ("tokens", trigger)
+    assert middleware._lc_helper.keep == ("tokens", keep)
+    assert middleware._truncate_args_trigger == ("tokens", arg_trigger)

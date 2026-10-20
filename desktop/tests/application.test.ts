@@ -87,6 +87,13 @@ it('resumes research questions with text and approvals with exact decisions usin
   expect(s.request).toHaveBeenCalledWith('run.resume', { thread_id: snapshot.thread_id, run_id: run, decisions: { approval: { decisions: [{ type: 'reject' }] } } })
 })
 
+it.each(['0', '475001', '1.5'])('rejects an invalid context budget %s before saving', async max => {
+  const s = setup(); await s.application.initialize()
+  expect(s.application.state().max_context_tokens).toBe(475000)
+  await expect(s.command('context.configure', { max_tokens: max })).rejects.toThrow('475,000')
+  expect(s.application.state().max_context_tokens).toBe(475000)
+})
+
 it('persists settings and uses the backend plugin catalog across projects', async () => {
   const s = setup(); await s.application.initialize()
   await s.command('model.configure', { model_code: 'deepseek-flash' })

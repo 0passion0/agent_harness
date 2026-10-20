@@ -27,9 +27,8 @@ from vertical_harness import (
     aopen_agent,
     discover_plugins,
 )
-from vertical_harness.desktop_python import python_tool
 from vertical_harness.engine.plugin_loader import PLUGIN_GROUP
-from vertical_harness.engine.policy import PluginAuthorizationGateway
+from vertical_harness.engine.policy import ContextLimitMiddleware, PluginAuthorizationGateway
 
 
 @tool
@@ -73,25 +72,17 @@ class DesktopPlugin(DomainPlugin):
         static_content = (
             self.options["agent_content"] + "\n" + "\n".join(skill["content"] for skill in selected)
         )
-        selected_workflows = [
-            (plugin.manifest.plugin_id, workflow.name)
-            for plugin in discover_plugins(sorted(self.selected_plugin_ids))
-            for workflow in plugin.build(_services).workflows
-        ]
         selected_plugin_instructions = ""
-        if selected_workflows:
-            capabilities = ", ".join(f"{plugin_id}: {name}" for plugin_id, name in selected_workflows)
+        if self.selected_plugin_ids:
+            capabilities = ", ".join(sorted(self.selected_plugin_ids))
             selected_plugin_instructions = (
                 "Plugins selected for this user turn: "
                 + capabilities
-                + ". When the user invokes a selected plugin, delegate to its matching workflow using the task tool."
+                + ". Use each plugin's registered tools or workflows according to its instructions."
             )
             static_content += "\n\n" + selected_plugin_instructions
         middleware: list[AgentMiddleware] = [
-            ContextLimitMiddleware(
-                self.options["max_context_tokens"], static_content,
-                [ask_user, python_tool(_services.workspace_root, self.options["runtimes"]["python"] or sys.executable)],
-            ),
+            ContextLimitMiddleware(self.options["max_context_tokens"], static_content, [ask_user]),
             DesktopPermissionMiddleware(self.options["permission_mode"]),
             RefreshSkillsMiddleware(),
         ]
@@ -109,59 +100,16 @@ class DesktopPlugin(DomainPlugin):
                 part
                 for part in (
                     self.options["agent_content"], selected_plugin_instructions,
-                    "Use ask_user when essential information or a user choice is needed. "
-                    "Provide concise options when helpful; the user can also write a custom answer. "
-                    "Plugin execution approval is handled separately by the host gateway.",
-                    "For calculations beyond a plugin's implemented methods, use run_python with "
-                    "installed scientific libraries. Inspect sheet names, column names, coding and "
-                    "missingness in one compact call before computing; do not page through every row. "
-                    "For CSV/Parquet/XLSX in the bundled Python runtime, reuse "
-                    "vertical_plugins.data_analysis.tools.table_profile.profile_table "
-                    "with physical Path arguments (file_path, run_dir=Path('.'), sheet_name for XLSX). "
-                    "It scans all rows locally, caches the full profile on disk, and returns a bounded "
-                    "column page (up to 10 columns and 12000 characters); an XLSX call without "
-                    "sheet_name lists sheets. Request only relevant additional column pages; "
-                    "never read the full profile cache or print a full dataframe. "
-                    "File tools use virtual paths such as /source.xlsx; Python uses physical paths "
-                    "relative to its workspace, such as Path('source.xlsx'), never /source.xlsx. "
-                    "A failed script is not a result: inspect exit_code and fix the specific error "
-                    "before reporting; never catch a calculation error and substitute NaN or a "
-                    "different method. Apply library input requirements, including integer "
-                    "contingency counts. Save the analysis script, numeric results and requested "
-                    "deliverables in the workspace. Verify files and reported values before finishing. "
-                    "Use one compact inspection, then save and run an analysis script that also "
-                    "writes its tables and report from computed values. Generate test names, "
-                    "decision explanations, estimates and intervals from the same result objects; "
-                    "assert the user's method-selection rules and required finite outputs before "
-                    "writing the report. Distinguish RR from OR and approximate from exact intervals; "
-                    "a non-significant result does not establish equivalence. Execute saved scripts with "
-                    "runpy.run_path(path, run_name='__main__'), avoiding nested subprocesses. "
-                    "Check the resulting files and key values together in one compact call. "
-                    "Do not add unsolicited diagnostic models, bootstrap runs or independent "
-                    "refits; perform checks required by the request or an observed failure. "
-                    "Choose one justified implementation for each requested analysis; do not "
-                    "compare alternative encodings or custom algorithms unless requested or a "
-                    "specific failed fit requires it. Write complete executable code, never "
-                    "ellipsis or truncation placeholders. Historical tool arguments may be "
-                    "shortened; retrieve saved scripts when their full contents are needed. "
-                    "Reuse verified results across follow-ups; rerun calculations only when inputs "
-                    "or methods change or a specific verification fails. Keep computation outputs "
-                    "compact and save detailed tables to files instead of the conversation. "
-                    "The bundled desktop environment includes pandas, scipy, statsmodels, "
-                    "scikit-learn, lifelines, matplotlib, openpyxl, python-docx and python-pptx; "
-                    "a custom interpreter may differ. For Chinese charts select an installed "
-                    "CJK font and a noninteractive backend. Keep the chat conclusion concise; "
-                    "put full tables and methodological detail in the delivered report. "
-                    "Execute a clear request without repeated permission questions; native approval "
-                    "already enforces the selected mode. Ask only for information that changes the "
-                    "analysis and cannot be read from the provided files. Respect a user's request "
-                    "to run one confirmed method at a time. Do not replace requested computation "
-                    "with a plan or instructions asking the user to run your script. After a tool "
-                    "rejects an unchanged request, do not repeat it; correct its cause or explain "
-                    "the precise remaining blocker. Keep updates short. In the final answer lead "
-                    "with actual findings, sample size, effect estimates and uncertainty where "
-                    "applicable, link verified deliverables, and state incomplete work and limits. "
-                    "Never invent data, methods, numerical results or successful execution.",
+                    "Use ask_user only for essential information that cannot be read from supplied files. "
+                    "Native approval enforces the selected permission mode; execute clear requests without "
+                    "repeated chat-only permission questions. Respect requests to run one method at a time. "
+                    "File tools use virtual /paths; scripts use paths relative to the workspace. "
+                    "Save complete code and deliverables; check exit_code, files and key outputs before "
+                    "reporting success. Read saved scripts and logs when full contents are needed. "
+                    "Reuse verified outputs unless inputs or methods change or a check fails. "
+                    "After a rejected tool call, correct the cause or state the blocker. "
+                    "Keep updates and conclusions concise, link verified deliverables and state limits. "
+                    "Never invent data, results or successful execution.",
                 )
                 if part
             ),
@@ -175,34 +123,6 @@ class RefreshSkillsMiddleware(AgentMiddleware):
 
     def before_agent(self, state: Any, runtime: Any) -> dict[str, Any]:
         return {"skills_metadata": None}
-
-
-class ContextLimitMiddleware(AgentMiddleware):
-    """Reject histories whose rough text estimate exceeds the configured limit."""
-
-    after_summarization = True
-
-    def __init__(self, maximum: int, static_content: str, tools: list[Any]):
-        self.maximum = maximum
-        static_size = len(static_content) + sum(len(item.description or "") for item in tools)
-        self.static_tokens = (static_size + 3) // 4
-        self.tools = tools
-
-    def _check(self, messages: list[Any]) -> None:
-        estimate = self.static_tokens + count_tokens_approximately(messages)
-        if estimate > self.maximum:
-            raise ValueError(
-                f"Estimated conversation history ({estimate} tokens) exceeds configured "
-                f"max_context_tokens ({self.maximum}); history was not sent to the model"
-            )
-
-    def wrap_model_call(self, request: Any, handler: Any) -> Any:
-        self._check(request.messages)
-        return handler(request)
-
-    async def awrap_model_call(self, request: Any, handler: Any) -> Any:
-        self._check(request.messages)
-        return await handler(request)
 
 
 class DesktopPermissionMiddleware(AgentMiddleware):
@@ -234,7 +154,7 @@ class DesktopApprovalMiddleware(AgentMiddleware):
     @staticmethod
     def _approve(request: Any) -> ToolMessage | None:
         name = request.tool.name
-        if name not in {"write_file", "edit_file", "delete", "execute", "run_python", "write_todos"}:
+        if name not in {"write_file", "edit_file", "delete", "execute", "execute_python_file", "write_todos"}:
             return
         decision = interrupt(
             {
@@ -369,8 +289,8 @@ def configured_settings(params: dict[str, Any]) -> tuple[HarnessSettings, dict[s
         raise ValueError("model_code and agent_content must be strings")
     if not isinstance(options["max_context_tokens"], int):
         raise ValueError("max_context_tokens must be an integer")
-    if options["max_context_tokens"] < 1:
-        raise ValueError("max_context_tokens must be positive")
+    if not 1 <= options["max_context_tokens"] <= 475_000:
+        raise ValueError("max_context_tokens must be between 1 and 475000")
     if not isinstance(options["mcp_servers"], dict):
         raise ValueError("mcp_servers must be an object")
     runtime_dir = Path(params["runtime_data_dir"]).expanduser().resolve()
@@ -397,6 +317,7 @@ def configured_settings(params: dict[str, Any]) -> tuple[HarnessSettings, dict[s
             "checkpoint_db_path": runtime_dir / "checkpoints.sqlite",
             "mcp_servers": options["mcp_servers"],
             "enabled_plugins": options["enabled_plugins"],
+            "python_executable": options["runtimes"]["python"] or sys.executable,
         }
     )
     return configured, {**options}
@@ -470,7 +391,7 @@ def raw_message(message: Any) -> dict[str, Any]:
 def usage_estimate(
     messages: list[Any],
     model: str,
-    maximum: int = 128_000,
+    maximum: int = 475_000,
     options: dict[str, Any] | None = None,
     selected_skill_ids: frozenset[str] | None = None,
     *,

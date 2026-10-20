@@ -22,12 +22,12 @@ from uuid import uuid4
 from langchain.agents.middleware import (
     AgentMiddleware,
     InterruptOnConfig,
-    ModelCallLimitMiddleware,
     ModelRequest,
     ModelResponse,
 )
 from langchain.agents.middleware.types import ToolCallRequest
-from langchain_core.messages import AIMessage, AnyMessage, HumanMessage, SystemMessage, ToolMessage
+from langchain_core.messages import AIMessage, AnyMessage, HumanMessage, ToolMessage
+from langchain_core.messages.utils import count_tokens_approximately
 from langgraph.types import Command, interrupt
 from pydantic import BaseModel, Field, ValidationError
 
@@ -54,38 +54,35 @@ _FORBIDDEN_MODEL_AUTH_KEYS = frozenset(
 )
 
 
-class FinalModelCallLimitMiddleware(ModelCallLimitMiddleware):
-    """Use the final allowed run call to summarize verified progress without tools."""
+class ContextLimitMiddleware(AgentMiddleware):
+    """Reject requests whose full token estimate exceeds the configured limit."""
 
-    _FINAL_CALL_INSTRUCTION = (
-        "The model-call budget for this run is exhausted after this response. Do not use tools "
-        "or claim further execution. Based only on verified results already available, briefly "
-        "state what is complete, what remains incomplete, and the paths of any verified files. "
-        "Reply directly in the user's language using ordinary prose, never tool-call markup "
-        "or instructions to invoke a tool. Do not invent findings or deliverables."
-    )
+    after_summarization = True
 
-    def __init__(self, *, run_limit: int) -> None:
-        super().__init__(run_limit=run_limit)
-        self._final_call_count = run_limit - 1
+    def __init__(self, maximum: int, static_content: str, tools: list[Any]):
+        self.maximum = maximum
+        static_size = len(static_content) + sum(len(item.description or "") for item in tools)
+        self.static_tokens = (static_size + 3) // 4
+        self.tools = tools
 
-    def _final_call_request(self, request: ModelRequest[Any]) -> ModelRequest[Any]:
-        if request.state.get("run_model_call_count", 0) != self._final_call_count:
-            return request
-        existing = request.system_prompt or ""
-        return request.override(
-            system_message=SystemMessage(
-                content=f"{existing}\n\n{self._FINAL_CALL_INSTRUCTION}".strip()
-            ),
-            tools=[],
-            tool_choice="none",
-        )
+    def _check(self, request: ModelRequest[Any]) -> None:
+        messages = request.messages
+        if request.system_message is not None:
+            messages = [request.system_message, *messages]
+        estimate = count_tokens_approximately(messages, tools=request.tools)
+        if estimate > self.maximum:
+            raise ValueError(
+                f"Estimated conversation history ({estimate} tokens) exceeds configured "
+                f"max_context_tokens ({self.maximum}); history was not sent to the model"
+            )
 
-    def wrap_model_call(self, request: ModelRequest[Any], handler: Any) -> ModelResponse:
-        return handler(self._final_call_request(request))
+    def wrap_model_call(self, request: ModelRequest[Any], handler: Any) -> Any:
+        self._check(request)
+        return handler(request)
 
-    async def awrap_model_call(self, request: ModelRequest[Any], handler: Any) -> ModelResponse:
-        return await handler(self._final_call_request(request))
+    async def awrap_model_call(self, request: ModelRequest[Any], handler: Any) -> Any:
+        self._check(request)
+        return await handler(request)
 
 
 class SupervisorStage(StrEnum):
@@ -815,13 +812,16 @@ class PluginAuthorizationGateway:
         # 第七步：绑定当前 run_id 并将状态推进至 running
         if record.run_id is None and run_id:
             record.run_id = run_id
+        self._start_execution(record, execution_id)
+
+    def _start_execution(self, record: PluginApprovalRecord, execution_id: str | None) -> None:
         req = self._requests.get(record.request_id)
         if req is not None and req.state == PluginAuthState.AUTHORIZED:
             self._requests[record.request_id] = req.model_copy(
                 update={"state": PluginAuthState.RUNNING, "run_id": record.run_id}
             )
-        self._state_by_key[(thread_id, record.plugin_id)] = PluginAuthState.RUNNING
-        self._state_by_key[(thread_id, record.workflow_name)] = PluginAuthState.RUNNING
+        self._state_by_key[(record.thread_id, record.plugin_id)] = PluginAuthState.RUNNING
+        self._state_by_key[(record.thread_id, record.workflow_name)] = PluginAuthState.RUNNING
         if execution_id is not None:
             self._execution_requests[execution_id] = record.request_id
 
@@ -1372,12 +1372,13 @@ class SupervisorPolicyMiddleware(AgentMiddleware[Any, RunContext, Any]):
                         "Plugin authorization response does not match the pending request"
                     ) from None
                 if answer["approved"]:
-                    self._auth_gateway.approve_request(
+                    approval = self._auth_gateway.approve_request(
                         req.request_id,
                         user_id=user_id,
                         tenant_id=tenant_id,
                         run_id=turn_id,
                     )
+                    self._auth_gateway._start_execution(approval, tool_call_id)
                 else:
                     self._auth_gateway.reject_request(req.request_id)
                     return ToolMessage(

@@ -86,8 +86,8 @@ const defaults: DesktopSettings = {
   model_code: '',
   runtimes: { python: '', node: '' },
   permission_mode: 'ask',
-  max_context_tokens: 128000,
-  plugins: {}
+  max_context_tokens: 475000,
+  plugins: { 'web.search': true }
 }
 
 /**
@@ -536,7 +536,8 @@ export class DesktopStore {
    * @returns 桌面客户端通用偏好配置
    */
   readSettings(): DesktopSettings {
-    return this.readJson<DesktopSettings>(path.join(this.accountDirectory, 'settings.json'), defaults)
+    const settings = this.readJson<DesktopSettings>(path.join(this.accountDirectory, 'settings.json'), defaults)
+    return { ...settings, plugins: { ...defaults.plugins, ...settings.plugins } }
   }
 
   /**

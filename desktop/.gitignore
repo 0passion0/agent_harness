@@ -2,3 +2,5 @@ node_modules/
 out/
 settings.json
 test-artifacts/
+resources/python/
+release/

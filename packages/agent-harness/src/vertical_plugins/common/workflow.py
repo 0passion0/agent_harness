@@ -5,6 +5,7 @@ from __future__ import annotations
 import inspect
 import json
 import logging
+import sys
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterable, Sequence
 from copy import deepcopy
@@ -111,6 +112,7 @@ class WorkflowContext:
     user_id: str = "default"
     plugin_config: dict[str, Any] = field(default_factory=dict)
     auth_guard: AuthorizationGuardProtocol | None = None
+    python_executable: str = sys.executable
 
     def __post_init__(self) -> None:
         """规范化工作区物理根路径。
@@ -162,6 +164,7 @@ class WorkflowContext:
             checkpointer=checkpointer,
             plugin_config=cfg,
             auth_guard=auth_guard,
+            python_executable=services.python_executable,
         )
 
     def with_overrides(self, **overrides: Any) -> WorkflowContext:

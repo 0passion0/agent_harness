@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import sys
 from enum import StrEnum
 from pathlib import Path, PurePosixPath
 from typing import Annotated, Any, Literal
@@ -31,7 +32,6 @@ class TaskTier(StrEnum):
 
 NonEmptyStr = Annotated[str, Field(min_length=1)]
 MemoryRouteStr = Annotated[str, Field(pattern=r"^/[a-zA-Z0-9_\-]+/$")]
-ModelCallLimit = Annotated[int, Field(ge=1, le=500)]
 
 
 class HarnessSettings(BaseSettings):
@@ -58,6 +58,7 @@ class HarnessSettings(BaseSettings):
     # 智能体运行的本地工作区物理根路径，默认 './.agent-workspace'
     workspace_root: Path = Path("./.agent-workspace")
     runtime_data_dir: Path | None = None
+    python_executable: NonEmptyStr = sys.executable
     # 长期记忆与状态存储后端类型：sqlite（默认持久化）或 memory（纯内存）
     store_backend: Literal["sqlite", "memory"] = "sqlite"
     # 自定义 SQLite 数据库文件路径或 ':memory:'
@@ -83,8 +84,8 @@ class HarnessSettings(BaseSettings):
     memory_event_retention_days: Annotated[int, Field(ge=1, le=3650)] = 90
     # 可使用较小的工具调用模型；默认复用主模型及其连接配置。
     memory_model: NonEmptyStr | None = None
-    # 宿主显式启用的插件 ID 白名单列表
-    enabled_plugins: list[str] = Field(default_factory=list)
+    # 宿主启用的插件 ID 白名单，默认包含搜索插件
+    enabled_plugins: list[str] = Field(default_factory=lambda: ["web.search"])
     plugin_config: dict[str, dict[str, Any]] = Field(default_factory=dict, repr=False)
     # MCP 服务名到连接配置的映射，VA_MCP_SERVERS 使用 JSON 对象。
     mcp_servers: dict[MCPServerName, MCPServerConfig] = Field(default_factory=dict)
@@ -92,8 +93,6 @@ class HarnessSettings(BaseSettings):
     enable_planning: bool = True
     # 是否启用技能门控（未激活技能时隐藏对应工具）
     enable_skill_gating: bool = True
-    # 单次运行允许的最大模型调用次数，防止死循环失控
-    max_model_calls: ModelCallLimit = 30
     workflow_timeout_seconds: Annotated[float, Field(gt=0, allow_inf_nan=False)] = 300
     run_timeout_seconds: Annotated[float, Field(gt=0, allow_inf_nan=False)] = 900
     # 应用日志等级、输出格式与可选滚动文件；stdout 专用于业务结果
@@ -267,7 +266,6 @@ class HarnessSettings(BaseSettings):
 __all__ = [
     "HarnessSettings",
     "MemoryRouteStr",
-    "ModelCallLimit",
     "NonEmptyStr",
     "StoreBackendType",
     "TaskTier",

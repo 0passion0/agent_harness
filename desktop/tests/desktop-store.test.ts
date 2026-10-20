@@ -10,6 +10,15 @@ function temp(): string { const root = mkdtempSync(path.join(tmpdir(), 'desktop-
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }) })
 
 describe('DesktopStore', () => {
+  it('enables web search by default and preserves an explicit disabled setting', () => {
+    const root = temp(), account = path.join(root, 'account')
+    const store = new DesktopStore(path.join(root, 'project'), path.join(root, 'workspace'), account)
+    expect(store.readSettings().plugins['web.search']).toBe(true)
+    store.saveSettings({ plugins: {} })
+    expect(store.readSettings().plugins['web.search']).toBe(true)
+    store.saveSettings({ plugins: { 'web.search': false } })
+    expect(store.readSettings().plugins['web.search']).toBe(false)
+  })
   it('remembers plugin grants across projects and restarts within the same account', () => {
     const root = temp(), account = path.join(root, 'account')
     const first = new DesktopStore(path.join(root, 'one'), path.join(root, 'workspace-one'), account)

@@ -138,7 +138,8 @@ async def evaluate_online_once(
             workflow.name
             for workflow in plugin.build(
                 BuildServices(
-                    settings.resolved_workspace_root, plugin_config=settings.plugin_config
+                    settings.resolved_workspace_root, plugin_config=settings.plugin_config,
+                    python_executable=settings.python_executable,
                 )
             ).workflows
         )

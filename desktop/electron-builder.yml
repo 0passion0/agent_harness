@@ -1,0 +1,10 @@
+directories:
+  output: release
+files:
+  - out/**
+  - package.json
+extraResources:
+  - from: resources/python
+    to: python
+    filter:
+      - "**/*"

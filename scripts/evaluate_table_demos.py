@@ -191,7 +191,7 @@ def _check_result(text: str, events: list[dict[str, Any]], tools: list[dict[str,
     ]
     names = [p.relative_to(workspace).as_posix() for p in generated]
     tool_names = [str(call.get("name") or "") for call in tools]
-    evidence = any(name in {"run_python", "execute", "write_file", "edit_file"} for name in tool_names)
+    evidence = any(name in {"execute_python_file", "execute", "write_file", "edit_file"} for name in tool_names)
     errors = [e for e in events if e["type"] in {"run.failed", "tool.failed"}]
     errors.extend({"type": "tool.failed", "data": call.get("error")} for call in tools if call.get("phase") == "failed")
     refusal = bool(re.search(r"无法(?:完成|分析|处理)|不能(?:完成|访问|分析)|i can(?:not|'t) (?:complete|analyze|access)", low))
@@ -217,7 +217,7 @@ def _check_result(text: str, events: list[dict[str, Any]], tools: list[dict[str,
 
 
 async def _run_demo(root: Path, output: Path, demo: int, phase: str, semaphore: asyncio.Semaphore,
-                    max_model_calls: int, turn_timeout: float) -> dict[str, Any]:
+                    turn_timeout: float) -> dict[str, Any]:
     async with semaphore:
         started = time.monotonic()
         work = output / f"demo{demo}"
@@ -234,11 +234,11 @@ async def _run_demo(root: Path, output: Path, demo: int, phase: str, semaphore: 
             workspace_root=work, runtime_data_dir=runtime, store_db_path=runtime / "store.sqlite",
             checkpoint_db_path=runtime / "checkpoints.sqlite", enable_memory=False, enable_user_preferences=False,
             enable_memory_consolidation=False, enabled_plugins=["data_analysis"],
-            max_model_calls=max_model_calls, run_timeout_seconds=turn_timeout,
+            run_timeout_seconds=turn_timeout,
         )
         options = {
             "model_code": "", "runtimes": {"python": str(Path.cwd() / ".venv/Scripts/python.exe"), "node": "node"},
-            "permission_mode": "full", "max_context_tokens": 128000, "agent_content": "",
+            "permission_mode": "full", "max_context_tokens": 475000, "agent_content": "",
             "skills": [], "mcp_servers": {}, "enabled_plugins": ["data_analysis"],
         }
         thread_id = f"table-demo-{phase}-{demo}-{uuid4().hex}"
@@ -350,7 +350,7 @@ async def _main(args: argparse.Namespace) -> int:
     os.environ["LANGSMITH_TRACING"] = "false"
     demos = args.demos
     semaphore = asyncio.Semaphore(args.concurrency)
-    tasks = [_run_demo(root, output, demo, args.phase, semaphore, args.max_model_calls, args.turn_timeout) for demo in demos]
+    tasks = [_run_demo(root, output, demo, args.phase, semaphore, args.turn_timeout) for demo in demos]
     results = await asyncio.gather(*tasks, return_exceptions=True)
     rows = []
     for demo, result in zip(demos, results, strict=True):
@@ -377,7 +377,6 @@ def main() -> int:
     parser.add_argument("--phase", choices=("baseline", "candidate"), required=True)
     parser.add_argument("--demos", type=int, nargs=1, required=True, choices=range(1, 22))
     parser.add_argument("--concurrency", type=int, default=1, choices=[1])
-    parser.add_argument("--max-model-calls", type=int, default=16)
     parser.add_argument("--turn-timeout", type=float, default=300)
     args = parser.parse_args()
     if not sys.flags.utf8_mode:

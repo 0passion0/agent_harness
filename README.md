@@ -1,8 +1,10 @@
 # Deep Agents 垂直领域插件化 Harness（参考架构）
 
-本仓库统一采用 **`vertical-agent-harness`** 单一 Python distribution 发行，包含主智能体包 `vertical_harness` 与业务插件包 `vertical_plugins`。内置支持 `research.citations`（基础安装）与 `data_analysis`（通过 `analysis` 可选依赖组引入）。
+本仓库统一采用 **`vertical-agent-harness`** 单一 Python distribution 发行，包含主智能体包 `vertical_harness` 与业务插件包 `vertical_plugins`。内置支持 `research.citations`（基础安装）、`data_analysis`（通过 `analysis` 可选依赖组引入）与 `web.search`（Exa 搜索）。
 
-核心默认不启用领域插件；`.env.example` 显式启用科研样例。升级前请阅读[稳定化与迁移说明](docs/STABILIZATION.md)：默认数据目录、文件记忆 namespace 与持久化资源托管有调整，已有数据不会自动移动或删除。
+核心默认启用 `web.search`；`.env.example` 同时启用科研样例。升级前请阅读[稳定化与迁移说明](docs/STABILIZATION.md)：默认数据目录、文件记忆 namespace 与持久化资源托管有调整，已有数据不会自动移动或删除。
+
+`web.search` 默认开启，无须手动启用；实际搜索需配置 `EXA_API_KEY`，Exa 客户端仅在搜索执行时创建。显式配置 `VA_ENABLED_PLUGINS` 会覆盖默认列表；桌面端仍可关闭搜索插件。Python 计算统一为“编辑并保存 `.py` → `execute_python_file(file_path)`”，默认使用宿主解释器；桌面发布包优先使用自带运行时。改造依据和源码版本见[框架对照](docs/HARNESS_REVIEW.md)。
 
 统一模型入口将 SDK 的 `max_retries` 设为 5，覆盖主模型、动态路由、记忆提取和评估模型。DeepSeek/OpenAI 兼容请求遇到连接异常、超时、408/409/429 或 5xx 时，首次失败后最多重试 5 次（共 6 次请求）；指数退避基准为 0.5、1、2、4、8 秒，加入随机抖动，并遵循 SDK 的服务端 Retry-After 规则。鉴权/参数错误默认不重试，取消与既有总 deadline 保持生效。其他提供商的错误分类和退避由各自 SDK 决定。流式请求在返回数据前同样重试，已开始输出后发生中断则向上传播错误，避免自动重放造成重复文本或工具调用；此策略不会重试整个工作流或有副作用的工具。
 

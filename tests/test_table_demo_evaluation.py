@@ -68,7 +68,7 @@ def test_evaluator_exit_status_reports_failed_conversations(tmp_path, monkeypatc
             monkeypatch.setattr(evaluate_table_demos, "_run_demo", run_demo)
             args = SimpleNamespace(demo_root=tmp_path, output_dir=tmp_path / str(index),
                                    demos=[1], phase="candidate", concurrency=1,
-                                   max_model_calls=16, turn_timeout=300)
+                                   turn_timeout=300)
             assert await evaluate_table_demos._main(args) == (0 if index == 0 else 1)
 
     asyncio.run(scenario())
@@ -143,8 +143,8 @@ def test_native_hitl_interrupt_resumes_with_one_decision_per_action():
     class State(TypedDict, total=False):
         approved: object
 
-    payload = {"action_requests": [{"name": "write_file", "args": {}}, {"name": "run_python", "args": {}}],
-               "review_configs": [{"action_name": "write_file"}, {"action_name": "run_python"}]}
+    payload = {"action_requests": [{"name": "write_file", "args": {}}, {"name": "execute_python_file", "args": {}}],
+               "review_configs": [{"action_name": "write_file"}, {"action_name": "execute_python_file"}]}
     graph = StateGraph(State)
     graph.add_node("review", lambda _state: {"approved": interrupt(payload)})
     graph.add_edge(START, "review")
@@ -212,7 +212,7 @@ def test_checks_use_tool_evidence_from_any_turn_and_hide_private_runtime(tmp_pat
     result = _check_result(
         "已经完成分析，样本共 21 行，平均值为 5.2。这里给出依据和限制。",
         [{"type": "tool.failed", "data": {}}],
-        [{"name": "run_python", "phase": "completed"}],
+        [{"name": "execute_python_file", "phase": "completed"}],
         tmp_path,
     )
     assert result["artifact_names"] == ["report.xlsx"]
@@ -225,7 +225,7 @@ def test_model_limit_message_is_not_a_successful_final_answer(tmp_path: Path):
     (tmp_path / "report.md").write_text("partial results")
     result = _check_result(
         "Model call limits exceeded: run limit (16/16)", [],
-        [{"name": "run_python", "phase": "completed"}], tmp_path,
+        [{"name": "execute_python_file", "phase": "completed"}], tmp_path,
     )
     assert result["model_budget_exhausted"]
     assert result["needs_review"]

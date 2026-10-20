@@ -123,7 +123,8 @@ class EvaluationTarget:
             isolated = self.isolated_settings(settings, Path(root))
             (plugin,) = discover_plugins(isolated.enabled_plugins)
             prompt = plugin.build(
-                BuildServices(Path(root), InMemoryStore(), isolated.plugin_config)
+                BuildServices(Path(root), InMemoryStore(), isolated.plugin_config,
+                              python_executable=isolated.python_executable)
             ).instructions
         if not prompt.strip():
             raise ValueError("Plugin has no instruction prompt to optimize")
@@ -177,7 +178,8 @@ def make_target(settings: HarnessSettings, target: EvaluationTarget, *, prompt: 
                     workflow
                     for plugin in discover_plugins(isolated.enabled_plugins)
                     for workflow in plugin.build(
-                        BuildServices(root, store, isolated.plugin_config)
+                        BuildServices(root, store, isolated.plugin_config,
+                                      python_executable=isolated.python_executable)
                     ).workflows
                     if workflow.name == name
                 ]

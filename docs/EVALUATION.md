@@ -8,7 +8,7 @@
 .venv/Scripts/python.exe -X utf8 scripts/evaluate_table_demos.py `
   --demo-root D:/temp/table_st `
   --output-dir D:/temp/table-demo-evaluation `
-  --phase candidate --demos 18 --concurrency 1 --max-model-calls 10 --turn-timeout 300
+  --phase candidate --demos 18 --concurrency 1 --turn-timeout 300
 ```
 
 输出目录必须是新的，`--demos` 必须且只能指定一个案例，并发固定为 1。整段对话（包括摘要）共享 24 次模型调用停止上限，已上报累计用量达到 300,000 token 后拒绝新请求；最后一次响应可能跨过 token 阈值，不代表精确金额上限。缺失用量上报也停止付费回放。`conversation_budget.request_sizes` 记录各模型请求的消息字符规模，不记录另一份消息正文。必须开启 `-X utf8`，与桌面后端的实际启动模式一致，避免 Windows 子进程管道采用本地编码造成假失败。

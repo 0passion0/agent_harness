@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import sys
 from copy import deepcopy
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -809,6 +810,7 @@ class BuildServices:
     # 可选的长期记忆及键值持久化存储 BaseStore 实例
     store: BaseStore | None = None
     plugin_config: dict[str, dict[str, Any]] = field(default_factory=dict, repr=False)
+    python_executable: str = sys.executable
 
     def config_for(self, plugin_id: str) -> dict[str, Any]:
         """为插件本地模式验证返回隔离的配置副本。

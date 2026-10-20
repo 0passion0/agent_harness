@@ -12,6 +12,7 @@ import { createInterface } from 'node:readline'
 import { existsSync } from 'node:fs'
 import path from 'node:path'
 import type { Json } from '../shared/protocol'
+import { bundledPython, selectScriptPython } from './python-runtime'
 
 /**
  * 后端智能体执行中断（等待用户确认或输入）描述对象。
@@ -82,7 +83,7 @@ export class Backend {
   constructor(private root: string, private emit: (event: EngineFrame) => void) {}
 
   /**
-   * 启动本地虚拟环境下的 Python 智能体引擎子进程。
+   * 启动桌面 Python 智能体引擎子进程，发布包优先使用随包运行时。
    *
    * 第一步：定位项目根目录 `.venv` 中的 python.exe 解释器。
    * 第二步：使用 Node.js spawn 派生子进程，并开启 UTF-8 与行缓冲模式。
@@ -93,8 +94,10 @@ export class Backend {
    */
   private start(): void {
     // 第一步：定位 Python 解释器绝对路径
-    const python = path.join(this.root, '.venv', 'Scripts', 'python.exe')
-    if (!existsSync(python)) throw new Error('未找到项目 .venv，请先按项目说明安装 Python 依赖')
+    const resourcesPath = process.resourcesPath ?? path.join(this.root, 'desktop', 'resources')
+    const bundled = bundledPython(resourcesPath)
+    const python = existsSync(bundled) ? bundled : path.join(this.root, '.venv', 'Scripts', 'python.exe')
+    if (!existsSync(python)) throw new Error('未找到随包 Python 或项目 .venv，请按项目说明准备 Python 运行时')
 
     // 第二步：派生 Python 进程
     const child = spawn(python, ['-X', 'utf8', '-u', '-m', 'vertical_harness.desktop'], {
@@ -151,9 +154,27 @@ export class Backend {
   request<T>(method: string, params: object): Promise<T> {
     if (!this.child) this.start()
     const id = ++this.nextId
+    let requestParams = params
+    if (method === 'configure') {
+      const configure = params as { options: { runtimes: { python: string } } }
+      requestParams = {
+        ...params,
+        options: {
+          ...configure.options,
+          runtimes: {
+            ...configure.options.runtimes,
+            python: selectScriptPython(
+              configure.options.runtimes.python,
+              process.resourcesPath ?? path.join(this.root, 'desktop', 'resources'),
+              path.join(this.root, '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python')
+            )
+          }
+        }
+      }
+    }
     return new Promise<T>((resolve, reject) => {
       this.pending.set(id, { resolve, reject })
-      this.child!.stdin.write(JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n', error => {
+      this.child!.stdin.write(JSON.stringify({ jsonrpc: '2.0', id, method, params: requestParams }) + '\n', error => {
         if (error) {
           this.pending.delete(id)
           reject(error)

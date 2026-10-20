@@ -59,7 +59,7 @@ def content_blocks(sources: list[tuple[dict[str, str], Path]], text: str, worksp
             'text': (
                 f'Attachment: {ref["name"]}\nPath: {path_in_workspace}\n'
                 + (
-                    'Use the local table summary via run_python when available; do not print the full table. '
+                    'Write a local table-summary .py script and run it with execute_python_file; do not print the full table. '
                     'Otherwise start with read_file(offset=0, limit=40).'
                     if path.suffix.lower() in {'.csv', '.parquet', '.xlsx'} else
                     'Start with read_file(offset=0, limit=40); if more is needed, continue with later offsets.'

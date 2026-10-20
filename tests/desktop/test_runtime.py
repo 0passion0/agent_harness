@@ -36,7 +36,7 @@ def options():
         "model_code": "deepseek:deepseek-chat",
         "runtimes": {"python": "python.exe", "node": "node.exe"},
         "permission_mode": "ask",
-        "max_context_tokens": 4096,
+        "max_context_tokens": 128_000,
         "agent_content": "instructions",
         "skills": [{"id": "demo", "content": "skill text", "source": "project"}],
         "mcp_servers": {},
@@ -115,6 +115,16 @@ def test_configured_settings_preserve_provider_model_and_runtime_paths(monkeypat
     assert settings.model == "deepseek:deepseek-chat"
     assert settings.resolved_workspace_root == (tmp_path / "workspace").resolve()
     assert desktop["runtimes"] == {"python": "python.exe", "node": "node.exe"}
+
+
+@pytest.mark.parametrize("maximum", [0, 475_001])
+def test_configured_settings_rejects_context_outside_475k_budget(tmp_path, maximum):
+    with pytest.raises(ValueError, match="between 1 and 475000"):
+        configured_settings({
+            "workspace_root": str(tmp_path / "workspace"),
+            "runtime_data_dir": str(tmp_path / "runtime"),
+            "options": {**options(), "max_context_tokens": maximum},
+        })
 
 
 def test_attachments_inside_workspace_are_referenced_in_place(tmp_path):
@@ -262,8 +272,15 @@ def test_read_only_mode_blocks_builtin_write_tools(tmp_path):
 
 
 def test_context_limit_rejects_oversized_history():
+    from langchain.agents.middleware import ModelRequest
+    from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
+
     middleware = ContextLimitMiddleware(1, "", [])
-    request = type("Request", (), {"messages": [HumanMessage(content="too many chars")]})()
+    request = ModelRequest(
+        model=FakeMessagesListChatModel(responses=[]),
+        messages=[HumanMessage(content="too many chars")],
+        tools=[],
+    )
     with pytest.raises(ValueError, match="exceeds configured max_context_tokens"):
         middleware.wrap_model_call(request, lambda _request: None)
 
@@ -275,7 +292,39 @@ def test_context_limit_rejects_oversized_history():
 
 
 @pytest.mark.parametrize("use_async", [False, True])
-def test_desktop_context_limit_checks_compacted_model_request(tmp_path, monkeypatch, use_async):
+@pytest.mark.parametrize("section", ["system", "tools"])
+def test_context_limit_counts_actual_system_prompt_and_tool_schemas(use_async, section):
+    from langchain.agents.middleware import ModelRequest
+    from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
+
+    request = ModelRequest(
+        model=FakeMessagesListChatModel(responses=[]),
+        messages=[],
+        system_message=SystemMessage(content="instructions " * 1000) if section == "system" else None,
+        tools=[{
+            "name": "inspect",
+            "description": "Inspect data",
+            "parameters": {
+                "type": "object",
+                "properties": {"input": {"type": "string", "description": "schema " * 1000}},
+            },
+        }] if section == "tools" else [],
+    )
+    middleware = ContextLimitMiddleware(100, "", [])
+
+    def handler(_request):
+        pytest.fail("An oversized request must not reach the model")
+
+    with pytest.raises(ValueError, match="exceeds configured max_context_tokens"):
+        if use_async:
+            asyncio.run(middleware.awrap_model_call(request, handler))
+        else:
+            middleware.wrap_model_call(request, handler)
+
+
+@pytest.mark.parametrize("use_async", [False, True])
+@pytest.mark.parametrize("history_chars", [20_000, 8_000])
+def test_desktop_context_limit_checks_compacted_model_request(tmp_path, monkeypatch, use_async, history_chars):
     from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
     from pydantic import Field
 
@@ -292,7 +341,11 @@ def test_desktop_context_limit_checks_compacted_model_request(tmp_path, monkeypa
             return super()._generate(messages, stop=stop, run_manager=run_manager, **kwargs)
 
     model = TrackingModel(
-        responses=[AIMessage(content="History summary."), AIMessage(content="Done.")],
+        responses=[
+            AIMessage(content="History summary."),
+            AIMessage(content="Done."),
+            AIMessage(content="Follow-up done."),
+        ],
         profile={"max_input_tokens": 20_000},
     )
     monkeypatch.setattr(compose, "init_configured_model", lambda _settings: model)
@@ -311,7 +364,7 @@ def test_desktop_context_limit_checks_compacted_model_request(tmp_path, monkeypa
         message
         for index in range(6)
         for message in (
-            HumanMessage(content=f"Historical request {index}: " + "x" * 20_000),
+            HumanMessage(content=f"Historical request {index}: " + "x" * history_chars),
             AIMessage(content=f"Verified result {index} was recorded."),
         )
     ]
@@ -327,6 +380,14 @@ def test_desktop_context_limit_checks_compacted_model_request(tmp_path, monkeypa
                 snapshot = app.get_state(config)
             assert result["messages"][-1].content == "Done."
             assert any("Historical request 0" in str(message) for message in snapshot.values["messages"])
+            assert "Historical request 0" not in repr(model.seen_messages[-1])
+            follow_up = {"messages": [HumanMessage(content="Continue from the verified result.")]}
+            if use_async:
+                continued = await app.ainvoke(follow_up, config)
+            else:
+                continued = app.invoke(follow_up, config)
+            assert continued["messages"][-1].content == "Follow-up done."
+            assert len(model.seen_messages) == 3
             assert "Historical request 0" not in repr(model.seen_messages[-1])
 
     asyncio.run(scenario())
@@ -476,6 +537,7 @@ def test_composed_plugin_dispatch_requires_one_time_authorization(tmp_path, monk
     from vertical_plugins.common.contracts import PluginManifest, SideEffect
 
     executions = []
+    plugin_builds = []
 
     class AuthWorkflow(BaseWorkflow):
         plugin_id = "demo.auth"
@@ -491,6 +553,10 @@ def test_composed_plugin_dispatch_requires_one_time_authorization(tmp_path, monk
 
     class AuthPlugin(WorkflowPlugin):
         workflow_cls = AuthWorkflow
+
+        def build(self, services):
+            plugin_builds.append(self)
+            return super().build(services)
 
         @property
         def manifest(self):
@@ -532,7 +598,8 @@ def test_composed_plugin_dispatch_requires_one_time_authorization(tmp_path, monk
     desktop_instructions = DesktopPlugin(
         plugin_options, selected_plugin_ids=frozenset({"demo.auth"})
     ).build(BuildServices(workspace_root=tmp_path)).instructions
-    assert "demo.auth: auth_workflow" in desktop_instructions
+    assert "Plugins selected for this user turn: demo.auth." in desktop_instructions
+    assert plugin_builds == []
     settings = HarnessSettings.model_validate(
         {
             "model": "test:desktop-auth",
@@ -639,6 +706,7 @@ def test_composed_plugin_dispatch_requires_one_time_authorization(tmp_path, monk
             assert executions == []
 
     asyncio.run(skill_alone_does_not_authorize())
+    assert len(plugin_builds) == 3
 
 
 def test_streaming_six_tool_calls_keeps_agent_recursion_limit(tmp_path, monkeypatch):

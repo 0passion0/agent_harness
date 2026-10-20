@@ -45,6 +45,7 @@ vertical-eval = "vertical_harness.evaluation.cli:main"
 [project.entry-points."vertical_agent.plugins"]
 "data_analysis" = "vertical_plugins.data_analysis:DataAnalysisPlugin"
 "research.citations" = "vertical_plugins.research_citation:ResearchCitationPlugin"
+"web.search" = "vertical_plugins.web_search:WebSearchPlugin"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/vertical_harness", "src/vertical_plugins"]

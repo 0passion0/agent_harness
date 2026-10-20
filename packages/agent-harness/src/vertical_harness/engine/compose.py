@@ -21,14 +21,12 @@ from deepagents.backends.protocol import BackendProtocol
 from deepagents.middleware import FilesystemMiddleware, SkillsMiddleware
 from deepagents.middleware.subagents import SubAgentMiddleware
 from deepagents.middleware.summarization import SummarizationMiddleware
-from dotenv import load_dotenv
 from langchain.agents.middleware import (
     AgentMiddleware,
     InterruptOnConfig,
     TodoListMiddleware,
 )
 from langchain_core.tools import BaseTool
-from langchain_exa import ExaSearchResults
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph.state import CompiledStateGraph
@@ -39,13 +37,14 @@ from vertical_harness.engine.mcp import aopen_mcp_tools, mcp_skill_assets
 from vertical_harness.engine.memory import UserMemoryMiddleware
 from vertical_harness.engine.plugin_loader import discover_plugins
 from vertical_harness.engine.policy import (
-    FinalModelCallLimitMiddleware,
+    ContextLimitMiddleware,
     PluginAuthorizationGateway,
     SupervisorPolicyMiddleware,
     build_workflow_interrupt_configs,
 )
 from vertical_harness.engine.routing import init_configured_model, make_router
 from vertical_harness.observability import tracing_session
+from vertical_harness.python_execution import python_file_tool
 from vertical_harness.storage.backends import (
     aopen_checkpointer,
     aopen_store,
@@ -79,7 +78,11 @@ BASE_PROMPT = (
     "For plugin tests, check each requested operation's returned status and result against its "
     "inputs. A successful tool call or existing artifact alone does not prove the requested "
     "analysis succeeded. Report failed or untested steps explicitly; never label them passed "
-    "or claim independent recomputation without tool evidence."
+    "or claim independent recomputation without tool evidence. "
+    "For Python computation, write a complete .py file with write_file/edit_file, then call "
+    "execute_python_file with its workspace path. Batch related calculations in that script; "
+    "do not execute code snippets or wrap scripts in runpy/subprocess. Check exit_code and "
+    "the resulting files before reporting success; inspect saved logs to diagnose failures."
 )
 
 # 工作流监督智能体系统提示词：强调任务委派、进度跟踪与结果验收边界
@@ -102,6 +105,7 @@ SUPERVISOR_EXCLUDED_FS_TOOLS: frozenset[str] = frozenset(
 )
 
 _RESERVED_TOOL_NAMES = SUPERVISOR_EXCLUDED_FS_TOOLS | {
+    "execute_python_file",
     "task",
     "write_todos",
     "start_async_task",
@@ -121,8 +125,6 @@ _RESERVED_MIDDLEWARE_NAMES = frozenset(
         "SummarizationMiddleware",
         "PatchToolCallsMiddleware",
         "TodoListMiddleware",
-        "ModelCallLimitMiddleware",
-        "FinalModelCallLimitMiddleware",
         "SupervisorPolicyMiddleware",
         "UserMemoryMiddleware",
         "ModelRouterMiddleware",
@@ -182,22 +184,24 @@ def register_supervisor_harness_profile(
     return profile
 
 
-def _summarization_middleware(model: Any, backend: BackendProtocol) -> SummarizationMiddleware:
-    """Build the native history compactor with an earlier, profile-aware trigger."""
+def _summarization_middleware(
+    model: Any, backend: BackendProtocol, max_context_tokens: int = 475_000
+) -> SummarizationMiddleware:
+    """使用原生摘要在上下文预算的 90% 压缩历史，并遵守模型容量。"""
     profile = getattr(model, "profile", None)
     max_input_tokens = (
         profile.get("max_input_tokens")
         if isinstance(profile, dict) and isinstance(profile.get("max_input_tokens"), int)
         else None
     )
-    token_trigger = min(24_000, int(max_input_tokens * 0.85)) if max_input_tokens else 24_000
-    keep_tokens = min(8_000, int(max_input_tokens * 0.10)) if max_input_tokens else 8_000
-    arg_trigger = min(8_000, int(max_input_tokens * 0.85)) if max_input_tokens else 8_000
+    context_limit = min(max_input_tokens, max_context_tokens) if max_input_tokens else max_context_tokens
+    token_trigger = max(1, int(context_limit * 0.90))
+    keep_tokens = max(1, int(context_limit * 0.10))
+    arg_trigger = min(8_000, token_trigger)
     return SummarizationMiddleware(
         model=model,
         backend=backend,
-        trigger=[("fraction", 0.85) if max_input_tokens else ("tokens", 170_000),
-                 ("tokens", token_trigger)],
+        trigger=("tokens", token_trigger),
         keep=("tokens", keep_tokens),
         trim_tokens_to_summarize=None,
         truncate_args_settings={
@@ -561,15 +565,12 @@ class AgentComposer:
         :author: tongliga
         :date: 2026-10-19
         """
-        # 第一步：装配基础调用上限、待办规划与模型路由中间件
-        stack: list[AgentMiddleware[Any, Any, Any]] = [
-            FinalModelCallLimitMiddleware(run_limit=self.settings.max_model_calls),
-        ]
+        # 第一步：装配待办规划与模型路由中间件
+        stack: list[AgentMiddleware[Any, Any, Any]] = []
         logger.debug(
             "middleware_configuration_started",
             extra={
                 "event_fields": {
-                    "max_model_calls": self.settings.max_model_calls,
                     "enable_planning": self.settings.enable_planning,
                     "enable_skill_gating": self.settings.enable_skill_gating,
                 }
@@ -701,7 +702,8 @@ def build_agent(
         memory_route=settings.memory_route,
     )
     services = BuildServices(
-        workspace_root=root, store=active_store, plugin_config=settings.plugin_config
+        workspace_root=root, store=active_store, plugin_config=settings.plugin_config,
+        python_executable=settings.python_executable,
     )
 
     # 第二步：构建 AgentComposer 并注册插件贡献与 MCP 工具
@@ -718,9 +720,7 @@ def build_agent(
         selected_skill_ids=None if selected_skill_ids is None else frozenset(selected_skill_ids),
     )
     if not settings.supervisor_only:
-        load_dotenv(".env")
-        xa_tool = ExaSearchResults()
-        composer.eager_tools.append(xa_tool)
+        composer.eager_tools.append(python_file_tool(root, settings.python_executable))
     composer.register_plugins(
         discover_plugins(settings.enabled_plugins) if plugins is None else plugins,
         services,
@@ -759,7 +759,12 @@ def build_agent(
     model = init_configured_model(settings)
     post_summarization = [item for item in middleware if getattr(item, "after_summarization", False)]
     middleware = [item for item in middleware if not getattr(item, "after_summarization", False)]
-    middleware.append(_summarization_middleware(model, backend))
+    context_limits = [
+        item.maximum for item in post_summarization if isinstance(item, ContextLimitMiddleware)
+    ]
+    middleware.append(
+        _summarization_middleware(model, backend, min(context_limits) if context_limits else 475_000)
+    )
     if settings.enable_memory:
         middleware.append(UserMemoryMiddleware(settings, active_store))
     middleware.extend(post_summarization)
@@ -887,7 +892,8 @@ def open_agent(
 
         # 第三步：发现插件并挂载同步资源生命周期钩子
         plugins = discover_plugins(settings.enabled_plugins)
-        services = BuildServices(settings.resolved_workspace_root, store, settings.plugin_config)
+        services = BuildServices(settings.resolved_workspace_root, store, settings.plugin_config,
+                                 python_executable=settings.python_executable)
         contributions = {}
         for plugin in plugins:
             if callable(hook := getattr(plugin, "open", None)):
@@ -956,7 +962,8 @@ async def aopen_agent(
 
         # 第二步：发现插件并挂载异步资源生命周期钩子
         active_plugins = list(plugins) if plugins is not None else discover_plugins(settings.enabled_plugins)
-        services = BuildServices(settings.resolved_workspace_root, store, settings.plugin_config)
+        services = BuildServices(settings.resolved_workspace_root, store, settings.plugin_config,
+                                 python_executable=settings.python_executable)
         contributions = {}
         for plugin in active_plugins:
             if callable(hook := getattr(plugin, "aopen", None)):
