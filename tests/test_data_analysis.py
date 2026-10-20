@@ -29,7 +29,6 @@ from vertical_plugins.common import (
     WorkflowPlugin,
 )
 from vertical_plugins.data_analysis import (
-    ANALYSIS_INTERPRETATION_PROMPT,
     ANALYSIS_PLAN_PROMPT,
     CORE_REPORT_SECTIONS,
     DATA_ANALYSIS_WORKFLOW_NAME,
@@ -43,8 +42,6 @@ from vertical_plugins.data_analysis import (
     DataAnalysisWorkflow,
     InternalState,
     artifact_paths,
-    build_analysis_plan_prompt,
-    build_report_prompt,
     input_schema,
     output_schema,
     profile_table,
@@ -570,23 +567,15 @@ def test_data_analysis_toolkit_and_streamlined_prompts(tmp_path: Path) -> None:
     assert "data_analysis_ask_researcher" in tools
     assert "data_analysis_finalize_report" in tools
 
-    # 2. 验证精简后的 analysis.py 与 report.py 提示词构造函数
+    # 2. 验证精简后的 analysis.py 与 report.py 真实使用的统一提示词，并确认无用别名与构造器已彻底移除
     assert len(ANALYSIS_PLAN_PROMPT) > 20
-    assert len(ANALYSIS_INTERPRETATION_PROMPT) > 20
     assert len(REPORT_GENERATION_PROMPT) > 20
-    plan_prompt = build_analysis_plan_prompt(
-        analysis_goal="比较两组指标",
-        analysis_type="group_comparison",
-        profile_summary={"row_count": 20},
-    )
-    assert "group_comparison" in plan_prompt
-    rep_prompt = build_report_prompt(
-        research_question="比较两组指标",
-        profile_summary={"row_count": 20},
-        analysis_summary={"status": "passed"},
-        audit_summary={"status": "passed"},
-    )
-    assert "比较两组指标" in rep_prompt
+    assert not hasattr(data_analysis, "ANALYSIS_INTERPRETATION_PROMPT")
+    assert not hasattr(data_analysis, "build_analysis_plan_prompt")
+    assert not hasattr(data_analysis, "build_report_prompt")
+    assert not hasattr(data_analysis, "ColumnProfile")
+    assert not hasattr(data_analysis, "TableProfileResult")
+    assert not hasattr(data_analysis, "ExecutionReceipt")
 
     # 3. 验证冗余 guides 导出已彻底移除
     assert not hasattr(data_analysis, "GUIDE_DESCRIPTIONS")

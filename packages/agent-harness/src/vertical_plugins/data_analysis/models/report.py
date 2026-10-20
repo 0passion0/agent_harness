@@ -4,14 +4,9 @@ from __future__ import annotations
 
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import Field, field_validator
 
-
-class StrictModel(BaseModel):
-    """禁止未声明字段的严格基础契约模型。"""
-
-    model_config = ConfigDict(extra="forbid", arbitrary_types_allowed=True)
-
+from vertical_plugins.common.contracts import StrictModel
 
 AnalysisTypeLiteral = Literal["descriptive", "correlation", "group_comparison"]
 

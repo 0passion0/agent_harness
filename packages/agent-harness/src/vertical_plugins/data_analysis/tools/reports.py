@@ -24,9 +24,6 @@ REQUIRED_SECTION_ALIASES: tuple[tuple[str, ...], ...] = (
     ("结论",),
 )
 
-# 保持向后兼容导出的章节名称元组
-REPORT_SECTIONS: tuple[str, ...] = CORE_REPORT_SECTIONS
-
 
 def validate_report(
     markdown: str,
@@ -198,7 +195,6 @@ def save_report(
 
 __all__ = [
     "CORE_REPORT_SECTIONS",
-    "REPORT_SECTIONS",
     "REQUIRED_SECTION_ALIASES",
     "save_report",
     "validate_report",

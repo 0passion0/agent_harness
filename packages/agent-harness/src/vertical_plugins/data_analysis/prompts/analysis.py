@@ -31,41 +31,7 @@ ANALYSIS_PLAN_PROMPT = """你是一名严谨的数据分析助手。请基于真
 3. 严禁声称执行了未实际运行的统计检验或固定了未实际设置的随机种子。
 """
 
-# 分析结果解释提示词
-ANALYSIS_INTERPRETATION_PROMPT = ANALYSIS_PLAN_PROMPT
-
-
-def build_analysis_plan_prompt(
-    *,
-    analysis_goal: str,
-    analysis_type: str = "descriptive",
-    profile_summary: dict[str, object] | None = None,
-) -> str:
-    """构建数据分析计划与结果解释提示词。
-
-    :param analysis_goal: 分析目标说明。
-    :type analysis_goal: str
-    :param analysis_type: 分析类型标识。
-    :type analysis_type: str
-    :param profile_summary: 可选的数据画像摘要。
-    :type profile_summary: dict[str, object] | None
-    :return: 组装后的提示词字符串。
-    :rtype: str
-    :author: tongliga
-    :date: 2026-10-19
-    """
-    # 第一步：拼接分析目标、分析类型与画像概要
-    return (
-        f"{ANALYSIS_PLAN_PROMPT}\n"
-        f"分析目标：{analysis_goal}\n"
-        f"分析类型：{analysis_type}\n"
-        f"数据画像：{profile_summary or {}}\n"
-    )
-
-
 __all__ = [
-    "ANALYSIS_INTERPRETATION_PROMPT",
     "ANALYSIS_PLAN_PROMPT",
     "DATA_ANALYSIS_INSTRUCTIONS",
-    "build_analysis_plan_prompt",
 ]

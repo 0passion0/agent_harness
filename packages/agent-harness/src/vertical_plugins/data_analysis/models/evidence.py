@@ -12,39 +12,11 @@ from pathlib import Path
 from typing import Annotated, Any
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field
 from typing_extensions import TypedDict
 
+from vertical_plugins.common.contracts import StrictModel
+
 logger = logging.getLogger(__name__)
-
-
-class StrictModel(BaseModel):
-    """禁止未声明字段的严格基础契约模型。"""
-
-    model_config = ConfigDict(extra="forbid", arbitrary_types_allowed=True)
-
-
-class ExecutionReceipt(StrictModel):
-    """单个 Python 科学计算脚本的真实执行凭证记录。"""
-
-    execution_id: str
-    script: str
-    script_sha256: str
-    args: list[Any] = Field(default_factory=list)
-    artifact_sha256: dict[str, str] = Field(default_factory=dict)
-    exit_code: int | None = None
-    stdout_file: str | None = None
-    stderr_file: str | None = None
-    timed_out: bool = False
-    interrupted: bool = False
-    output: str | None = None
-
-
-class AnalysisStateModel(StrictModel):
-    """随检查点持久化的科研数据分析状态。"""
-
-    analysis_executions: list[ExecutionReceipt] = Field(default_factory=list)
-    analysis_report_path: str | None = None
 
 
 def merge_executions(
@@ -78,7 +50,7 @@ class AnalysisState(TypedDict, total=False):
 
 
 class AnalysisEvidence:
-    """仅針對已授权数据分析运行记录脚本及产物 SHA256 哈希凭证的记录器。"""
+    """仅针对已授权数据分析运行记录脚本及产物 SHA256 哈希凭证的记录器。"""
 
     state_schema = AnalysisState
 
@@ -110,25 +82,6 @@ class AnalysisEvidence:
                     self.receipts = [item for item in loaded if isinstance(item, dict)]
             except Exception:
                 self.receipts = []
-
-    def artifacts(self) -> list[Path]:
-        """返回当前工作区边界内的科研产物文件列表。
-
-        :return: 产物文件绝对物理路径列表。
-        :rtype: list[pathlib.Path]
-        :author: tongliga
-        :date: 2026-10-19
-        """
-        # 第一步：解析工作区内的 artifacts 目录
-        directory = self.workdir / "artifacts"
-        if not directory.exists() or not directory.is_dir():
-            return []
-        # 第二步：遍历目录排除凭证文件本身，返回其余产物文件路径列表
-        return [
-            path
-            for path in directory.rglob("*")
-            if path.is_file() and path.name != "execution_evidence.json"
-        ]
 
     def save(self, executions: list[dict[str, Any]]) -> None:
         """持久化保存执行凭证到 `artifacts/execution_evidence.json`。
@@ -253,8 +206,6 @@ def artifact_paths(values: dict[str, Any], workspace: Path) -> list[str]:
 __all__ = [
     "AnalysisEvidence",
     "AnalysisState",
-    "AnalysisStateModel",
-    "ExecutionReceipt",
     "StrictModel",
     "artifact_paths",
     "merge_executions",

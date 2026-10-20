@@ -132,6 +132,7 @@ export default function App() {
   const connected = application !== null && state.phase !== 'disconnected'
   const modelReady = !!application?.user
   const canCompose = connected && modelReady && !!project
+  const hasProjects = (application?.projects?.length ?? 0) > 0
   const sendDisabled = busy || !canCompose || !draft.trim()
   const title = sessions.find(item => item.id === state.snapshot?.session_id)?.title ??
     (state.snapshot?.messages.length ? '当前任务' : '新任务')
@@ -394,16 +395,22 @@ export default function App() {
                     <span>MEDPEER RESEARCH ASSISTANT</span>
                   </div>
                 )}
-                <h1>{!connected ? '工作台暂不可用' : !modelReady ? '登录 MedPeer' : !project ? '选择一个项目' : '从一个任务开始'}</h1>
-                <p>{!connected ? '本地服务尚未就绪。检查启动日志与 Python 环境。' : !modelReady ? '登录 MedPeer 账户以使用内置模型。' : !project ? '在左侧创建项目，或打开已有的本地文件夹。' : '描述目标即可开始。执行过程和交付文件会保留在当前项目下。'}</p>
+                <h1>{!connected ? '工作台暂不可用' : !modelReady ? '登录 MedPeer' : !project ? (hasProjects ? '选择一个项目' : '新建项目') : '从一个任务开始'}</h1>
+                <p>{!connected ? '本地服务尚未就绪。检查启动日志与 Python 环境。' : !modelReady ? '登录 MedPeer 账户以使用内置模型。' : !project ? (hasProjects ? '在左侧选择项目，或打开已有的本地文件夹。' : '创建新项目或打开已有的本地文件夹。') : '描述目标即可开始。执行过程和交付文件会保留在当前项目下。'}</p>
                 {!modelReady && connected ? (
                   <button className="primary-action empty-cta" onClick={() => openSettings('models')}>
                     登录 MedPeer <ArrowRight size={15} />
                   </button>
                 ) : !project && connected ? (
-                  <button className="primary-action empty-cta" onClick={() => setSidebarOpen(true)}>
-                    选择项目 <ArrowRight size={15} />
-                  </button>
+                  hasProjects ? (
+                    <button className="primary-action empty-cta" onClick={() => { setSidebarOpen(true); search.current?.focus() }}>
+                      选择项目 <ArrowRight size={15} />
+                    </button>
+                  ) : (
+                    <button className="primary-action empty-cta" disabled={busy} onClick={() => void chooseWorkspace()}>
+                      <Plus size={15} /> 新建项目
+                    </button>
+                  )
                 ) : canCompose && (
                   <div className="starter-list">
                     {starters.map(item => {
@@ -473,7 +480,7 @@ export default function App() {
                 value={draft}
                 disabled={busy || !canCompose}
                 rows={2}
-                placeholder={!connected ? '本地服务未连接…' : !modelReady ? '先登录 MedPeer…' : !project ? '先选择项目…' : '描述你希望完成的任务…'}
+                placeholder={!connected ? '本地服务未连接…' : !modelReady ? '先登录 MedPeer…' : !project ? (hasProjects ? '先选择项目…' : '先新建项目…') : '描述你希望完成的任务…'}
                 onChange={event => {
                   const val = event.target.value
                   setDraft(val)
