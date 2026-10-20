@@ -404,7 +404,7 @@ class WorkflowContribution(StrictModel):
     effect: SideEffect = SideEffect.READ
     # 前置依赖的工作流名称元组（由 SupervisorPolicyMiddleware 强制校验执行先后顺序）
     depends_on: tuple[str, ...] = ()
-    # 单次会话允许的最大委派次数（防止 Supervisor 无限重试同一工作流）
+    # 单轮用户请求允许的最大委派次数（防止 Supervisor 无限重试同一工作流）
     max_dispatches: Annotated[int, Field(ge=1, le=50)] = 5
     # 是否对完全相同的任务描述启用幂等结果复用
     idempotent: bool = False

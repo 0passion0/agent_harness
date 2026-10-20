@@ -341,6 +341,110 @@ def test_supervisor_policy_middleware_rules_and_hitl() -> None:
     assert predicate({"args": {"subagent_type": "publish_report"}}, {}, None) is True
 
 
+def test_max_dispatches_resets_at_new_user_turn():
+    workflow = WorkflowContribution.from_async_graph(
+        name="clinical_stats",
+        description="Run clinical statistics",
+        graph_id="clinical_stats",
+        max_dispatches=2,
+    )
+    policy = SupervisorPolicyMiddleware([workflow])
+    history: list[AnyMessage] = [HumanMessage(content="Profile the dataset")]
+    for index in range(2):
+        call_id = f"profile-{index}"
+        history.extend(
+            [
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "name": "task",
+                            "args": {
+                                "subagent_type": "clinical_stats",
+                                "description": f"profile columns {index}",
+                            },
+                            "id": call_id,
+                        }
+                    ],
+                ),
+                ToolMessage(content="profile complete", tool_call_id=call_id),
+            ]
+        )
+    history.append(HumanMessage(content="Run the confirmed analysis"))
+
+    def make_request(call_id: str) -> Any:
+        return SimpleNamespace(
+            tool_call={
+                "name": "task",
+                "args": {
+                    "subagent_type": "clinical_stats",
+                    "description": f"analysis {call_id}",
+                },
+                "id": call_id,
+            },
+            state={"messages": history},
+            runtime=SimpleNamespace(context=RunContext(tenant_id="tenant-a", user_id="u1")),
+        )
+
+    first_id = "analysis-1"
+    first_result = policy.wrap_tool_call(
+        make_request(first_id),
+        lambda req: ToolMessage(content="analysis complete", tool_call_id=first_id),
+    )
+    assert first_result.content == "analysis complete"
+    history.extend(
+        [
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "task",
+                        "args": {
+                            "subagent_type": "clinical_stats",
+                            "description": "analysis analysis-1",
+                        },
+                        "id": first_id,
+                    }
+                ],
+            ),
+            first_result,
+        ]
+    )
+
+    second_id = "analysis-2"
+    second_result = policy.wrap_tool_call(
+        make_request(second_id),
+        lambda req: ToolMessage(content="analysis complete", tool_call_id=second_id),
+    )
+    assert second_result.content == "analysis complete"
+    history.extend(
+        [
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "task",
+                        "args": {
+                            "subagent_type": "clinical_stats",
+                            "description": "analysis analysis-2",
+                        },
+                        "id": second_id,
+                    }
+                ],
+            ),
+            second_result,
+        ]
+    )
+
+    third_id = "analysis-3"
+    third_result = policy.wrap_tool_call(
+        make_request(third_id),
+        lambda req: ToolMessage(content="should not execute", tool_call_id=third_id),
+    )
+    assert third_result.status == "error"
+    assert "exceeded max_dispatches=2" in str(third_result.content)
+
+
 def test_supervisor_workflow_execution_and_time_travel_fork(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

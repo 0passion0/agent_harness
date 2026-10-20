@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import base64
 from pathlib import Path
-from zipfile import ZipFile
-from xml.etree import ElementTree
 from typing import Any
+from xml.etree import ElementTree
+from zipfile import ZipFile
 
 
 def extract_text(path: Path) -> str:
@@ -58,7 +58,12 @@ def content_blocks(sources: list[tuple[dict[str, str], Path]], text: str, worksp
             'type': 'text',
             'text': (
                 f'Attachment: {ref["name"]}\nPath: {path_in_workspace}\n'
-                'Start with read_file(offset=0, limit=40); if more is needed, continue with later offsets.'
+                + (
+                    'Use the local table summary via run_python when available; do not print the full table. '
+                    'Otherwise start with read_file(offset=0, limit=40).'
+                    if path.suffix.lower() in {'.csv', '.parquet', '.xlsx'} else
+                    'Start with read_file(offset=0, limit=40); if more is needed, continue with later offsets.'
+                )
             ),
         })
     return blocks

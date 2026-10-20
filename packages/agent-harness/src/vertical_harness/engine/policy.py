@@ -22,11 +22,12 @@ from uuid import uuid4
 from langchain.agents.middleware import (
     AgentMiddleware,
     InterruptOnConfig,
+    ModelCallLimitMiddleware,
     ModelRequest,
     ModelResponse,
 )
 from langchain.agents.middleware.types import ToolCallRequest
-from langchain_core.messages import AIMessage, AnyMessage, ToolMessage
+from langchain_core.messages import AIMessage, AnyMessage, HumanMessage, SystemMessage, ToolMessage
 from langgraph.types import Command, interrupt
 from pydantic import BaseModel, Field, ValidationError
 
@@ -51,6 +52,40 @@ _MONITOR_TOOLS = frozenset(
 _FORBIDDEN_MODEL_AUTH_KEYS = frozenset(
     {"approved", "authorized", "is_authorized", "user_approved", "bypass_approval", "auth_token"}
 )
+
+
+class FinalModelCallLimitMiddleware(ModelCallLimitMiddleware):
+    """Use the final allowed run call to summarize verified progress without tools."""
+
+    _FINAL_CALL_INSTRUCTION = (
+        "The model-call budget for this run is exhausted after this response. Do not use tools "
+        "or claim further execution. Based only on verified results already available, briefly "
+        "state what is complete, what remains incomplete, and the paths of any verified files. "
+        "Reply directly in the user's language using ordinary prose, never tool-call markup "
+        "or instructions to invoke a tool. Do not invent findings or deliverables."
+    )
+
+    def __init__(self, *, run_limit: int) -> None:
+        super().__init__(run_limit=run_limit)
+        self._final_call_count = run_limit - 1
+
+    def _final_call_request(self, request: ModelRequest[Any]) -> ModelRequest[Any]:
+        if request.state.get("run_model_call_count", 0) != self._final_call_count:
+            return request
+        existing = request.system_prompt or ""
+        return request.override(
+            system_message=SystemMessage(
+                content=f"{existing}\n\n{self._FINAL_CALL_INSTRUCTION}".strip()
+            ),
+            tools=[],
+            tool_choice="none",
+        )
+
+    def wrap_model_call(self, request: ModelRequest[Any], handler: Any) -> ModelResponse:
+        return handler(self._final_call_request(request))
+
+    async def awrap_model_call(self, request: ModelRequest[Any], handler: Any) -> ModelResponse:
+        return await handler(self._final_call_request(request))
 
 
 class SupervisorStage(StrEnum):
@@ -1352,7 +1387,16 @@ class SupervisorPolicyMiddleware(AgentMiddleware[Any, RunContext, Any]):
                     )
 
         messages = list((request.state or {}).get("messages") or [])
-        dispatch_counts, completed_workflows, idempotent_cache = _inspect_history(messages)
+        _, completed_workflows, idempotent_cache = _inspect_history(messages)
+        current_turn_start = next(
+            (
+                index
+                for index in range(len(messages) - 1, -1, -1)
+                if isinstance(messages[index], HumanMessage)
+            ),
+            0,
+        )
+        current_turn_dispatch_counts = _inspect_history(messages[current_turn_start:])[0]
 
         # 第八步：校验前置工作流依赖关系（depends_on）
         missing_deps = [dep for dep in workflow.depends_on if dep not in completed_workflows]
@@ -1425,7 +1469,7 @@ class SupervisorPolicyMiddleware(AgentMiddleware[Any, RunContext, Any]):
                 reserved += 1
 
         # 第十一步：校验最大委派/重试次数上限（max_dispatches）
-        if dispatch_counts[subagent_type] + reserved >= workflow.max_dispatches:
+        if current_turn_dispatch_counts[subagent_type] + reserved >= workflow.max_dispatches:
             return ToolMessage(
                 content=(
                     f"[SupervisorPolicy] Workflow '{subagent_type}' exceeded "

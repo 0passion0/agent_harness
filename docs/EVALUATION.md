@@ -1,5 +1,26 @@
 # LangSmith 质量闭环
 
+## table_st 的完整桌面对话回放
+
+`scripts/evaluate_table_demos.py` 使用真实桌面智能体图、同一会话检查点和配置模型，给每个 demo 复制独立的输入和工作目录。demo1 按原始主分析及五项补充分析逐轮执行，最后核对交付，共七轮；其余 demo 保留完整原始请求，随后追问遗漏项和最终核对，共三轮。它不是单次提示词测试，也不使用固定答案代替模型执行。
+
+```powershell
+.venv/Scripts/python.exe -X utf8 scripts/evaluate_table_demos.py `
+  --demo-root D:/temp/table_st `
+  --output-dir D:/temp/table-demo-evaluation `
+  --phase candidate --demos 18 --concurrency 1 --max-model-calls 10 --turn-timeout 300
+```
+
+输出目录必须是新的，`--demos` 必须且只能指定一个案例，并发固定为 1。整段对话（包括摘要）共享 24 次模型调用停止上限，已上报累计用量达到 300,000 token 后拒绝新请求；最后一次响应可能跨过 token 阈值，不代表精确金额上限。缺失用量上报也停止付费回放。`conversation_budget.request_sizes` 记录各模型请求的消息字符规模，不记录另一份消息正文。必须开启 `-X utf8`，与桌面后端的实际启动模式一致，避免 Windows 子进程管道采用本地编码造成假失败。
+
+回放明确使用完全权限模式，按授权的测试请求恢复工作流审批；会执行模型生成的本地代码，工作目录不是操作系统沙箱。它隔离生产会话及记忆，不验证生产记忆收益。询问/只读模式另由桌面权限集成测试覆盖。
+
+每个案例保存完整逐轮事件、工具参数/回执、用量、检查点和交付物哈希；每一轮完成后单独持久化，后续失败不丢失前序证据。`status.json` 的 `completed` 只表示回放流程结束。`scope_review=pending_human_review` 明确要求另行核对原始范围、统计方法、数值、文件内容和最终答复，正则检查不能充当质量评分。轮次错误及原生预算耗尽提示导致非零退出码。
+
+比较 token 时必须包含原生摘要调用，且检查 `usage.complete`。失败、被取消、输入或编码不一致的中间实验应独立列出，不能并入质量通过率或无损节省比例；没有供应商单价及缓存计费依据时不换算金额。
+
+2026-10-20 单案例记录：`candidate7-single18` 只运行 demo18，第一轮 13 次调用（含 3 次摘要）、186,948 token；第二轮 7 次、127,179 token，达到共享用量阈值后停止，第三轮未运行。总计 20 次、314,127 token。该案例未通过：最终答复出现工具语法，报告存在检验标签与 P 值不一致、必需精确区间为 NaN、无字段支持的停药推断。随后缩短已完成写入/编辑参数的保留窗口并加强计算结果与报告一致性指令，只做离线回放及定向测试；尚无这轮修复后的真实模型质量或费用结论。
+
 `required_tools` 保留“模型尝试调用”的历史指标；需要成功执行回执时使用 `required_successful_tools`，它要求匹配成功 ToolMessage。成功回执不证明领域事实正确，仍需结构化参考断言。执行目标同时受调用 deadline 限制，见[稳定化说明](STABILIZATION.md)。
 
 本模块用 LangSmith SDK 运行实验、存储反馈与数据集，OpenEvals 调用评审模型，LangMem `prompt_memory` 生成一次候选提示词。普通对话没有评测调用；在线评测在独立 worker 中执行。

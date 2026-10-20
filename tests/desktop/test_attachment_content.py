@@ -3,6 +3,15 @@ import base64
 from vertical_harness.desktop_attachments import content_blocks, extract_text
 
 
+def test_table_attachments_request_local_summary_without_loading_rows(tmp_path):
+    path = tmp_path / "large.csv"
+    path.write_text("PRIVATE_RAW_ROWS" * 100_000, encoding="utf-8")
+    blocks = content_blocks([({"name": path.name, "media_type": "text/csv"}, path)], "Analyze", tmp_path)
+    assert "local table summary via run_python" in blocks[1]["text"]
+    assert "PRIVATE_RAW_ROWS" not in blocks[1]["text"]
+    assert len(blocks[1]["text"]) < 500
+
+
 def test_extracts_csv_xlsx_docx_and_pdf(tmp_path):
     import pandas as pd
     from docx import Document

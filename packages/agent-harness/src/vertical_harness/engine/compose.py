@@ -18,13 +18,13 @@ from deepagents import (
     register_harness_profile,
 )
 from deepagents.backends.protocol import BackendProtocol
-from deepagents.middleware import SkillsMiddleware
+from deepagents.middleware import FilesystemMiddleware, SkillsMiddleware
 from deepagents.middleware.subagents import SubAgentMiddleware
+from deepagents.middleware.summarization import SummarizationMiddleware
 from dotenv import load_dotenv
 from langchain.agents.middleware import (
     AgentMiddleware,
     InterruptOnConfig,
-    ModelCallLimitMiddleware,
     TodoListMiddleware,
 )
 from langchain_core.tools import BaseTool
@@ -39,6 +39,7 @@ from vertical_harness.engine.mcp import aopen_mcp_tools, mcp_skill_assets
 from vertical_harness.engine.memory import UserMemoryMiddleware
 from vertical_harness.engine.plugin_loader import discover_plugins
 from vertical_harness.engine.policy import (
+    FinalModelCallLimitMiddleware,
     PluginAuthorizationGateway,
     SupervisorPolicyMiddleware,
     build_workflow_interrupt_configs,
@@ -121,6 +122,7 @@ _RESERVED_MIDDLEWARE_NAMES = frozenset(
         "PatchToolCallsMiddleware",
         "TodoListMiddleware",
         "ModelCallLimitMiddleware",
+        "FinalModelCallLimitMiddleware",
         "SupervisorPolicyMiddleware",
         "UserMemoryMiddleware",
         "ModelRouterMiddleware",
@@ -178,6 +180,32 @@ def register_supervisor_harness_profile(
         extra={"event_fields": {"target": provider_or_model}},
     )
     return profile
+
+
+def _summarization_middleware(model: Any, backend: BackendProtocol) -> SummarizationMiddleware:
+    """Build the native history compactor with an earlier, profile-aware trigger."""
+    profile = getattr(model, "profile", None)
+    max_input_tokens = (
+        profile.get("max_input_tokens")
+        if isinstance(profile, dict) and isinstance(profile.get("max_input_tokens"), int)
+        else None
+    )
+    token_trigger = min(24_000, int(max_input_tokens * 0.85)) if max_input_tokens else 24_000
+    keep_tokens = min(8_000, int(max_input_tokens * 0.10)) if max_input_tokens else 8_000
+    arg_trigger = min(8_000, int(max_input_tokens * 0.85)) if max_input_tokens else 8_000
+    return SummarizationMiddleware(
+        model=model,
+        backend=backend,
+        trigger=[("fraction", 0.85) if max_input_tokens else ("tokens", 170_000),
+                 ("tokens", token_trigger)],
+        keep=("tokens", keep_tokens),
+        trim_tokens_to_summarize=None,
+        truncate_args_settings={
+            "trigger": ("tokens", arg_trigger),
+            "keep": ("messages", 1),
+            "max_length": 1_200,
+        },
+    )
 
 
 @dataclass(slots=True)
@@ -535,7 +563,7 @@ class AgentComposer:
         """
         # 第一步：装配基础调用上限、待办规划与模型路由中间件
         stack: list[AgentMiddleware[Any, Any, Any]] = [
-            ModelCallLimitMiddleware(run_limit=self.settings.max_model_calls),
+            FinalModelCallLimitMiddleware(run_limit=self.settings.max_model_calls),
         ]
         logger.debug(
             "middleware_configuration_started",
@@ -728,8 +756,13 @@ def build_agent(
 
     # 第四步：组装中间件调用链与虚拟文件系统安全边界
     middleware = composer.build_middleware_stack(backend)
+    model = init_configured_model(settings)
+    post_summarization = [item for item in middleware if getattr(item, "after_summarization", False)]
+    middleware = [item for item in middleware if not getattr(item, "after_summarization", False)]
+    middleware.append(_summarization_middleware(model, backend))
     if settings.enable_memory:
         middleware.append(UserMemoryMiddleware(settings, active_store))
+    middleware.extend(post_summarization)
 
     permissions = list(DEFAULT_FILESYSTEM_PERMISSIONS)
     # Explicit legacy/custom paths remain usable by the host, never by model tools.
@@ -767,11 +800,17 @@ def build_agent(
             )
         )
 
+    middleware.append(
+        FilesystemMiddleware(
+            backend=backend, tool_token_limit_before_evict=3_000, _permissions=permissions
+        )
+    )
+
     # 第五步：调用 create_deep_agent 完成智能体图编译
     logger.debug("agent_compilation_started")
     agent = create_deep_agent(
         name="vertical-agent",
-        model=init_configured_model(settings),
+        model=model,
         tools=composer.eager_tools,
         system_prompt=composer.system_prompt,
         backend=backend,

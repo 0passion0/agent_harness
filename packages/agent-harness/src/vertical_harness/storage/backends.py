@@ -41,17 +41,17 @@ class DocumentFilesystemBackend(FilesystemBackend):
     }
 
     def read(self, file_path: str, offset: int = 0, limit: int = 2000) -> ReadResult:
-        result = super().read(file_path, offset, limit)
-        if result.file_data is None or result.file_data["encoding"] != "base64":
-            return result
         suffix = Path(file_path).suffix.lower()
+        if suffix not in self._TEXT_DOCUMENTS | self._SCRIPT_DOCUMENTS:
+            return super().read(file_path, offset, limit)
+        path = self._resolve_path(file_path)
+        if not path.is_file():
+            return super().read(file_path, offset, limit)
         if suffix in self._SCRIPT_DOCUMENTS:
             return ReadResult(
-                error=f"{suffix} is not parsed by read_file; use execute with a suitable script or parser."
+                error=f"{suffix} is not parsed by read_file; use a Python execution tool with a suitable parser."
             )
-        if suffix not in self._TEXT_DOCUMENTS:
-            return result
-        content = extract_text(self._resolve_path(file_path))
+        content = extract_text(path)
         return slice_read_response(FileData(content=content, encoding="utf-8"), offset, limit)
 
 

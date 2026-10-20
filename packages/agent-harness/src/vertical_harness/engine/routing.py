@@ -13,6 +13,7 @@ from langchain.agents.middleware import (
 )
 from langchain.chat_models import init_chat_model
 from langchain_core.language_models.chat_models import BaseChatModel
+from langchain_deepseek import ChatDeepSeek
 
 from vertical_harness.config.settings import HarnessSettings, TaskTier
 
@@ -39,6 +40,12 @@ def init_configured_model(
     logger.debug("model_initialization_started", extra={"event_fields": {"model": model_name}})
     # 第二步：调用 init_chat_model 初始化模型，设置 5 次退避重试并注入连接参数
     configured_model = init_chat_model(model_name, max_retries=5, **settings.model_init_kwargs)
+    if isinstance(configured_model, ChatDeepSeek):
+        # The adapter JSON-serializes tool content lists, including binary payloads.
+        configured_model.profile = {
+            **(configured_model.profile or {}),
+            "image_tool_message": False,
+        }
     logger.debug("model_initialization_completed", extra={"event_fields": {"model": model_name}})
     return configured_model
 

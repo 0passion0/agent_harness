@@ -263,8 +263,73 @@ def test_read_only_mode_blocks_builtin_write_tools(tmp_path):
 
 def test_context_limit_rejects_oversized_history():
     middleware = ContextLimitMiddleware(1, "", [])
+    request = type("Request", (), {"messages": [HumanMessage(content="too many chars")]})()
     with pytest.raises(ValueError, match="exceeds configured max_context_tokens"):
-        middleware.before_model({"messages": [HumanMessage(content="too many chars")]}, None)
+        middleware.wrap_model_call(request, lambda _request: None)
+
+    async def reject_async_request():
+        with pytest.raises(ValueError, match="exceeds configured max_context_tokens"):
+            await middleware.awrap_model_call(request, lambda _request: None)
+
+    asyncio.run(reject_async_request())
+
+
+@pytest.mark.parametrize("use_async", [False, True])
+def test_desktop_context_limit_checks_compacted_model_request(tmp_path, monkeypatch, use_async):
+    from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
+    from pydantic import Field
+
+    from vertical_harness.engine import compose
+
+    class TrackingModel(FakeMessagesListChatModel):
+        seen_messages: list = Field(default_factory=list)
+
+        def bind_tools(self, tools, **kwargs):
+            return self
+
+        def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+            self.seen_messages.append(messages)
+            return super()._generate(messages, stop=stop, run_manager=run_manager, **kwargs)
+
+    model = TrackingModel(
+        responses=[AIMessage(content="History summary."), AIMessage(content="Done.")],
+        profile={"max_input_tokens": 20_000},
+    )
+    monkeypatch.setattr(compose, "init_configured_model", lambda _settings: model)
+    selected = {**options(), "permission_mode": "full", "max_context_tokens": 12_000}
+    selected["agent_content"] = ""
+    selected["skills"] = []
+    settings = HarnessSettings(
+        _env_file=None,
+        model="test:context-limit",
+        workspace_root=tmp_path / "workspace",
+        runtime_data_dir=tmp_path / "runtime",
+        store_backend="memory",
+        enable_memory=False,
+    )
+    history = [
+        message
+        for index in range(6)
+        for message in (
+            HumanMessage(content=f"Historical request {index}: " + "x" * 20_000),
+            AIMessage(content=f"Verified result {index} was recorded."),
+        )
+    ]
+    config = {"configurable": {"thread_id": f"context-limit-{use_async}"}}
+
+    async def scenario():
+        async with aopen_desktop_agent(settings, selected) as app:
+            if use_async:
+                result = await app.ainvoke({"messages": history}, config)
+                snapshot = await app.aget_state(config)
+            else:
+                result = app.invoke({"messages": history}, config)
+                snapshot = app.get_state(config)
+            assert result["messages"][-1].content == "Done."
+            assert any("Historical request 0" in str(message) for message in snapshot.values["messages"])
+            assert "Historical request 0" not in repr(model.seen_messages[-1])
+
+    asyncio.run(scenario())
 
 
 @pytest.mark.parametrize("mode", ["read_only", "ask", "full"])
