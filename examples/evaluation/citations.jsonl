@@ -1,2 +1,0 @@
-{"inputs":{"prompt":"{\"manuscript_text\":\"Source [1] and [3].\",\"bibliography\":[\"Paper A\",\"Paper B\"]}"},"outputs":{"structured_response":{"status":"issues"}},"metadata":{"category":"out-of-range"}}
-{"inputs":{"prompt":"{\"manuscript_text\":\"Sources [1-2].\",\"bibliography\":[\"Paper A\",\"Paper B\"]}"},"outputs":{"structured_response":{"status":"passed"}},"metadata":{"category":"valid-indices"}}

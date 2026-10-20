@@ -11,13 +11,12 @@ from datetime import UTC, datetime
 from typing import Any, Literal
 from uuid import uuid4
 
-from langchain_core.messages import BaseMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command, Interrupt
 from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter
 
-from vertical_plugins.common.contracts import RunContext
+from vertical_harness.context import RunContext
 
 logger = logging.getLogger(__name__)
 _JSON = TypeAdapter(JsonValue)
@@ -35,8 +34,7 @@ class StreamEvent(BaseModel):
         "run.failed",
         "chain.started",
         "chain.completed",
-        "subagent.started",
-        "subagent.completed",
+        "chain.failed",
         "model.started",
         "model.delta",
         "model.completed",
@@ -60,7 +58,6 @@ def _project(
     event: dict[str, Any],
     root_id: str,
     interrupts: tuple[Interrupt, ...],
-    workflows: dict[str, str],
 ) -> tuple[str, dict[str, JsonValue]] | None:
     """只输出明确允许的字段；不转发原始 state、工具参数、工具结果或模型配置。
 
@@ -87,33 +84,31 @@ def _project(
         if phase == "start":
             return "model.started", {}
         message = data.get("chunk" if phase == "stream" else "output")
-        if isinstance(message, BaseMessage) and phase in {"stream", "end"}:
+        if phase in {"stream", "end"}:
             if phase == "stream" and not message.text:
                 return None
             projected = {"text": message.text, "message_id": message.id}
             if phase == "end":
                 metadata = message.response_metadata
-                model = metadata.get("model_name") or metadata.get("model") or event.get("metadata", {}).get("ls_model_name")
+                model = (
+                    metadata.get("model_name")
+                    or metadata.get("model")
+                    or event.get("metadata", {}).get("ls_model_name")
+                )
                 if model:
                     projected["model"] = model
-            if phase == "end" and getattr(message, "usage_metadata", None) is not None:
+            if phase == "end" and message.usage_metadata is not None:
                 projected["usage"] = _JSON.validate_python(message.usage_metadata)
             return (
                 "model.delta" if phase == "stream" else "model.completed",
                 projected,
             )
     if kind == "on_tool_start":
-        # 委派名称可用于显示任务卡片，任务描述和其他参数不自动公开。
-        inputs = data.get("input")
-        if event["name"] in {"task", "start_async_task"} and isinstance(inputs, dict):
-            name = inputs.get("subagent_type")
-            if isinstance(name, str):
-                return "tool.started", {"subagent_type": name}
         return "tool.started", {}
     if kind == "on_tool_error":
         return "tool.failed", {"error_type": type(data.get("error")).__name__}
     if kind == "on_tool_end":
-        failed = getattr(data.get("output"), "status", None) == "error"
+        failed = data["output"].status == "error"
         return "tool.failed" if failed else "tool.completed", {}
 
     # 第三步：针对执行链生命周期与根调用状态进行投影
@@ -124,7 +119,7 @@ def _project(
             if kind == "on_chain_error":
                 return None
             output = data.get("output")
-            output = output if isinstance(output, dict) else {}
+            output = output or {}
             interrupts = interrupts or output.get("__interrupt__", ())
             if interrupts:
                 return "run.interrupted", {
@@ -134,41 +129,16 @@ def _project(
                     ]
                 }
             messages = output.get("messages", [])
-            text = messages[-1].text if messages and isinstance(messages[-1], BaseMessage) else ""
+            text = messages[-1].text if messages else ""
             return "run.completed", {"output": text}
-        agent_name = event.get("metadata", {}).get("lc_agent_name")
-        workflow_name = agent_name if agent_name in workflows else None
-        if workflow_name is not None:
-            phase = {
-                "on_chain_start": "running",
-                "on_chain_end": "completed",
-                "on_chain_error": "failed",
+        return (
+            {
+                "on_chain_start": "chain.started",
+                "on_chain_end": "chain.completed",
+                "on_chain_error": "chain.failed",
             }[kind]
-            plugin_id = workflows[workflow_name]
-            if event["name"] == workflow_name:
-                return "custom.progress", {
-                    "kind": "workflow",
-                    "plugin_id": plugin_id,
-                    "workflow_name": workflow_name,
-                    "status": phase,
-                }
-            node = event.get("metadata", {}).get("langgraph_node")
-            if isinstance(node, str) and event["name"] == node:
-                return "custom.progress", {
-                    "kind": "workflow.node",
-                    "plugin_id": plugin_id,
-                    "workflow_name": workflow_name,
-                    "node": node,
-                    "status": phase,
-                    "summary": f"{node} {phase}",
-                }
-        prefix = "subagent" if agent_name and event["name"] == agent_name else "chain"
-        phase = {
-            "on_chain_start": "started",
-            "on_chain_end": "completed",
-            "on_chain_error": "failed",
-        }[kind]
-        return f"{prefix}.{phase}", {}
+        ), {}
+
     return None
 
 
@@ -216,7 +186,7 @@ async def ainvoke_agent(
     :param config: 调用方传入的检查点与回调配置。
     :type config: langchain_core.runnables.RunnableConfig
     :param context: 可信身份与租户上下文。
-    :type context: vertical_plugins.common.contracts.RunContext | None
+    :type context: vertical_harness.context.RunContext | None
     :param durability: 检查点持久化同步级别。
     :type durability: typing.Literal['sync', 'async', 'exit']
     :param timeout_seconds: 覆盖默认调用超时的秒数。
@@ -262,7 +232,7 @@ async def astream_agent(
     :param config: 必须包含 thread_id 的 RunnableConfig 字典。
     :type config: langchain_core.runnables.RunnableConfig
     :param context: 可信运行时身份。
-    :type context: vertical_plugins.common.contracts.RunContext | None
+    :type context: vertical_harness.context.RunContext | None
     :param durability: 检查点持久化同步级别。
     :type durability: typing.Literal['sync', 'async', 'exit']
     :param timeout_seconds: 执行超时秒数。
@@ -286,7 +256,6 @@ async def astream_agent(
     seq = 0
     interrupts: tuple[Interrupt, ...] = ()
     model_started: dict[str, str] = {}
-    workflows = (agent.config or {}).get("metadata", {}).get("harness_workflows", {})
     source = agent.astream_events(
         inputs,
         config=run_config,
@@ -303,9 +272,9 @@ async def astream_agent(
                     root_id = raw["run_id"]
                 if raw["run_id"] == root_id and raw["event"] == "on_chain_stream":
                     chunk = raw["data"].get("chunk")
-                    if isinstance(chunk, dict) and "__interrupt__" in chunk:
+                    if "__interrupt__" in chunk:
                         interrupts = tuple(chunk["__interrupt__"])
-                projected = _project(raw, root_id, interrupts, workflows)
+                projected = _project(raw, root_id, interrupts)
                 if projected is None:
                     continue
                 event_type, data = projected

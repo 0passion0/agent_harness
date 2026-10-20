@@ -27,7 +27,6 @@ const api: DesktopAPI = {
   openArtifact: (path: string) => ipcRenderer.invoke('artifact:open', path),
 
   /** 弹出目录选择框并导入技能目录 */
-  importSkill: (scope) => ipcRenderer.invoke('skill:import', scope),
 
   /** 弹出系统文件选择框导入对话附件 */
   importAttachments: () => ipcRenderer.invoke('attachment:import'),

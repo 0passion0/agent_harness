@@ -1,17 +1,15 @@
 /**
  * @file desktop-store.ts
  * @description 账号与项目级本地数据管理存储引擎。
- * 负责本地偏好设置（模型、解释器、权限、插件）、Agent 规则配置（agent.md、mcp.json）、
- * 技能目录导入导出、附件与生成交付物管理，以及 Token/研值用量统计的聚合计算。
+ * 负责模型、解释器、权限与 Agent 指令配置、
+ * 附件与产物管理，以及 Token 用量统计。
  * @author tongliga
  * @date 2026-10-16
  */
 
 import { createHash, randomUUID } from 'node:crypto'
 import { copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, statSync, unlinkSync } from 'node:fs'
-import { spawnSync } from 'node:child_process'
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
 import type { ArtifactRef, AttachmentRef, ConfigScope, ConfigView, Json, UsageStats } from '../shared/protocol'
 import { writeAtomic } from './local-store'
 
@@ -28,7 +26,6 @@ type DesktopSettings = {
   /** 允许的最大上下文 Token 窗口上限 */
   max_context_tokens: number
   /** 各插件的启用/禁用状态映射字典 */
-  plugins: Record<string, boolean>
 }
 
 /**
@@ -87,7 +84,6 @@ const defaults: DesktopSettings = {
   runtimes: { python: '', node: '' },
   permission_mode: 'ask',
   max_context_tokens: 475000,
-  plugins: { 'web.search': true }
 }
 
 /**
@@ -139,33 +135,6 @@ const mime = (file: string): string => ({
 
 /** 原子写入 JSON 文件辅助函数 */
 const atomicJson = (file: string, value: unknown): void => writeAtomic(file, JSON.stringify(value, null, 2))
-
-const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../')
-const projectPython = path.join(projectRoot, '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python')
-
-/**
- * 执行项目内置的 Python 校验脚本。
- *
- * @param script - Python 脚本正文
- * @param input - 传递给 stdin 的输入文本
- * @param args - 附加 CLI 参数
- */
-const runProjectPython = (script: string, input: string, args: string[] = []): void => {
-  const result = spawnSync(projectPython, ['-c', script, ...args], { input, encoding: 'utf8' })
-  if (result.error) throw result.error
-  if (result.status !== 0) throw new Error(result.stderr)
-}
-
-/**
- * 校验指定 JSON 文本中是否存在重复键。
- *
- * @param source - JSON 文本内容
- * @throws Error 当存在重复键时抛出
- */
-const validateJsonDuplicates = (source: string): void => runProjectPython(
-  'import json, sys\ndef unique(pairs):\n result = {}\n for key, value in pairs:\n  if key in result: raise ValueError("duplicate key: " + key)\n  result[key] = value\n return result\njson.loads(sys.stdin.read(), object_pairs_hook=unique)',
-  source
-)
 
 /**
  * 本地数据、项目配置与运行产物存储管理器。
@@ -329,205 +298,22 @@ export class DesktopStore {
     atomicJson(this.artifactManifest, [...this.artifactRefs(), ref])
     return ref
   }
-
-  /**
-   * 读取已被用户授权免二次确认调用的插件 ID 白名单。
-   *
-   * @returns 授权插件 ID 字符串数组
-   */
-  authorizedPlugins(): string[] {
-    const grants = this.readJson<unknown>(path.join(this.globalDirectory, 'plugin-authorizations.json'), [])
-    if (!Array.isArray(grants) || grants.some(id => typeof id !== 'string')) throw new Error('Invalid plugin authorizations')
-    return grants
-  }
-
-  /**
-   * 追加记住插件免二次确认授权。
-   *
-   * @param ids - 批准授权的插件 ID 列表
-   */
-  authorizePlugins(ids: string[]): void {
-    atomicJson(path.join(this.globalDirectory, 'plugin-authorizations.json'), [...new Set([...this.authorizedPlugins(), ...ids])])
-  }
-
-  /**
-   * 检查并组合生成当前生效的 Agent 提示词规则、Skills 技能及 MCP 服务配置视图。
-   * 支持多层级层叠覆盖（私有配置 > 工作区 .medpeer > 账号全局配置）。
-   *
-   * @param scope - 配置查询范围 ('global' 全局或 'project' 项目)
-   * @returns 聚合计算后的结构化配置视图对象
-   */
   inspectConfig(scope: ConfigScope): ConfigView {
-    const layers = this.configLayers(scope)
-    const agentPath = layers.map(dir => path.join(dir, 'agent.md')).find(file => existsSync(file))
-    const servers: Record<string, Json> = {}
-    const sources: Record<string, string> = {}
-    for (const dir of layers) {
-      const file = path.join(dir, 'mcp.json')
-      if (!existsSync(file)) continue
-      const content = readFileSync(file, 'utf8')
-      validateJsonDuplicates(content)
-      const parsed = this.validateMcp(JSON.parse(content))
-      for (const [id, config] of Object.entries(parsed.mcpServers)) if (!(id in servers)) { servers[id] = config; sources[id] = file }
-    }
-    const skills = new Map<string, ConfigView['skills'][number]>()
-    const enabled = new Map<string, boolean>()
-    for (const dir of scope === 'global' ? layers : [...layers].reverse()) {
-      const settingsFile = path.join(dir, 'skill-settings.json')
-      if (existsSync(settingsFile)) for (const [id, value] of Object.entries(JSON.parse(readFileSync(settingsFile, 'utf8')) as Record<string, boolean>)) enabled.set(id, value)
-    }
-    for (const dir of layers) {
-      const root = path.join(dir, 'skills')
-      if (!existsSync(root)) continue
-      for (const id of readdirSync(root).sort()) {
-        const skillRoot = path.join(root, id)
-        if (!statSync(skillRoot).isDirectory() || skills.has(id)) continue
-        const skillFile = path.join(skillRoot, 'SKILL.md')
-        this.skillId(readFileSync(skillFile, 'utf8'), id)
-        skills.set(id, { id, path: skillRoot, source: dir, enabled: enabled.get(id) ?? true })
-      }
-    }
-    const privateDir = path.join(this.directory, 'config')
-    return {
-      agent: { content: agentPath ? readFileSync(agentPath, 'utf8') : '', source: agentPath ?? '' },
-      skills: [...skills.values()],
-      mcp: { servers, sources },
-      overrides: {
-        agent: scope === 'project' && existsSync(path.join(privateDir, 'agent.md')) ? path.join(privateDir, 'agent.md') : '',
-        mcp: scope === 'project' && existsSync(path.join(privateDir, 'mcp.json')) ? path.join(privateDir, 'mcp.json') : ''
-      }
-    }
+    const agentPath = this.configLayers(scope).map(dir => path.join(dir, 'agent.md')).find(file => existsSync(file))
+    const override = path.join(this.directory, 'config', 'agent.md')
+    return { agent: { content: agentPath ? readFileSync(agentPath, 'utf8') : '', source: agentPath ?? '' }, overrides: { agent: scope === 'project' && existsSync(override) ? override : '' } }
   }
-
-  /**
-   * 保存指定范围下的自定义指令 agent.md 或 MCP 服务配置 mcp.json。
-   *
-   * @param scope - 目标配置作用域 ('global' 或 'project')
-   * @param kind - 配置类型 ('agent' 提示词规则或 'mcp' 外部服务)
-   * @param content - 文件正文内容
-   * @returns 保存并重新计算后的最新配置视图
-   */
-  saveConfig(scope: ConfigScope, kind: 'agent' | 'mcp', content: string): ConfigView {
+  saveConfig(scope: ConfigScope, kind: 'agent', content: string): ConfigView {
+    if (kind !== 'agent') throw new Error('Only agent instructions are supported')
     const directory = this.configWriteDir(scope)
-    const target = within(directory, path.join(directory, kind === 'agent' ? 'agent.md' : 'mcp.json'))
-    if (kind === 'mcp') {
-      validateJsonDuplicates(content)
-      this.validateMcp(JSON.parse(content))
-    }
-    writeAtomic(target, content)
+    writeAtomic(within(directory, path.join(directory, 'agent.md')), content)
     return this.inspectConfig(scope)
   }
-
-  /**
-   * 移除当前项目的局部配置重载（回退至全局配置）。
-   *
-   * @param kind - 需移除的配置类型 ('agent' 或 'mcp')
-   * @returns 移除后的最新配置视图
-   */
-  removeConfig(kind: 'agent' | 'mcp'): ConfigView {
-    const target = path.join(this.directory, 'config', kind === 'agent' ? 'agent.md' : 'mcp.json')
-    within(path.join(this.directory, 'config'), target)
-    unlinkSync(target)
+  removeConfig(kind: 'agent'): ConfigView {
+    if (kind !== 'agent') throw new Error('Only agent instructions are supported')
+    const directory = path.join(this.directory, 'config')
+    unlinkSync(within(directory, path.join(directory, 'agent.md')))
     return this.inspectConfig('project')
-  }
-
-  /**
-   * 读取指定技能目录下的 SKILL.md 规则正文。
-   *
-   * @param scope - 技能所在配置范围
-   * @param id - 技能标识 ID
-   * @returns 技能 Markdown 正文与来源文件物理路径
-   * @throws Error 当技能不存在时抛出
-   */
-  readSkill(scope: ConfigScope, id: string): { content: string; source: string } {
-    this.validateSkillId(id)
-    const skill = this.inspectConfig(scope).skills.find(item => item.id === id)
-    if (!skill) throw new Error('Skill does not exist')
-    const source = path.join(skill.path, 'SKILL.md')
-    return { content: readFileSync(source, 'utf8'), source }
-  }
-
-  /**
-   * 保存并更新指定技能的 SKILL.md 文件正文。
-   * 必须包含合法的 YAML frontmatter 且 name 与目录 ID 严格匹配。
-   *
-   * @param scope - 技能作用域
-   * @param id - 技能唯一标识 ID
-   * @param content - 待保存的 SKILL.md 内容
-   * @returns 保存后的最新配置视图
-   */
-  saveSkill(scope: ConfigScope, id: string, content: string): ConfigView {
-    this.skillId(content, id)
-    this.readSkill(scope, id)
-    const directory = this.configWriteDir(scope)
-    within(directory, path.join(directory, 'skills', id, 'SKILL.md'))
-    const target = within(path.join(directory, 'skills', id), path.join(directory, 'skills', id, 'SKILL.md'))
-    mkdirSync(path.dirname(target), { recursive: true })
-    writeAtomic(target, content)
-    return this.inspectConfig(scope)
-  }
-
-  /**
-   * 切换指定技能的启用或停用状态，并在 skill-settings.json 中持久化。
-   *
-   * @param scope - 技能作用域
-   * @param id - 技能 ID
-   * @param enabled - 是否启用
-   * @returns 更新后的最新配置视图
-   */
-  setSkill(scope: ConfigScope, id: string, enabled: boolean): ConfigView {
-    this.validateSkillId(id)
-    const directory = this.configWriteDir(scope)
-    const file = within(directory, path.join(directory, 'skill-settings.json'))
-    const settings = this.readJson<Record<string, boolean>>(file, {})
-    settings[id] = enabled
-    atomicJson(file, settings)
-    return this.inspectConfig(scope)
-  }
-
-  /**
-   * 从外部本地目录导入技能至当前范围。
-   * 严格校验技能目录结构、禁止软链接、检查 SKILL.md 存在且 frontmatter 与目录同名。
-   *
-   * @param scope - 导入目标作用域 ('global' 或 'project')
-   * @param source - 外部技能文件夹绝对路径
-   * @returns 导入后的最新配置视图
-   * @throws Error 当技能已存在、包含符号链接或结构不符合规范时抛出
-   */
-  importSkill(scope: ConfigScope, source: string): ConfigView {
-    if (existsSync(source) && statSync(source).isFile()) source = path.dirname(source)
-    const root = path.resolve(source)
-    if (lstatSync(root).isSymbolicLink() || !statSync(root).isDirectory()) throw new Error('Skill source must be a directory without a symlink root')
-    const id = path.basename(root)
-    const content = readFileSync(path.join(root, 'SKILL.md'), 'utf8')
-    this.skillId(content, id)
-    const inspect = (directory: string): void => {
-      for (const entry of readdirSync(directory, { withFileTypes: true })) {
-        const item = path.join(directory, entry.name)
-        if (entry.isSymbolicLink()) throw new Error('Skill contains a symbolic link')
-        if (entry.isDirectory()) inspect(item)
-      }
-    }
-    inspect(root)
-    const directory = this.configWriteDir(scope)
-    within(directory, path.join(directory, 'skills', id))
-    const destination = path.join(directory, 'skills', id)
-    if (existsSync(destination)) throw new Error('Skill already exists in this scope')
-    const skillsRoot = path.dirname(destination)
-    mkdirSync(skillsRoot, { recursive: true })
-    const temporary = path.join(skillsRoot, `.import-${randomUUID()}`)
-    const copy = (from: string, to: string): void => {
-      mkdirSync(to, { recursive: true })
-      for (const entry of readdirSync(from, { withFileTypes: true })) {
-        const src = path.join(from, entry.name)
-        const dst = within(temporary, path.join(to, entry.name))
-        if (entry.isDirectory()) copy(src, dst)
-        else copyFileSync(src, dst)
-      }
-    }
-    copy(root, temporary)
-    renameSync(temporary, destination)
-    return this.inspectConfig(scope)
   }
 
   /**
@@ -537,7 +323,7 @@ export class DesktopStore {
    */
   readSettings(): DesktopSettings {
     const settings = this.readJson<DesktopSettings>(path.join(this.globalDirectory, 'settings.json'), defaults)
-    return { ...settings, plugins: { ...defaults.plugins, ...settings.plugins } }
+    return { model_code: settings.model_code, runtimes: settings.runtimes, permission_mode: settings.permission_mode, max_context_tokens: settings.max_context_tokens }
   }
 
   /**
@@ -664,40 +450,6 @@ export class DesktopStore {
     if (scope === 'global') return path.join(this.globalDirectory, 'config')
     if (scope === 'project') return path.join(this.directory, 'config')
     throw new Error('Invalid config scope')
-  }
-
-  /** 校验技能 ID 的命名规则（小写字母、数字及连字符） */
-  private validateSkillId(id: string): void {
-    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(id) || id.length > 64) throw new Error('Invalid skill ID')
-  }
-
-  /** 校验技能 Markdown 正文的 YAML frontmatter 与目录名称一致 */
-  private skillId(content: string, expected: string): void {
-    this.validateSkillId(expected)
-    const match = content.match(/^---\s*\r?\n([\s\S]*?)\r?\n---/)
-    if (!match) throw new Error('Skill frontmatter is required')
-    const id = match[1].match(/^name:\s*([A-Za-z0-9_-]+)\s*$/m)?.[1]
-    if (id !== expected) throw new Error('Skill name must match its directory')
-  }
-
-  /** 深度校验 mcp.json 服务的协议结构合法性 */
-  private validateMcp(value: unknown): { mcpServers: Record<string, Json> } {
-    if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).length !== 1 || !('mcpServers' in value) || !value.mcpServers || typeof value.mcpServers !== 'object' || Array.isArray(value.mcpServers)) throw new Error('Invalid MCP configuration')
-    const servers = value.mcpServers as Record<string, Json>
-    for (const [id, raw] of Object.entries(servers)) {
-      if (!id || !raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error(`Invalid MCP server: ${id}`)
-      const server = raw as Record<string, Json>
-      if (server.transport === 'stdio') {
-        const allowed = ['transport', 'command', 'args', 'env', 'enabled']
-        if (!('command' in server) || typeof server.command !== 'string' || !server.command || Object.keys(server).some(key => !allowed.includes(key)) || ('args' in server && (!Array.isArray(server.args) || server.args.some(arg => typeof arg !== 'string'))) || ('env' in server && (!server.env || typeof server.env !== 'object' || Array.isArray(server.env) || Object.values(server.env).some(item => typeof item !== 'string'))) || ('enabled' in server && typeof server.enabled !== 'boolean')) throw new Error(`Invalid stdio MCP server: ${id}`)
-      } else if (server.transport === 'http' || server.transport === 'streamable-http' || server.transport === 'sse') {
-        const allowed = ['transport', 'url', 'headers', 'enabled']
-        let validUrl = false
-        if (typeof server.url === 'string') { const url = new URL(server.url); validUrl = ['http:', 'https:'].includes(url.protocol) && Boolean(url.host) }
-        if (!validUrl || Object.keys(server).some(key => !allowed.includes(key)) || ('headers' in server && (!server.headers || typeof server.headers !== 'object' || Array.isArray(server.headers) || Object.values(server.headers).some(item => typeof item !== 'string'))) || ('enabled' in server && typeof server.enabled !== 'boolean')) throw new Error(`Invalid HTTP MCP server: ${id}`)
-      } else throw new Error(`Unsupported MCP transport: ${id}`)
-    }
-    return value as { mcpServers: Record<string, Json> }
   }
 
   /** 安全读取 JSON 文件并反序列化，文件不存在时返回 fallback 兜底值 */

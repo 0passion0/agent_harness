@@ -107,6 +107,7 @@ export class Backend {
     const child = spawn(python, ['-X', 'utf8', '-u', '-m', 'vertical_harness.desktop'], {
       cwd: this.root,
       windowsHide: true,
+      env: { ...process.env, PATH: [path.dirname(python), path.join(path.dirname(python), 'Scripts'), process.env.PATH ?? ''].join(path.delimiter) },
       stdio: 'pipe'
     })
     this.child = child

@@ -44,7 +44,6 @@ vi.mock('../../src/renderer/src/state/use-agent-controller', () => ({
 
 vi.mock('../../src/renderer/src/components/Conversation', () => ({ Conversation: () => <div data-testid="conversation" /> }))
 vi.mock('../../src/renderer/src/components/SessionSidebar', () => ({ SessionSidebar: () => null }))
-vi.mock('../../src/renderer/src/components/CapabilityPicker', () => ({ CapabilityPicker: () => null }))
 vi.mock('../../src/renderer/src/components/RunDetails', () => ({ RunDetails: () => null }))
 vi.mock('../../src/renderer/src/components/ToolCard', () => ({ ToolCard: () => null }))
 vi.mock('../../src/renderer/src/components/AttachmentChips', () => ({ AttachmentChips: () => null }))

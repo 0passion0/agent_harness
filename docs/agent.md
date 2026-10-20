@@ -1,16 +1,14 @@
-# 文档目录 (docs) - Agent 指南与规范
+# Agent Harness
 
-## 目录定位与职责
-`docs/` 目录存放整个 Vertical Agent Harness 系统的架构白皮书、运维指南与最佳实践文档。该目录为系统演进、架构审核与开发决策提供权威的指导基准。
+系统仅保留一个 Agent：网络检索、工作区文件工具、保存的 Python 脚本。
 
-## 目录文件清单
-- `ARCHITECTURE.md`：核心架构总览，涵盖分层模型、运行时生命周期、插件模型、安全沙箱与存储抽象。
-- `EVALUATION.md`：评测子系统指南，涵盖离线评测、在线打分、LangSmith 数据集流转与评测指标体系。
-- `STABILIZATION.md`：生产稳定性基准，包括故障降级、断点恢复、死锁预防与多租户并发安全策略。
-- `STREAMING.md`：流式通信协议与事件规范，定义前端流式打字机效果、中间件事件回调与中断恢复交互。
-- `TOKEN_EFFICIENCY.md`：Token 优化策略，包括提示词压缩、上下文轮转修剪与缓存利用最佳实践。
-
-## Agent 交互与维护规范
-1. **文档同步更新原则**：当核心架构（如插件契约、中间件调用链、持久化存储结构）发生改动时，必须同步核验并更新对应的 markdown 文档。
-2. **术语一致性**：保持与系统代码中定义的关键类型（如 `DomainPlugin`、`BuildServices`、`RunContext`、`HarnessSettings`）命名严格一致。
-3. **安全准则传达**：在撰写涉及部署与认证的章节时，务必强调凭证隔离与日志脱敏规范。
+- 主循环使用 LangChain create_agent，复用 Deep Agents 文件、摘要和工具调用修复中间件。
+- 不引入业务插件、MCP、技能注册、长期记忆、评估、监督者或自研工作流。
+- 配置在 config/settings.py，组装在 engine/compose.py；桌面 RPC 在 desktop.py。
+- 文件操作在 storage/backends.py；文档阅读用 MarkItDown，编辑用 Python 格式库。
+- 聊天、附件、产物和数据库属于用户数据；不得因代码清理删除。
+- 身份、工作区边界、敏感文件拒绝、审批、超时和取消必须保留。
+- 日志使用 logging.py，不记录用户内容、密钥或任意输入对象。
+- 优先复用标准库和已安装依赖，不复制第三方实现，不为已删除 API 加兼容层。
+- 验证：uv run pytest、uv run ruff check .、uv run mypy；desktop 下 npm run typecheck、npm test、npm run build。
+- 不手动编辑生成的 openwiki/ 页面。

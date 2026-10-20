@@ -9,7 +9,7 @@
 
 import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs'
 import path from 'node:path'
-import type { ApplicationState, AppPlugin, Command, ConfigScope, EventFrame, Json, Question, RunRecord, SessionTokenReport, SkillDescriptor, Snapshot } from '../shared/protocol'
+import type { ApplicationState, Command, ConfigScope, EventFrame, Json, Question, RunRecord, SessionTokenReport, Snapshot } from '../shared/protocol'
 import type { Backend, EngineFrame, EngineEvent, Interrupt } from './backend'
 import { DesktopStore } from './desktop-store'
 import { LocalStore, writeAtomic } from './local-store'
@@ -53,12 +53,6 @@ type SnapshotResult = {
   token_usage: SessionTokenReport
 }
 
-/** 插件与技能目录快照 */
-type Catalog = {
-  plugins: Array<Pick<AppPlugin, 'id' | 'name' | 'description' | 'version' | 'workflows'>>
-  skills: Omit<SkillDescriptor, 'enabled'>[]
-}
-
 /** 生成空会话快照兜底对象 */
 const emptySnapshot = (): Snapshot => ({
   session_id: '',
@@ -85,7 +79,6 @@ export class DesktopApplication {
   /** 当前正在执行或暂停等待交互的任务句柄 */
   private running: Running | null = null
   /** 系统已注册的插件与技能目录 */
-  private catalog: Catalog = { plugins: [], skills: [] }
   /** 任务串行化 Promise 执行队列（防止并发写索引导致竞争） */
   private queue: Promise<unknown> = Promise.resolve()
 
@@ -177,26 +170,8 @@ export class DesktopApplication {
    */
   async initialize(): Promise<ApplicationState> {
     this.environment = await this.backend.request<Environment>('environment', {})
-    this.catalog = await this.backend.request<Catalog>('catalog.get', {})
     await this.configurePreferences()
     return this.state()
-  }
-
-  /**
-   * 组装包含启用与授权状态的可用插件列表。
-   */
-  private plugins(): AppPlugin[] {
-    const settings = this.files.readSettings()
-    const enabled = settings.plugins ?? {}
-    const authorized = this.files.authorizedPlugins()
-    return this.catalog.plugins.map(plugin => ({
-      ...plugin,
-      interaction_kinds: ['plugin_authorization'],
-      enabled: enabled[plugin.id] === true,
-      authorized: authorized.includes(plugin.id),
-      configured: true,
-      loaded: enabled[plugin.id] === true
-    }))
   }
 
   /**
@@ -213,11 +188,6 @@ export class DesktopApplication {
         provider: model.startsWith('deepseek:') ? 'deepseek' : 'harness',
         model: model.replace(/^deepseek:/, '')
       } : null,
-      plugins: this.plugins(),
-      skills: this.catalog.skills.map(skill => ({
-        ...skill,
-        enabled: !skill.plugin_id || settings.plugins[skill.plugin_id] === true
-      })),
       runtimes: settings.runtimes,
       permission_mode: settings.permission_mode,
       data_dir: this.directory,
@@ -231,12 +201,6 @@ export class DesktopApplication {
   private async configure(): Promise<void> {
     const local = this.account(), files = this.storage(), settings = files.readSettings()
     const config = files.inspectConfig('project')
-    const globalSkills = files.inspectConfig('global').skills
-    const skills = config.skills.filter(skill => skill.enabled).map(skill => ({
-      id: skill.id,
-      content: files.readSkill('project', skill.id).content,
-      source: globalSkills.some(global => global.id === skill.id && global.source === skill.source) ? '全局' : '项目'
-    }))
     await this.backend.request('configure', {
       tenant_id: local.activeProject!.id,
       user_id: 'default',
@@ -248,13 +212,8 @@ export class DesktopApplication {
         permission_mode: settings.permission_mode,
         max_context_tokens: settings.max_context_tokens,
         agent_content: config.agent.content,
-        skills,
-        mcp_servers: config.mcp.servers,
-        authorized_plugins: files.authorizedPlugins(),
-        enabled_plugins: Object.keys(settings.plugins).filter(id => settings.plugins[id] && this.catalog.plugins.some(plugin => plugin.id === id))
       }
     })
-    this.catalog = await this.backend.request<Catalog>('catalog.get', {})
   }
 
   /**
@@ -279,17 +238,8 @@ export class DesktopApplication {
         permission_mode: settings.permission_mode,
         max_context_tokens: settings.max_context_tokens,
         agent_content: config.agent.content,
-        skills: config.skills.filter(item => item.enabled).map(item => ({
-          id: item.id,
-          content: files.readSkill('global', item.id).content,
-          source: '全局'
-        })),
-        mcp_servers: config.mcp.servers,
-        authorized_plugins: files.authorizedPlugins(),
-        enabled_plugins: Object.keys(settings.plugins).filter(id => settings.plugins[id] && this.catalog.plugins.some(plugin => plugin.id === id))
       }
     })
-    this.catalog = await this.backend.request<Catalog>('catalog.get', {})
   }
 
   /** 获取指定会话已保存执行历史 JSON 文件的绝对物理路径 */
@@ -418,11 +368,9 @@ export class DesktopApplication {
   private question(): Question {
     const item = this.running!.interrupts.find(interrupt => !(interrupt.id in this.running!.answers))!
     const actions = item.value.action_requests
-    if (item.value.kind === 'plugin_authorization') return { ...item.value, interaction_id: item.id } as Question
     const options = Array.isArray(item.value.options) && item.value.options.every(option => typeof option === 'string') ? item.value.options as string[] : undefined
     return {
       interaction_id: item.id,
-      plugin_id: typeof item.value.plugin_id === 'string' ? item.value.plugin_id : 'harness',
       kind: actions ? 'approval' : 'question',
       options,
       action_requests: actions,
@@ -489,20 +437,6 @@ export class DesktopApplication {
         return local.sessions()
       case 'session.search':
         return local.sessions(params.query)
-      case 'plugin.list':
-        return this.plugins()
-      case 'plugin.snapshot': {
-        if (!this.catalog.plugins.some(plugin => plugin.id === params.plugin_id)) throw new Error('未知插件')
-        return {
-          plugin_id: params.plugin_id,
-          state: {
-            runs: local.activeProject ? this.saved(local.currentSession().id).runs.map(run => ({
-              ...run,
-              records: run.records?.filter(record => record.plugin_id === params.plugin_id)
-            })) : []
-          }
-        }
-      }
       case 'session.snapshot': {
         this.idle()
         const value = await this.snapshot()
@@ -573,17 +507,12 @@ export class DesktopApplication {
         const attachments = method === 'run.attachments' ? command.params.attachment_ids.map(id => files.attachment(id)) : []
         const session = local.currentSession()
         await this.configure()
-        const selected_plugins = params.selected_plugins ?? [], selected_skills = params.selected_skills ?? []
-        if (selected_plugins.some(id => !this.plugins().some(plugin => plugin.id === id && plugin.enabled))) throw new Error('选中的插件未启用')
-        if (selected_skills.some(id => !this.state().skills.some(skill => skill.id === id && skill.enabled))) throw new Error('选中的技能不可用')
         this.running = { id: command.id, thread: session.id, started: Date.now(), records: [], interrupts: [], answers: {} }
         try {
           await this.backend.request('run.start', {
             thread_id: session.id,
             run_id: command.id,
             text: params.text,
-            selected_plugins,
-            selected_skills,
             attachments: attachments.map(item => ({
               name: item.name,
               media_type: item.media_type,
@@ -617,10 +546,7 @@ export class DesktopApplication {
         const interrupt = run.interrupts.find(item => item.id === params.interaction_id && !(item.id in run.answers))
         if (!interrupt) throw new Error('交互请求已失效')
         let answer: Json
-        if (interrupt.value.kind === 'plugin_authorization') {
-          if (!['approve', 'reject'].includes(params.answer)) throw new Error('无效审批决定')
-          answer = { request_id: interrupt.value.request_id!, approved: params.answer === 'approve' }
-        } else if (interrupt.value.action_requests) {
+        if (interrupt.value.action_requests) {
           if (!['approve', 'reject'].includes(params.answer)) throw new Error('无效审批决定')
           answer = { decisions: interrupt.value.action_requests.map(() => ({ type: params.answer })) }
         } else {
@@ -634,11 +560,6 @@ export class DesktopApplication {
           return {}
         }
         await this.backend.request('run.resume', { thread_id: run.thread, run_id: run.id, decisions: answers })
-        const approvedPlugins = run.interrupts.filter(item => item.value.kind === 'plugin_authorization' && (answers[item.id] as { approved?: boolean })?.approved === true).map(item => item.value.plugin_id).filter((id): id is string => typeof id === 'string')
-        if (approvedPlugins.length) {
-          files.authorizePlugins(approvedPlugins)
-          this.emit({ event: 'app.ready', data: this.state() })
-        }
         run.interrupts = []
         run.answers = {}
         return { run_id: run.id }
@@ -677,26 +598,6 @@ export class DesktopApplication {
       case 'config.remove':
         this.idle()
         return files.removeConfig(params.kind)
-      case 'skill.read':
-        return files.readSkill(params.scope, params.skill_id)
-      case 'skill.save':
-        this.idle()
-        return files.saveSkill(params.scope, params.skill_id, params.content)
-      case 'skill.set':
-        this.idle()
-        if (!['true', 'false'].includes(params.enabled)) throw new Error('技能状态无效')
-        return files.setSkill(params.scope, params.skill_id, params.enabled === 'true')
-      case 'mcp.test':
-        this.idle()
-        await this.configurePreferences(params.scope)
-        return this.backend.request('mcp.test', { server_id: params.server_id })
-      case 'plugin.set': {
-        this.idle()
-        if (!this.catalog.plugins.some(plugin => plugin.id === params.plugin_id) || !['true', 'false'].includes(params.enabled)) throw new Error('无效插件设置')
-        files.saveSettings({ plugins: { ...files.readSettings().plugins, [params.plugin_id]: params.enabled === 'true' } })
-        await this.configurePreferences()
-        break
-      }
       case 'usage.stats':
         return files.usageStats(params.period, params.model)
       default:

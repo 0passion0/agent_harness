@@ -37,18 +37,14 @@ function formatTokens(tokens: number): string {
 /** 各核心区块对应的视觉图标映射表 */
 const SECTION_ICONS: Record<string, typeof Cpu> = {
   system_prompt: Cpu,
-  skills: Layers3,
-  mcp: Activity,
-  memory: BookOpen,
+  tools: Activity,
   history: History,
 }
 
 /** 各核心区块对应的图表色值 */
 const SECTION_COLORS: Record<string, string> = {
   system_prompt: '#818cf8',
-  skills: '#38bdf8',
-  mcp: '#34d399',
-  memory: '#fbbf24',
+  tools: '#34d399',
   history: '#f43f5e',
 }
 
@@ -105,7 +101,7 @@ export function TokenWindowPopup({ report, onOpenSettings }: Props) {
   const maxStr = maxTokens === undefined ? '待加载' : formatTokens(maxTokens)
 
   // 第二步：装配规范的五个核心上下文区块数据
-  const canonicalOrder = ['system_prompt', 'skills', 'mcp', 'memory', 'history']
+  const canonicalOrder = ['system_prompt', 'tools', 'history']
   const sectionsList: Array<TokenSectionUsage & { key: string; icon: typeof Cpu; color: string }> = report ? canonicalOrder.map(key => {
     const existing = report.sections[key]
     return {

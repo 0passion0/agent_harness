@@ -1,191 +1,39 @@
-"""Vertical Harness 核心包公共接口导出。
+"""Search, file and script agent harness."""
 
-架构子包划分：
-- `vertical_harness.config`: 基于 Pydantic Settings 的宿主环境配置与路由规则校验
-- `vertical_harness.engine.plugin_loader`: 基于 Entry Points 的插件发现与 ABC 继承校验
-
-领域插件契约（`DomainPlugin` ABC、清单、贡献类型）位于同级包 `vertical_plugins.common`，
-内置业务插件位于 `vertical_plugins.<plugin>`；顶层仍重导出既有公共名称。
-- `vertical_harness.storage`: LangGraph 原生 SqliteStore 生命周期与 Deep Agents CompositeBackend 挂载
-- `vertical_harness.engine`: LangChain 聊天模型路由中间件与 Deep Agents 唯一组装器
-"""
-
-from logging import NullHandler, getLogger
-
-from vertical_harness.config import (
-    HarnessSettings,
-    MCPHttpServer,
-    MCPServerConfig,
-    MCPStdioServer,
-    StoreBackendType,
-    TaskTier,
-)
-from vertical_harness.engine import (
-    BASE_PROMPT,
-    DEFAULT_DURABILITY,
-    SUPERVISOR_PROMPT,
-    AgentComposer,
-    CheckpointSummary,
-    ConsolidatedMemory,
-    PluginApprovalRecord,
-    PluginAuthorizationGateway,
-    PluginAuthState,
-    PluginExecutionRequest,
-    StreamEvent,
-    SupervisorPolicyMiddleware,
-    SupervisorStage,
-    UserMemoryMiddleware,
-    UserPreferences,
-    WorkflowLoggingHandler,
-    afork_checkpoint,
-    aget_checkpoint_history,
-    aget_checkpoint_snapshot,
-    ainvoke_agent,
-    aopen_agent,
-    astream_agent,
-    atime_travel_invoke,
-    build_agent,
-    build_workflow_interrupt_configs,
-    consolidate_memories,
-    fork_checkpoint,
-    get_checkpoint_history,
-    get_checkpoint_snapshot,
-    init_configured_model,
-    make_checkpoint_config,
-    make_router,
-    open_agent,
-    register_supervisor_harness_profile,
-    run_memory_worker,
-    time_travel_invoke,
-)
-from vertical_harness.engine.plugin_loader import (
-    PLUGIN_GROUP,
-    discover_plugins,
-    discover_workflow_graphs,
-)
+from vertical_harness.config import HarnessSettings, StoreBackendType, TaskTier
+from vertical_harness.context import RunContext
+from vertical_harness.engine.callbacks import WorkflowLoggingHandler
+from vertical_harness.engine.compose import BASE_PROMPT, aopen_agent, build_agent, open_agent
+from vertical_harness.engine.routing import init_configured_model, make_router
+from vertical_harness.engine.streaming import StreamEvent, ainvoke_agent, astream_agent
 from vertical_harness.logging import configure_logging, log_context
 from vertical_harness.observability import LangSmithSettings, tracing_session
-from vertical_harness.storage import (
-    AsyncSqliteSaver,
-    AsyncSqliteStore,
-    SqliteSaver,
-    SqliteStore,
-    aopen_checkpointer,
-    aopen_store,
-    compose_backend,
-    create_checkpointer,
-    create_store,
-    open_checkpointer,
-    open_store,
-    tenant_memory_namespace,
-)
-from vertical_plugins.common import (
-    BaseWorkflow,
-    BuildServices,
-    DomainPlugin,
-    Exposure,
-    HookAuditEntry,
-    NodeObservation,
-    PluginContribution,
-    PluginManifest,
-    PluginRuntime,
-    RunContext,
-    SideEffect,
-    SkillAsset,
-    SubAgentContextMode,
-    ToolContribution,
-    WorkflowContext,
-    WorkflowContribution,
-    WorkflowHooks,
-    WorkflowInputState,
-    WorkflowInternalState,
-    WorkflowMode,
-    WorkflowNodeEvent,
-    WorkflowOutputState,
-    WorkflowPlan,
-    WorkflowPlugin,
-    WorkflowProgressSummary,
-    WorkflowStep,
-)
+from vertical_harness.storage import aopen_checkpointer, aopen_store, open_checkpointer, open_store
 
-getLogger(__name__).addHandler(NullHandler())
+
+def make_checkpoint_config(thread_id: str):
+    """Create native checkpoint configuration for a single conversation."""
+    if not isinstance(thread_id, str) or not thread_id.strip():
+        raise ValueError("thread_id must be nonempty")
+    return {"configurable": {"thread_id": thread_id}}
+
 
 __all__ = [
     "BASE_PROMPT",
-    "DEFAULT_DURABILITY",
-    "PLUGIN_GROUP",
-    "SUPERVISOR_PROMPT",
-    "AgentComposer",
-    "AsyncSqliteSaver",
-    "AsyncSqliteStore",
-    "BaseWorkflow",
-    "BuildServices",
-    "CheckpointSummary",
-    "ConsolidatedMemory",
-    "DomainPlugin",
-    "Exposure",
     "HarnessSettings",
-    "HookAuditEntry",
     "LangSmithSettings",
-    "MCPHttpServer",
-    "MCPServerConfig",
-    "MCPStdioServer",
-    "NodeObservation",
-    "PluginApprovalRecord",
-    "PluginAuthState",
-    "PluginAuthorizationGateway",
-    "PluginContribution",
-    "PluginExecutionRequest",
-    "PluginManifest",
-    "PluginRuntime",
     "RunContext",
-    "SideEffect",
-    "SkillAsset",
-    "SqliteSaver",
-    "SqliteStore",
     "StoreBackendType",
     "StreamEvent",
-    "SubAgentContextMode",
-    "SupervisorPolicyMiddleware",
-    "SupervisorStage",
     "TaskTier",
-    "ToolContribution",
-    "UserMemoryMiddleware",
-    "UserPreferences",
-    "WorkflowContext",
-    "WorkflowContribution",
-    "WorkflowHooks",
-    "WorkflowInputState",
-    "WorkflowInternalState",
     "WorkflowLoggingHandler",
-    "WorkflowMode",
-    "WorkflowNodeEvent",
-    "WorkflowOutputState",
-    "WorkflowPlan",
-    "WorkflowPlugin",
-    "WorkflowProgressSummary",
-    "WorkflowStep",
-    "afork_checkpoint",
-    "aget_checkpoint_history",
-    "aget_checkpoint_snapshot",
     "ainvoke_agent",
     "aopen_agent",
     "aopen_checkpointer",
     "aopen_store",
     "astream_agent",
-    "atime_travel_invoke",
     "build_agent",
-    "build_workflow_interrupt_configs",
-    "compose_backend",
     "configure_logging",
-    "consolidate_memories",
-    "create_checkpointer",
-    "create_store",
-    "discover_plugins",
-    "discover_workflow_graphs",
-    "fork_checkpoint",
-    "get_checkpoint_history",
-    "get_checkpoint_snapshot",
     "init_configured_model",
     "log_context",
     "make_checkpoint_config",
@@ -193,9 +41,5 @@ __all__ = [
     "open_agent",
     "open_checkpointer",
     "open_store",
-    "register_supervisor_harness_profile",
-    "run_memory_worker",
-    "tenant_memory_namespace",
-    "time_travel_invoke",
     "tracing_session",
 ]

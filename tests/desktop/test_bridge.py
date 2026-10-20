@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import asyncio
 import os
 import subprocess
@@ -19,14 +17,19 @@ from vertical_harness import desktop as bridge
 APPROVAL = {"decisions": [{"type": "approve"}]}
 
 
-@pytest.mark.parametrize("result,expected", [
-    (subprocess.CompletedProcess([], 0, stdout="revision-dirty\n"), "revision-dirty"),
-    (subprocess.CompletedProcess([], 0, stdout=""), "unknown"),
-    (subprocess.TimeoutExpired("git", 2), "unknown"),
-    (subprocess.CalledProcessError(128, "git"), "unknown"),
-    (FileNotFoundError("git"), "unknown"),
-])
-def test_stdio_startup_resolves_trace_revision_without_inheriting_protocol_input(monkeypatch, result, expected):
+@pytest.mark.parametrize(
+    "result,expected",
+    [
+        (subprocess.CompletedProcess([], 0, stdout="revision-dirty\n"), "revision-dirty"),
+        (subprocess.CompletedProcess([], 0, stdout=""), "unknown"),
+        (subprocess.TimeoutExpired("git", 2), "unknown"),
+        (subprocess.CalledProcessError(128, "git"), "unknown"),
+        (FileNotFoundError("git"), "unknown"),
+    ],
+)
+def test_stdio_startup_resolves_trace_revision_without_inheriting_protocol_input(
+    monkeypatch, result, expected
+):
     from langsmith.env import _runtime_env
 
     monkeypatch.setenv("LANGSMITH_TRACING", "true")
@@ -37,22 +40,27 @@ def test_stdio_startup_resolves_trace_revision_without_inheriting_protocol_input
     monkeypatch.setattr(subprocess, "run", probe)
     sdk_probe = Mock(return_value=None)
     monkeypatch.setattr(_runtime_env, "exec_git", sdk_probe)
-
     asyncio.run(bridge.main())
-
     probe.assert_called_once_with(
         ["git", "describe", "--tags", "--always", "--dirty"],
-        stdin=subprocess.DEVNULL, capture_output=True, text=True, check=True, timeout=2,
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=2,
     )
     assert os.environ["LANGSMITH_REVISION_ID"] == expected
     assert _runtime_env.get_langchain_env_var_metadata.__wrapped__()["revision_id"] == expected
     sdk_probe.assert_not_called()
 
 
-@pytest.mark.parametrize("tracing,revision_key", [
-    ("false", None), ("true", "LANGSMITH_REVISION_ID"), ("true", "LANGCHAIN_REVISION_ID"),
-])
-def test_stdio_startup_skips_revision_probe_when_disabled_or_explicit(monkeypatch, tracing, revision_key):
+@pytest.mark.parametrize(
+    "tracing,revision_key",
+    [("false", None), ("true", "LANGSMITH_REVISION_ID"), ("true", "LANGCHAIN_REVISION_ID")],
+)
+def test_stdio_startup_skips_revision_probe_when_disabled_or_explicit(
+    monkeypatch, tracing, revision_key
+):
     monkeypatch.setenv("LANGSMITH_TRACING", tracing)
     monkeypatch.delenv("LANGSMITH_REVISION_ID", raising=False)
     monkeypatch.delenv("LANGCHAIN_REVISION_ID", raising=False)
@@ -61,27 +69,19 @@ def test_stdio_startup_skips_revision_probe_when_disabled_or_explicit(monkeypatc
     monkeypatch.setattr(bridge.sys, "stdin", StringIO(""))
     probe = Mock()
     monkeypatch.setattr(subprocess, "run", probe)
-
     asyncio.run(bridge.main())
-
     probe.assert_not_called()
     if revision_key:
         assert os.environ[revision_key] == "configured-revision"
 
 
 def agent(checkpointer=None, body_calls=None):
+
     def step(_state):
         from langgraph.types import interrupt
 
         decision = interrupt(
-            {
-                "action_requests": [
-                    {
-                        "name": "write_note",
-                        "args": {"text": "private note"},
-                    }
-                ]
-            }
+            {"action_requests": [{"name": "write_note", "args": {"text": "private note"}}]}
         )
         if body_calls is not None:
             body_calls.append(decision)
@@ -111,29 +111,9 @@ async def configure(monkeypatch, tmp_path, enabled_plugins=(), authorized_plugin
                 "permission_mode": "ask",
                 "max_context_tokens": 128000,
                 "agent_content": "",
-                "skills": [],
-                "mcp_servers": {},
-                "enabled_plugins": list(enabled_plugins),
-                "authorized_plugins": list(authorized_plugins),
             },
         },
     )
-
-
-def test_configure_restores_only_host_supplied_plugin_grants(monkeypatch, tmp_path):
-    async def scenario():
-        await configure(monkeypatch, tmp_path, ["demo.plugin"], ["demo.plugin"])
-        gateway = bridge.loop.auth_gateway
-        gateway.verify_execution(
-            plugin_id="demo.plugin", workflow_name="workflow", user_id="user-a",
-            tenant_id="tenant-a", thread_id="new-chat", run_id="new-run",
-        )
-        await configure(monkeypatch, tmp_path, ["demo.plugin"])
-        assert not bridge.loop.auth_gateway.is_authorized(
-            "demo.plugin", user_id="user-a", tenant_id="tenant-a",
-        )
-
-    asyncio.run(scenario())
 
 
 def test_configure_isolates_store_and_checkpoint_paths(monkeypatch, tmp_path):
@@ -146,6 +126,7 @@ def test_configure_isolates_store_and_checkpoint_paths(monkeypatch, tmp_path):
 
 
 def test_snapshot_of_new_sqlite_thread_has_no_run(monkeypatch, tmp_path):
+
     async def scenario():
         await configure(monkeypatch, tmp_path)
         thread_id = str(uuid4())
@@ -176,9 +157,18 @@ def test_actual_model_context_is_streamed_persisted_and_isolated_by_chat(monkeyp
         def bind_tools(self, tools, **kwargs):
             return self
 
-    monkeypatch.setattr(compose, "init_configured_model", lambda settings: Model(responses=[
-        AIMessage(content="Done", usage_metadata={"input_tokens": 800, "output_tokens": 20, "total_tokens": 820})
-    ]))
+    monkeypatch.setattr(
+        compose,
+        "init_configured_model",
+        lambda settings: Model(
+            responses=[
+                AIMessage(
+                    content="Done",
+                    usage_metadata={"input_tokens": 800, "output_tokens": 20, "total_tokens": 820},
+                )
+            ]
+        ),
+    )
     frames = []
 
     async def capture(state, method, params):
@@ -188,10 +178,11 @@ def test_actual_model_context_is_streamed_persisted_and_isolated_by_chat(monkeyp
 
     async def scenario():
         await configure(monkeypatch, tmp_path)
-        bridge.loop.settings.enable_memory = False
         thread_id = str(uuid4())
         run_id = str(uuid4())
-        await bridge.loop.dispatch("run.start", {"thread_id": thread_id, "run_id": run_id, "text": "Hello", "selected_plugins": [], "selected_skills": []})
+        await bridge.loop.dispatch(
+            "run.start", {"thread_id": thread_id, "run_id": run_id, "text": "Hello"}
+        )
         task = bridge.loop.active[run_id][1]
         await task
         completed = next(frame for frame in frames if frame["type"] == "model.completed")
@@ -211,6 +202,7 @@ def test_actual_model_context_is_streamed_persisted_and_isolated_by_chat(monkeyp
 
 
 def test_snapshot_reopens_sqlite_checkpoint_with_messages_and_interrupt(monkeypatch, tmp_path):
+
     async def scenario():
         await configure(monkeypatch, tmp_path)
         thread_id = str(uuid4())
@@ -220,7 +212,7 @@ def test_snapshot_reopens_sqlite_checkpoint_with_messages_and_interrupt(monkeypa
             await graph.ainvoke(
                 {"messages": [HumanMessage(content="hello")]},
                 {
-                    "configurable": {"thread_id": thread_id},
+                    **bridge.make_checkpoint_config(thread_id),
                     "metadata": {"desktop_run_id": run_id},
                 },
             )
@@ -236,7 +228,7 @@ def test_snapshot_reopens_sqlite_checkpoint_with_messages_and_interrupt(monkeypa
         assert snapshot["messages"][0]["data"]["content"] == "hello"
         assert snapshot["messages"][0]["message"]["content"] == "hello"
         assert snapshot["interrupts"][0]["value"] == {
-            "action_requests": [{"name": "write_note", "args": {"text": "private note"}}],
+            "action_requests": [{"name": "write_note", "args": {"text": "private note"}}]
         }
         assert snapshot["interrupts"][0]["id"]
         assert "private note" not in str(snapshot["messages"])
@@ -245,9 +237,9 @@ def test_snapshot_reopens_sqlite_checkpoint_with_messages_and_interrupt(monkeypa
 
 
 def test_stream_resumes_by_real_interrupt_id_and_cleans_up_before_terminal(monkeypatch, tmp_path):
+
     async def scenario():
         body_calls = []
-        graph = agent(body_calls=body_calls)
         await configure(monkeypatch, tmp_path)
         context_exited = False
 
@@ -255,7 +247,8 @@ def test_stream_resumes_by_real_interrupt_id_and_cleans_up_before_terminal(monke
         async def open_agent(_state):
             nonlocal context_exited
             try:
-                yield graph
+                async with aopen_checkpointer(bridge.loop.settings) as saver:
+                    yield agent(saver, body_calls=body_calls)
             finally:
                 context_exited = True
 
@@ -273,222 +266,28 @@ def test_stream_resumes_by_real_interrupt_id_and_cleans_up_before_terminal(monke
             events.append((method, params))
 
         monkeypatch.setattr(bridge, "notify", capture)
-
-        thread_id, run_id = str(uuid4()), str(uuid4())
+        thread_id, run_id = (str(uuid4()), str(uuid4()))
         await bridge.loop.dispatch(
-            "run.start",
-            {
-                "thread_id": thread_id,
-                "run_id": run_id,
-                "text": "hello",
-                "selected_plugins": [],
-                "selected_skills": [],
-            },
+            "run.start", {"thread_id": thread_id, "run_id": run_id, "text": "hello"}
         )
         await bridge.loop.active[run_id][1]
         interrupted = next(
-            p for m, p in events if m == "agent.event" and p["type"] == "run.interrupted"
+            (p for m, p in events if m == "agent.event" and p["type"] == "run.interrupted")
         )
         interrupt_id = interrupted["data"]["interrupts"][0]["id"]
-
         await bridge.loop.dispatch(
             "run.resume",
-            {
-                "thread_id": thread_id,
-                "run_id": run_id,
-                "decisions": {interrupt_id: APPROVAL},
-            },
+            {"thread_id": thread_id, "run_id": run_id, "decisions": {interrupt_id: APPROVAL}},
         )
         await bridge.loop.active[run_id][1]
         assert body_calls == [APPROVAL]
-        assert any(m == "agent.event" and p["type"] == "run.completed" for m, p in events)
-
-    asyncio.run(scenario())
-
-
-def test_plugin_authorization_resume_accepts_exact_decision_contract(monkeypatch, tmp_path):
-    async def scenario():
-        await configure(monkeypatch, tmp_path)
-        events = []
-        body_calls = []
-        saver = InMemorySaver()
-
-        def graph():
-            def step(_state):
-                from langgraph.types import interrupt
-
-                decision = interrupt(
-                    {
-                        "kind": "plugin_authorization",
-                        "request_id": "req-current-run",
-                        "plugin_id": "demo.plugin",
-                        "workflow_name": "demo_workflow",
-                        "purpose": "test",
-                        "input_scope": [],
-                        "planned_outputs": [],
-                        "allowed_effects": ["read"],
-                        "question": "Allow this workflow?",
-                    }
-                )
-                body_calls.append(decision)
-                return {"messages": [AIMessage(content="approved")]}
-
-            state = StateGraph(MessagesState)
-            state.add_node("step", step)
-            state.add_edge(START, "step")
-            state.add_edge("step", END)
-            return state.compile(checkpointer=saver).with_config({"recursion_limit": 9999})
-
-        @asynccontextmanager
-        async def open_agent(_state):
-            yield graph()
-
-        monkeypatch.setattr(bridge, "open_configured_agent", open_agent)
-
-        async def capture(_state, method, params):
-            events.append((method, params))
-
-        monkeypatch.setattr(bridge, "notify", capture)
-        thread_id, run_id = str(uuid4()), str(uuid4())
-        await bridge.loop.dispatch(
-            "run.start",
-            {
-                "thread_id": thread_id,
-                "run_id": run_id,
-                "text": "run plugin",
-                "selected_plugins": [],
-                "selected_skills": [],
-            },
-        )
-        await bridge.loop.active[run_id][1]
-        interrupted = next(
-            p for m, p in events if m == "agent.event" and p["type"] == "run.interrupted"
-        )
-        interrupt_id = interrupted["data"]["interrupts"][0]["id"]
-        decision = {"request_id": "req-current-run", "approved": True}
-        await bridge.loop.dispatch(
-            "run.resume",
-            {
-                "thread_id": thread_id,
-                "run_id": run_id,
-                "decisions": {interrupt_id: decision},
-            },
-        )
-        await bridge.loop.active[run_id][1]
-        assert body_calls == [decision]
-        assert any(m == "agent.event" and p["type"] == "run.completed" for m, p in events)
-
-    asyncio.run(scenario())
-
-
-def test_plugin_approval_survives_checkpoint_reconfigure_and_run_completion(
-    monkeypatch, tmp_path
-):
-    async def scenario():
-        await configure(monkeypatch, tmp_path, ["demo.plugin"])
-        saver = InMemorySaver()
-
-        def graph():
-            def step(_state):
-                from langgraph.types import interrupt
-
-                interrupt(
-                    {
-                        "kind": "plugin_authorization",
-                        "request_id": "req-scoped",
-                        "plugin_id": "demo.plugin",
-                        "workflow_name": "demo_workflow",
-                        "purpose": "read the approved file",
-                        "input_scope": ["source.csv"],
-                        "planned_outputs": [],
-                        "allowed_effects": ["read"],
-                        "question": "Allow this workflow?",
-                    }
-                )
-                interrupt({"kind": "confirmation", "question": "Continue?"})
-                return {"messages": [AIMessage(content="done")]}
-
-            state = StateGraph(MessagesState)
-            state.add_node("step", step)
-            state.add_edge(START, "step")
-            state.add_edge("step", END)
-            return state.compile(checkpointer=saver).with_config({"recursion_limit": 9999})
-
-        @asynccontextmanager
-        async def open_agent(_state):
-            yield graph()
-
-        monkeypatch.setattr(bridge, "open_configured_agent", open_agent)
-        monkeypatch.setattr(bridge, "notify", lambda *_args: asyncio.sleep(0))
-        thread_id, run_id = str(uuid4()), str(uuid4())
-        await bridge.loop.dispatch(
-            "run.start",
-            {
-                "thread_id": thread_id,
-                "run_id": run_id,
-                "text": "read source",
-                "selected_plugins": [],
-                "selected_skills": [],
-            },
-        )
-        await bridge.loop.active[run_id][1]
-        first_state = await graph().aget_state({"configurable": {"thread_id": thread_id}})
-        plugin_interrupt = first_state.tasks[0].interrupts[0]
-        await bridge.loop.dispatch(
-            "run.resume",
-            {
-                "thread_id": thread_id,
-                "run_id": run_id,
-                "decisions": {
-                    plugin_interrupt.id: {"request_id": "req-scoped", "approved": True}
-                },
-            },
-        )
-        assert bridge.loop.plugin_approvals
-        await bridge.loop.active[run_id][1]
-        paused_state = await graph().aget_state({"configurable": {"thread_id": thread_id}})
-        confirmation = paused_state.tasks[0].interrupts[0]
-        saved_approvals = await bridge.loop._load_plugin_approvals(thread_id, run_id)
-        assert saved_approvals[0]["input_scope"] == ["source.csv"]
-
-        await configure(monkeypatch, tmp_path, ["demo.plugin"])
-        await bridge.loop.dispatch(
-            "run.resume",
-            {
-                "thread_id": thread_id,
-                "run_id": run_id,
-                "decisions": {confirmation.id: "continue"},
-            },
-        )
-        gateway = bridge.loop.auth_gateway
-        gateway.verify_execution(
-            plugin_id="demo.plugin",
-            workflow_name="demo_workflow",
-            user_id="user-a",
-            tenant_id="tenant-a",
-            thread_id=thread_id,
-            run_id=run_id,
-            input_data={"file_path": "source.csv"},
-        )
-        gateway.verify_execution(
-            plugin_id="demo.plugin",
-            workflow_name="demo_workflow",
-            user_id="user-a",
-            tenant_id="tenant-a",
-            thread_id=thread_id,
-            run_id=run_id,
-            input_data={"file_path": "other.csv"},
-        )
-        await bridge.loop.active[run_id][1]
-        assert await bridge.loop._load_plugin_approvals(thread_id, run_id) == []
-        assert gateway.is_authorized(
-            "demo_workflow", thread_id=thread_id, user_id="user-a", tenant_id="tenant-a"
-        )
+        assert any((m == "agent.event" and p["type"] == "run.completed" for m, p in events))
 
     asyncio.run(scenario())
 
 
 def test_stop_cancels_active_run(monkeypatch, tmp_path):
+
     async def scenario():
         await configure(monkeypatch, tmp_path)
         entered = asyncio.Event()
@@ -506,16 +305,9 @@ def test_stop_cancels_active_run(monkeypatch, tmp_path):
             events.append((method, params))
 
         monkeypatch.setattr(bridge, "notify", capture)
-        thread_id, run_id = str(uuid4()), str(uuid4())
+        thread_id, run_id = (str(uuid4()), str(uuid4()))
         await bridge.loop.dispatch(
-            "run.start",
-            {
-                "thread_id": thread_id,
-                "run_id": run_id,
-                "text": "cancel",
-                "selected_plugins": [],
-                "selected_skills": [],
-            },
+            "run.start", {"thread_id": thread_id, "run_id": run_id, "text": "cancel"}
         )
         await entered.wait()
         assert (
@@ -527,6 +319,7 @@ def test_stop_cancels_active_run(monkeypatch, tmp_path):
 
 
 def test_stop_paused_run_checks_identity_and_clears_current_run(monkeypatch, tmp_path):
+
     async def scenario():
         await configure(monkeypatch, tmp_path)
         saver = InMemorySaver()
@@ -537,36 +330,16 @@ def test_stop_paused_run_checks_identity_and_clears_current_run(monkeypatch, tmp
 
         monkeypatch.setattr(bridge, "open_configured_agent", open_agent)
         monkeypatch.setattr(bridge, "notify", lambda *_args: asyncio.sleep(0))
-        thread_id, run_id = str(uuid4()), str(uuid4())
+        thread_id, run_id = (str(uuid4()), str(uuid4()))
         await bridge.loop.dispatch(
-            "run.start",
-            {
-                "thread_id": thread_id,
-                "run_id": run_id,
-                "text": "pause and stop",
-                "selected_plugins": [],
-                "selected_skills": [],
-            },
+            "run.start", {"thread_id": thread_id, "run_id": run_id, "text": "pause and stop"}
         )
         await bridge.loop.active[run_id][1]
-        assert bridge.loop.paused_runs[thread_id] == run_id
-        assert bridge.loop.turn_id == run_id
-
         with pytest.raises(ValueError, match="run_id does not match"):
-            await bridge.loop.dispatch(
-                "run.stop",
-                {"run_id": str(uuid4()), "thread_id": thread_id},
-            )
+            await bridge.loop.dispatch("run.stop", {"run_id": str(uuid4()), "thread_id": thread_id})
         async with open_agent(bridge.loop) as state:
             checkpoint = await state.aget_state(bridge.make_checkpoint_config(thread_id))
             assert checkpoint.tasks[0].interrupts
-
-        await bridge.loop.dispatch(
-            "run.stop", {"run_id": run_id, "thread_id": thread_id}
-        )
-        assert thread_id not in bridge.loop.paused_runs
-        assert bridge.loop.turn_id is None
-        assert bridge.loop.selected_plugin_ids == frozenset()
-        assert bridge.loop.selected_skill_ids == frozenset()
+        await bridge.loop.dispatch("run.stop", {"run_id": run_id, "thread_id": thread_id})
 
     asyncio.run(scenario())

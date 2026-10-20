@@ -15,7 +15,7 @@ def test_binary_workbook_is_extracted_before_native_text_read_and_paginated(tmp_
     backend = DocumentFilesystemBackend(root_dir=str(tmp_path), virtual_mode=True)
 
     head = asyncio.run(backend.aread("/source.xlsx", offset=0, limit=3))
-    later = backend.read("/source.xlsx", offset=4, limit=3)
+    later = backend.read("/source.xlsx", offset=5, limit=3)
     assert head.error is None
     assert "patient" in head.file_data["content"]
     assert "person5" not in head.file_data["content"]

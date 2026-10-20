@@ -1,20 +1,14 @@
-# 配置模块 (vertical_harness/config) - Agent 指南与规范
+# Agent Harness
 
-## 目录定位与职责
-`vertical_harness/config/` 负责定义和解析智能体运行时的全部配置项，基于 Pydantic Settings 实现强类型校验、默认值兜底与环境变更感知。
+系统仅保留一个 Agent：网络检索、工作区文件工具、保存的 Python 脚本。
 
-## 核心组件与文件
-- `__init__.py`：导出配置相关的公共类型与设置类。
-- `settings.py`：
-  - `HarnessSettings`：主配置模型，统一读取 `VA_*` 前缀的环境变量，包含模型选择、存储类型、多租户参数、日志配置、MCP 配置及插件列表。
-  - `TaskTier`：任务质量与成本分级枚举（`ECONOMY`、`QUALITY`）。
-  - `StoreBackend`：持久化存储类型枚举（`MEMORY`、`SQLITE`、`POSTGRES`）。
-  - `WorkflowMode`：工作流执行模式枚举（`STANDALONE`、`DELEGATED`、`ALL`）。
-- `mcp.py`：
-  - `MCPServerSettings`：单个 MCP 服务的连接配置（命令、参数、环境变量、传输协议类型）。
-  - `MCPSettings`：多 MCP 服务的集合管理模型。
-
-## 关键约束与安全规范
-1. **环境变量前缀隔离**：所有宿主框架配置必须且仅使用 `VA_` 前缀（如 `VA_MODEL`、`VA_STORE_BACKEND`）。
-2. **凭据安全保护**：包含 API 密钥的字段（如 `api_key`、`headers`）必须使用 `SecretStr` 或私有过滤序列化，禁止直接明文打印。
-3. **路径安全解析**：所有传入的文件路径必须通过 `.resolve()` 和工作区根目录核验，防止目录穿越攻击。
+- 主循环使用 LangChain create_agent，复用 Deep Agents 文件、摘要和工具调用修复中间件。
+- 不引入业务插件、MCP、技能注册、长期记忆、评估、监督者或自研工作流。
+- 配置在 config/settings.py，组装在 engine/compose.py；桌面 RPC 在 desktop.py。
+- 文件操作在 storage/backends.py；文档阅读用 MarkItDown，编辑用 Python 格式库。
+- 聊天、附件、产物和数据库属于用户数据；不得因代码清理删除。
+- 身份、工作区边界、敏感文件拒绝、审批、超时和取消必须保留。
+- 日志使用 logging.py，不记录用户内容、密钥或任意输入对象。
+- 优先复用标准库和已安装依赖，不复制第三方实现，不为已删除 API 加兼容层。
+- 验证：uv run pytest、uv run ruff check .、uv run mypy；desktop 下 npm run typecheck、npm test、npm run build。
+- 不手动编辑生成的 openwiki/ 页面。

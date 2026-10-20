@@ -13,7 +13,7 @@ test('context popup shows unknown sections as unmeasured instead of zero', () =>
   const unknown: TokenSectionUsage = { name: 'MCP 及工具', available: false, tokens: null, bytes: null, ratio_of_used: null, ratio_of_max: null, description: '' }
   const report: SessionTokenReport = {
     max_tokens: 1000, used_tokens: 100, remaining_tokens: 900, used_ratio: 0.1, remaining_ratio: 0.9,
-    sections: { system_prompt: known, skills: known, history: known, mcp: unknown, memory: unknown }, summary_text: '最近一次请求；各项为估算。'
+    sections: { system_prompt: known, history: known, tools: unknown }, summary_text: '最近一次请求；各项为估算。'
   }
   const html = renderToStaticMarkup(<TokenWindowPopup report={report} />)
   expect(html).toContain('未统计')

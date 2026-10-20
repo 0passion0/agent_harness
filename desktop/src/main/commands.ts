@@ -15,16 +15,14 @@ import type { Command } from '../shared/protocol'
  */
 const methods: Record<string, string[]> = {
   'usage.stats': ['period', 'model'],
-  'protocol.hello': [], 'session.snapshot': [], 'session.list': [], 'session.token_usage': [], 'session.search': ['query'], 'session.clear': [], 'plugin.list': [], 'app.snapshot': [], 'app.environment': [],
-  'session.resume': ['session_id'], 'plugin.snapshot': ['plugin_id'],
-  'plugin.set': ['plugin_id', 'enabled'],
+  'protocol.hello': [], 'session.snapshot': [], 'session.list': [], 'session.token_usage': [], 'session.search': ['query'], 'session.clear': [], 'app.snapshot': [], 'app.environment': [],
+  'session.resume': ['session_id'],
   'run.start': ['text'], 'run.attachments': ['text', 'attachment_ids'], 'run.stop': ['run_id'],
   'interaction.answer': ['run_id', 'interaction_id', 'answer'], 'project.create': ['name'], 'project.select': ['project_id'],
   'model.test': [], 'model.configure': ['model_code'], 'context.configure': ['max_tokens'],
   'runtime.configure': ['python', 'node'],
   'permission.set': ['mode'], 'config.inspect': ['scope'], 'config.save': ['scope', 'kind', 'content'],
-  'config.remove': ['kind'], 'skill.read': ['scope', 'skill_id'], 'skill.save': ['scope', 'skill_id', 'content'],
-  'skill.set': ['scope', 'skill_id', 'enabled'], 'mcp.test': ['scope', 'server_id'],
+  'config.remove': ['kind'],
   'session.rename': ['session_id', 'title'], 'session.delete': ['session_id'], 'session.export': ['session_id']
 }
 
@@ -63,14 +61,11 @@ export function assertCommand(value: unknown): asserts value is Command {
   // 第三步：比对参数键集合与白名单定义
   const params = command.params as Record<string, unknown>
   const expected = methods[command.method]
-  const optional = command.method === 'run.start' || command.method === 'run.attachments' ? ['selected_plugins', 'selected_skills'] : []
-  if (Object.keys(params).some(key => !expected.includes(key) && !optional.includes(key)) || expected.some(key => !(key in params))) throw new Error('Invalid command params')
+  if (Object.keys(params).some(key => !expected.includes(key)) || expected.some(key => !(key in params))) throw new Error('Invalid command params')
 
   // 第四步：检查具体字段类型与特殊指令合法性
   for (const [key, value] of Object.entries(params)) {
-    if (optional.includes(key)) {
-      if (!Array.isArray(value) || value.some(item => typeof item !== 'string' || !item) || new Set(value).size !== value.length) throw new Error('Invalid capability IDs')
-    } else if (command.method === 'run.attachments' && key === 'attachment_ids') {
+    if (command.method === 'run.attachments' && key === 'attachment_ids') {
       if (!Array.isArray(value) || value.length > 10 || value.some(item => typeof item !== 'string')) throw new Error('Invalid attachment IDs')
     } else if (typeof value !== 'string') throw new Error('Invalid command params')
   }

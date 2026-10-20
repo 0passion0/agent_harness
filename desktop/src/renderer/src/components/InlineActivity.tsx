@@ -26,7 +26,7 @@ import {
 } from 'lucide-react'
 import type { RunRecord } from '../../../shared/protocol'
 import { FileLink, isFilePath } from './FileLink'
-import { WorkflowRuns, stepStatus, workflowSteps, workflowGroups } from './WorkflowRuns'
+import { stepStatus, toolSteps } from './tool-activity'
 
 /**
  * 根据工具名或类别返回最具辨识度的现代图标。
@@ -121,7 +121,7 @@ function ActivityItem({ record, status }: { record: RunRecord; status: string })
   const isError = status === 'failed' || status === 'tool_error'
   const isComplete = ['success', 'complete', 'completed', 'tool_end'].includes(status)
 
-  const name = record.name || record.workflow_name || record.node || record.kind
+  const name = record.name || record.node || record.kind
   const elapsed = typeof record.elapsed === 'number' ? `${record.elapsed.toFixed(2)}s` : ''
 
   return (
@@ -141,7 +141,7 @@ function ActivityItem({ record, status }: { record: RunRecord; status: string })
         <span className="act-item-title-wrap">
           {getToolIcon(name)}
           <strong className="act-item-title">{name}</strong>
-          {record.plugin_id && <span className="act-plugin-badge">{record.plugin_id}</span>}
+          
         </span>
 
         <span className="act-item-meta">
@@ -191,14 +191,13 @@ export interface InlineActivityProps {
  * 聚合展示 LLM 后台动作、工具调用、插件执行细节。
  */
 export function InlineActivity({ records = [], tools = {}, running = false, status = running ? 'running' : 'complete' }: InlineActivityProps) {
-  const toolRecords = workflowSteps([...records, ...Object.entries(tools).map(([id, record]) => ({ ...record, call_id: id }))])
+  const toolRecords = toolSteps([...records, ...Object.entries(tools).map(([id, record]) => ({ ...record, call_id: id }))])
   const statuses = toolRecords.map(record => stepStatus(record, status))
   const activeCount = statuses.filter(value => value === 'running').length
   const completedCount = statuses.filter(value => ['success', 'complete', 'completed', 'tool_end'].includes(value)).length
   const failedCount = statuses.filter(value => value === 'failed' || value === 'tool_error').length
   const current = toolRecords.filter((_, index) => statuses[index] === 'running').at(-1)
   const isRunning = status === 'running'
-  const grouped = new Set(workflowGroups(records).flatMap(group => workflowSteps(group.records).map(record => record.call_id ?? record.operation_id)).filter((id): id is string => typeof id === 'string'))
   const label = status === 'paused' ? '等待你的答复' : status === 'stopping' ? '正在停止' : status === 'cancelled' ? '执行已取消' : status === 'failed' ? '执行失败' : status === 'disconnected' ? '连接已中断' : isRunning ? (current?.name || current?.node || '正在处理') : '执行记录'
 
   if (toolRecords.length === 0 && !isRunning && !records.some(record => record.kind === 'workflow')) {
@@ -232,9 +231,7 @@ export function InlineActivity({ records = [], tools = {}, running = false, stat
       </summary>
 
         <div className="inline-activity-list" role="region" aria-label="执行步骤">
-          <WorkflowRuns records={records} status={status} paused={status === 'paused'} />
           {toolRecords.map((item, idx) => (
-            grouped.has(item.call_id ?? item.operation_id ?? '') ? null :
               <ActivityItem key={item.call_id ?? item.operation_id ?? idx} record={item} status={statuses[idx]} />
           ))}
           {toolRecords.length === 0 && isRunning && (

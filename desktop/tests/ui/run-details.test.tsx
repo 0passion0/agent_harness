@@ -69,7 +69,7 @@ test('JEV-only usage is explicitly zero credits while retaining tokens', () => {
 
 test('shows ordered live events and saved model and tool details', () => {
   const html = renderToStaticMarkup(<RunDetails state={{ ...initialState, phase: 'question',
-    question: { interaction_id: 'i', plugin_id: 'p', kind: 'question', question: '是否继续？' },
+    question: { interaction_id: 'i', kind: 'question', question: '是否继续？' },
     runLog: [
       { kind: 'model_start', model: 'test-model', status: 'running' },
       { kind: 'model_error', model: 'test-model', status: 'failed', elapsed: 1.25, error: 'ConnectionError' }

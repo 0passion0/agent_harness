@@ -10,27 +10,6 @@ function temp(): string { const root = mkdtempSync(path.join(tmpdir(), 'desktop-
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }) })
 
 describe('DesktopStore', () => {
-  it('enables web search by default and preserves an explicit disabled setting', () => {
-    const root = temp(), account = path.join(root, 'account')
-    const store = new DesktopStore(path.join(root, 'project'), path.join(root, 'workspace'), account)
-    expect(store.readSettings().plugins['web.search']).toBe(true)
-    store.saveSettings({ plugins: {} })
-    expect(store.readSettings().plugins['web.search']).toBe(true)
-    store.saveSettings({ plugins: { 'web.search': false } })
-    expect(store.readSettings().plugins['web.search']).toBe(false)
-  })
-  it('remembers plugin grants across projects and restarts within the same account', () => {
-    const root = temp(), account = path.join(root, 'account')
-    const first = new DesktopStore(path.join(root, 'one'), path.join(root, 'workspace-one'), account)
-    expect(first.authorizedPlugins()).toEqual([])
-    first.authorizePlugins(['demo', 'demo'])
-    const second = new DesktopStore(path.join(root, 'two'), path.join(root, 'workspace-two'), account)
-    expect(second.authorizedPlugins()).toEqual(['demo'])
-    const other = new DesktopStore(path.join(root, 'other'), path.join(root, 'workspace-other'), path.join(root, 'other-account'))
-    expect(other.authorizedPlugins()).toEqual([])
-    writeFileSync(path.join(account, 'plugin-authorizations.json'), '{"demo":true}')
-    expect(() => first.authorizedPlugins()).toThrow('Invalid plugin authorizations')
-  })
   it('fills missing usage on completion without duplicating or overwriting measured requests', () => {
     const root = temp()
     const store = new DesktopStore(path.join(root, 'project'), path.join(root, 'workspace'), path.join(root, 'account'))
@@ -60,24 +39,6 @@ describe('DesktopStore', () => {
     expect(readFileSync(store.resolveAttachment(ref.id), 'utf8')).toBe('hello')
     expect(store.readAttachment(ref.id)).toEqual({ media_type: 'text/plain', data: 'aGVsbG8=' })
     expect(() => store.resolveAttachment('../outside')).toThrow()
-  })
-
-  it('persists settings, config, skills and usage with scoped paths', () => {
-    const root = temp(); const workspace = path.join(root, 'workspace'); mkdirSync(workspace)
-    const store = new DesktopStore(path.join(root, 'project'), workspace, path.join(root, 'account'))
-    store.saveSettings({ model_code: 'model-x' })
-    expect(store.readSettings().model_code).toBe('model-x')
-    store.saveConfig('project', 'agent', 'Follow the project instructions.')
-    store.saveConfig('project', 'mcp', JSON.stringify({ mcpServers: { example: { transport: 'stdio', command: 'node' } } }))
-    expect(() => store.saveConfig('project', 'mcp', '{"mcpServers":{"same":{"command":"a"},"same":{"command":"b"}}}')).toThrow(/duplicate key: same/)
-    const skillSource = path.join(root, 'example'); mkdirSync(skillSource)
-    writeFileSync(path.join(skillSource, 'SKILL.md'), '---\nname: example\n---\nSkill body')
-    store.importSkill('project', skillSource)
-    store.setSkill('project', 'example', false)
-    expect(store.inspectConfig('project')).toMatchObject({ agent: { content: 'Follow the project instructions.' }, mcp: { servers: { example: { transport: 'stdio', command: 'node' } } }, skills: [{ id: 'example', enabled: false }] })
-    expect(store.readSkill('project', 'example').content).toContain('Skill body')
-    store.recordUsage('project-id', 'session-id', { request_id: 'request-1', requested_at: '2026-01-01T00:00:00Z', model: 'model-x', source: 'model', usage: { input_tokens: 2, output_tokens: 3, total_tokens: 5 }, cost_estimate: null })
-    expect(store.usageStats('', '').totals).toMatchObject({ requests: 1, input_tokens: 2, output_tokens: 3, total_tokens: 5 })
   })
 
   it('rejects attachment destinations that traverse a symlink', () => {

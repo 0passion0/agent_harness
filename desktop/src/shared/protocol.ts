@@ -115,7 +115,6 @@ export type UsageStats = {
  */
 export type TokenSectionUsage = {
   available?: boolean
-  /** 区块名称（如 '系统提示词'、'技能 (Skills)'） */
   name: string
   /** 当前区块所占用的 Token 数量 */
   tokens: number | null
@@ -146,9 +145,7 @@ export type SessionTokenReport = {
   /** 各上下文组成部分的细分统计 */
   sections: {
     system_prompt: TokenSectionUsage
-    skills: TokenSectionUsage
-    mcp: TokenSectionUsage
-    memory: TokenSectionUsage
+    tools: TokenSectionUsage
     history: TokenSectionUsage
     [key: string]: TokenSectionUsage
   }
@@ -184,37 +181,6 @@ export type Snapshot = {
 }
 
 /**
- * 插件基础信息描述契约。
- */
-export type PluginDescriptor = {
-  /** 插件唯一英文标识符（如 data_analysis） */
-  id: string
-  /** 插件用户界面显示名称 */
-  name: string
-  /** 插件功能描述 */
-  description: string
-  /** 支持的人机交互交互形态类别列表 */
-  interaction_kinds: string[]
-}
-
-/**
- * 运行时插件状态（扩展自插件描述符）。
- */
-export type AppPlugin = PluginDescriptor & {
-  authorized?: boolean
-  version: string
-  workflows: Array<{ name: string; description: string }>
-  /** 插件是否已在设置中开启 */
-  enabled: boolean
-  /** 插件必要配置是否已就绪 */
-  configured: boolean
-  /** 插件代码是否已成功载入后端进程 */
-  loaded: boolean
-}
-
-export type SkillDescriptor = { id: string; name: string; description: string; source: string; plugin_id?: string; enabled: boolean }
-
-/**
  * 历史会话简略条目（用于侧边栏列表展示）。
  */
 export type SessionItem = {
@@ -232,16 +198,8 @@ export type SessionItem = {
 export type Question = {
   action_requests?: Array<{ name: string; args: Json }>
   options?: string[]
-  request_id?: string
-  workflow_name?: string
-  purpose?: string
-  input_scope?: Json
-  planned_outputs?: Json
-  allowed_effects?: Json
   /** 交互请求全局唯一标识符 */
   interaction_id: string
-  /** 发起提问的目标插件标识 */
-  plugin_id: string
   /** 提问形态类别（如 approval 授权，或 question 文本补充） */
   kind: string
   /** 具体的提问说明或请求授权内容文本 */
@@ -257,8 +215,6 @@ export type RunRecord = {
   parent_ids?: string[]
   node?: string | null
   agent_name?: string | null
-  plugin_id?: string
-  workflow_name?: string
   /** 事件类型（如 tool_start, tool_end, text, model_start 等） */
   kind: string
   /** 工具调用唯一标识 */
@@ -291,7 +247,6 @@ export type GlobalModel = {
  * 桌面应用全局生命周期运行状态。
  */
 export type ApplicationState = {
-  skills: SkillDescriptor[]
   /** 构建运行模式：开发环境 ('development') 或打包生产环境 ('production') */
   build_mode: 'development' | 'production'
   /** 用户本地已注册的项目工作区列表 */
@@ -301,8 +256,6 @@ export type ApplicationState = {
   /** 当前绑定的全局大模型信息 */
   model: GlobalModel | null
   /** Exa 联网搜索引擎配置状态 */
-  /** 当前系统加载的插件列表及配置 */
-  plugins: AppPlugin[]
   /** 本机已检测或配置的脚本运行时环境 */
   runtimes: { python: string; node: string }
   /** 工具调用安全执行权限模式：只读 / 操作前询问 / 完全访问 */
@@ -384,17 +337,12 @@ export type WorkspaceFileEntry = {
 }
 
 /**
- * 智能体规则、技能及 MCP 服务配置视图。
  */
 export type ConfigView = {
   /** 主智能体提示词配置及其来源 */
   agent: { content: string; source: string }
-  /** 技能列表及其启用状态 */
-  skills: Array<{ id: string; path: string; source: string; enabled: boolean }>
-  /** MCP 服务配置及其来源文件 */
-  mcp: { servers: Record<string, Json>; sources: Record<string, string> }
   /** 针对当前项目的局部重载覆盖项 */
-  overrides: { agent: string; mcp: string }
+  overrides: { agent: string }
 }
 
 /**
@@ -407,14 +355,12 @@ export type ConfigScope = 'global' | 'project'
  */
 export type Command =
   | { id: string; method: 'usage.stats'; params: { period: string; model: string } }
-  | { id: string; method: 'protocol.hello' | 'session.snapshot' | 'session.list' | 'session.token_usage' | 'session.clear' | 'plugin.list' | 'app.snapshot' | 'app.environment'; params: Record<string, never> }
+  | { id: string; method: 'protocol.hello' | 'session.snapshot' | 'session.list' | 'session.token_usage' | 'session.clear' | 'app.snapshot' | 'app.environment'; params: Record<string, never> }
   | { id: string; method: 'context.configure'; params: { max_tokens: string } }
   | { id: string; method: 'session.search'; params: { query: string } }
   | { id: string; method: 'session.resume'; params: { session_id: string } }
-  | { id: string; method: 'plugin.snapshot'; params: { plugin_id: string } }
-  | { id: string; method: 'plugin.set'; params: { plugin_id: string; enabled: 'true' | 'false' } }
-  | { id: string; method: 'run.start'; params: { text: string; selected_plugins?: string[]; selected_skills?: string[] } }
-  | { id: string; method: 'run.attachments'; params: { text: string; attachment_ids: string[]; selected_plugins?: string[]; selected_skills?: string[] } }
+  | { id: string; method: 'run.start'; params: { text: string } }
+  | { id: string; method: 'run.attachments'; params: { text: string; attachment_ids: string[] } }
   | { id: string; method: 'run.stop'; params: { run_id: string } }
   | { id: string; method: 'interaction.answer'; params: { run_id: string; interaction_id: string; answer: string } }
   | { id: string; method: 'project.create'; params: { name: string } }
@@ -424,12 +370,8 @@ export type Command =
   | { id: string; method: 'runtime.configure'; params: ApplicationState['runtimes'] }
   | { id: string; method: 'permission.set'; params: { mode: ApplicationState['permission_mode'] } }
   | { id: string; method: 'config.inspect'; params: { scope: ConfigScope } }
-  | { id: string; method: 'config.save'; params: { scope: ConfigScope; kind: 'agent' | 'mcp'; content: string } }
-  | { id: string; method: 'config.remove'; params: { kind: 'agent' | 'mcp' } }
-  | { id: string; method: 'skill.read'; params: { scope: ConfigScope; skill_id: string } }
-  | { id: string; method: 'skill.save'; params: { scope: ConfigScope; skill_id: string; content: string } }
-  | { id: string; method: 'skill.set'; params: { scope: ConfigScope; skill_id: string; enabled: 'true' | 'false' } }
-  | { id: string; method: 'mcp.test'; params: { scope: ConfigScope; server_id: string } }
+  | { id: string; method: 'config.save'; params: { scope: ConfigScope; kind: 'agent'; content: string } }
+  | { id: string; method: 'config.remove'; params: { kind: 'agent' } }
   | { id: string; method: 'session.rename'; params: { session_id: string; title: string } }
   | { id: string; method: 'session.delete'; params: { session_id: string } }
   | { id: string; method: 'session.export'; params: { session_id: string } }
@@ -459,8 +401,6 @@ export type DesktopAPI = {
   onEvent(listener: (event: EventFrame) => void): () => void
   /** 使用系统默认程序打开生成的交付物成果文件 */
   openArtifact(path: string): Promise<void>
-  /** 弹出目录选择框并导入技能目录 */
-  importSkill(scope: ConfigScope): Promise<ConfigView | null>
   /** 弹出系统文件选择框导入对话附件 */
   importAttachments(): Promise<AttachmentRef[]>
   /** 导入从外部拖拽放入的本地文件列表为对话附件 */

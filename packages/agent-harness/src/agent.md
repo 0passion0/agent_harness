@@ -1,26 +1,14 @@
-# Agent Harness 源码根目录 (packages/agent-harness/src) - Agent 指南与规范
+# Agent Harness
 
-## 目录定位与职责
-`packages/agent-harness/src/` 是核心包的源代码根目录，采用标准 `src` 布局以避免环境污染和隐式导入问题。
+系统仅保留一个 Agent：网络检索、工作区文件工具、保存的 Python 脚本。
 
-## 命名空间组织
-- `vertical_harness/`：核心宿主模块目录，对外导出标准 API：
-  - `cli.py`：命令行交互入口。
-  - `logging.py`：结构化日志配置与上下文。
-  - `observability.py`：链路追踪与度量收集。
-  - `config/`：配置定义与 MCP 服务配置。
-  - `engine/`：智能体组装、路由、执行、时间旅行及插件加载器（`plugin_loader.py`）。
-  - `evaluation/`：离线/在线评估体系。
-  - `storage/`：持久化存储后端与命名空间隔离。
-- `vertical_plugins/`：领域业务插件与公共契约层：
-  - `common/`：抽象基类 `DomainPlugin` (ABC)、贡献类型契约与公共提示词拼装。
-  - `data_analysis/`：科研数据分析插件（根目录仅 `__init__.py`，子包划分 `workflow/`, `tools/`, `models/`, `prompts/`, `runtime/`, `guides/`, `skills/`）。
-  - `research_citation/`：学术引文核验插件（根目录仅 `__init__.py`，子包划分 `workflow/`, `checker/`, `models/`, `prompts/`, `skills/`）。
-
-## 开发与维护规则
-1. **统一入口导出**：所有关键类和函数均需在顶层 `vertical_harness.__init__` 中显式导出并在 `__all__` 中列出。
-2. **导入分层清晰与架构隔离**：
-   - 通用宿主 `vertical_harness` 和公共层 `vertical_plugins.common` 绝不直接依赖具体业务插件。
-   - 业务插件根目录严格只允许 `__init__.py` 单一 Python 文件。
-3. **日志规范执行**：所有模块内部均应初始化独立 `logger = logging.getLogger(__name__)`，并在函数中添加完备结构化日志。
-
+- 主循环使用 LangChain create_agent，复用 Deep Agents 文件、摘要和工具调用修复中间件。
+- 不引入业务插件、MCP、技能注册、长期记忆、评估、监督者或自研工作流。
+- 配置在 config/settings.py，组装在 engine/compose.py；桌面 RPC 在 desktop.py。
+- 文件操作在 storage/backends.py；文档阅读用 MarkItDown，编辑用 Python 格式库。
+- 聊天、附件、产物和数据库属于用户数据；不得因代码清理删除。
+- 身份、工作区边界、敏感文件拒绝、审批、超时和取消必须保留。
+- 日志使用 logging.py，不记录用户内容、密钥或任意输入对象。
+- 优先复用标准库和已安装依赖，不复制第三方实现，不为已删除 API 加兼容层。
+- 验证：uv run pytest、uv run ruff check .、uv run mypy；desktop 下 npm run typecheck、npm test、npm run build。
+- 不手动编辑生成的 openwiki/ 页面。

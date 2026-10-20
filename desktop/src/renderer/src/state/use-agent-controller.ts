@@ -224,7 +224,7 @@ export function useAgentController() {
    * 向智能体提交新任务指令。
    * 支持纯文本提示词以及附加本地文件。
    */
-  async function send(selectedPlugins: string[], selectedSkills: string[]): Promise<boolean> {
+  async function send(): Promise<boolean> {
     if (busy || sendPending.current || !project || !application?.model || !draft.trim()) return false
     sendPending.current = true
     setSending(true)
@@ -234,8 +234,8 @@ export function useAgentController() {
     setError('')
     try {
       await window.medpeer.command(selectedAttachments.length
-        ? { id, method: 'run.attachments', params: { text, attachment_ids: selectedAttachments.map(file => file.id), selected_plugins: selectedPlugins, selected_skills: selectedSkills } }
-        : { id, method: 'run.start', params: { text, selected_plugins: selectedPlugins, selected_skills: selectedSkills } })
+        ? { id, method: 'run.attachments', params: { text, attachment_ids: selectedAttachments.map(file => file.id) } }
+        : { id, method: 'run.start', params: { text } })
       dispatch({ event: 'run.accepted', run_id: id, text })
       setDraft(current => current === text ? '' : current)
       const submitted = new Set(selectedAttachments.map(item => item.id))
@@ -298,7 +298,7 @@ export function useAgentController() {
   /**
    * 保存智能体指令或 MCP 配置。
    */
-  async function saveConfig(scope: ConfigScope, kind: 'agent' | 'mcp', content: string): Promise<void> {
+  async function saveConfig(scope: ConfigScope, kind: 'agent', content: string): Promise<void> {
     try {
       setConfig(await window.medpeer.command({ id: requestId(), method: 'config.save', params: { scope, kind, content } }) as ConfigView)
     } catch (reason) {
@@ -309,36 +309,9 @@ export function useAgentController() {
   /**
    * 移除当前项目的指令或 MCP 局部覆盖项。
    */
-  async function removeConfig(kind: 'agent' | 'mcp'): Promise<void> {
+  async function removeConfig(kind: 'agent'): Promise<void> {
     try {
       setConfig(await window.medpeer.command({ id: requestId(), method: 'config.remove', params: { kind } }) as ConfigView)
-    } catch (reason) {
-      setError(String(reason))
-    }
-  }
-
-  /**
-   * 启用或停用指定的 Skill 技能。
-   */
-  async function toggleSkill(scope: ConfigScope, id: string, enabled: boolean): Promise<void> {
-    try {
-      setConfig(await window.medpeer.command({
-        id: requestId(),
-        method: 'skill.set',
-        params: { scope, skill_id: id, enabled: String(enabled) as 'true' | 'false' }
-      }) as ConfigView)
-      await applyApplication('app.snapshot', {})
-    } catch (reason) {
-      setError(String(reason))
-    }
-  }
-
-  /**
-   * 发起指定 MCP 服务的连通性测试。
-   */
-  async function testMcp(scope: ConfigScope, id: string): Promise<void> {
-    try {
-      setError(JSON.stringify(await window.medpeer.command({ id: requestId(), method: 'mcp.test', params: { scope, server_id: id } })))
     } catch (reason) {
       setError(String(reason))
     }
@@ -351,21 +324,6 @@ export function useAgentController() {
     const result = await window.medpeer.command({ id: requestId(), method: 'model.test', params: {} }) as ApplicationState
     setApplication(result)
     return `模型连接测试成功 · ${result.model!.model}`
-  }
-
-  /**
-   * 弹出目录选择框导入自定义 Skill 目录。
-   */
-  async function importSkills(scope: ConfigScope): Promise<void> {
-    try {
-      const result = await window.medpeer.importSkill(scope)
-      if (result) {
-        setConfig(result)
-        await applyApplication('app.snapshot', {})
-      }
-    } catch (reason) {
-      setError(String(reason))
-    }
   }
 
   /**
@@ -388,29 +346,6 @@ export function useAgentController() {
     try {
       const imported = await window.medpeer.importDroppedFiles(files)
       setAttachments(current => [...current, ...imported])
-    } catch (reason) {
-      setError(String(reason))
-    }
-  }
-
-  /**
-   * 读取指定 Skill 的 Markdown 文件正文。
-   */
-  async function readSkill(scope: ConfigScope, id: string): Promise<{ content: string; source: string } | null> {
-    try {
-      return await window.medpeer.command({ id: requestId(), method: 'skill.read', params: { scope, skill_id: id } }) as { content: string; source: string }
-    } catch (reason) {
-      setError(String(reason))
-      return null
-    }
-  }
-
-  /**
-   * 保存对指定 Skill 内容的编辑。
-   */
-  async function saveSkill(scope: ConfigScope, id: string, content: string): Promise<void> {
-    try {
-      setConfig(await window.medpeer.command({ id: requestId(), method: 'skill.save', params: { scope, skill_id: id, content } }) as ConfigView)
     } catch (reason) {
       setError(String(reason))
     }
@@ -493,14 +428,9 @@ export function useAgentController() {
     inspectConfig,
     saveConfig,
     removeConfig,
-    toggleSkill,
-    testMcp,
     testProfile,
-    importSkills,
     importAttachments,
     importDroppedFiles,
-    readSkill,
-    saveSkill,
     renameSession,
     deleteSession,
     exportSession,

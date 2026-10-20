@@ -16,7 +16,7 @@ import { Backend } from './backend'
 import { assertFilePaths, assertSender, validateCommand } from './commands'
 import { DesktopApplication } from './application'
 import { scanDirectory, copyFilesToWorkspace } from './workspace-files'
-import type { ConfigScope, EventFrame } from '../shared/protocol'
+import type { EventFrame } from '../shared/protocol'
 
 app.setName('MedPeer')
 app.setPath('userData', path.join(app.getPath('appData'), 'agent-harness-desktop'))
@@ -69,11 +69,7 @@ function text(value: unknown): string {
   return value
 }
 
-/** 校验配置范围参数为合法枚举值 */
-function scope(value: unknown): ConfigScope {
-  if (value !== 'global' && value !== 'project') throw new Error('配置范围无效')
-  return value
-}
+
 
 /** 断言当前无运行中任务 */
 function idle(): void {
@@ -143,11 +139,6 @@ async function start(): Promise<void> {
   // ===== 3. 交付成果与技能导入路由 =====
   handle('artifact:open', async file => open(desktop.storage().resolveArtifact(text(file))))
   handle('artifact:read', file => desktop.storage().readArtifact(text(file)))
-  handle('skill:import', async value => {
-    idle()
-    const target = scope(value), result = await dialog.showOpenDialog(window, { properties: ['openDirectory'] })
-    return result.canceled ? null : desktop.storage().importSkill(target, result.filePaths[0])
-  })
 
   // ===== 4. 附件导入、拖拽与读取路由 =====
   handle('attachment:import', async () => {

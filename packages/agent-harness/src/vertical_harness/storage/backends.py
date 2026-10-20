@@ -3,14 +3,19 @@
 from __future__ import annotations
 
 import logging
+import os
+import re
+import shutil
 import sqlite3
-from collections.abc import AsyncIterator, Callable, Iterator
+import tempfile
+from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager, contextmanager
-from pathlib import Path, PurePosixPath
-from typing import TYPE_CHECKING, Any
+from itertools import islice
+from pathlib import Path
+from typing import Any
 
-from deepagents.backends import CompositeBackend, FilesystemBackend, StoreBackend
-from deepagents.backends.protocol import BackendProtocol, FileData, ReadResult
+from deepagents.backends import FilesystemBackend
+from deepagents.backends.protocol import EditResult, FileData, ReadResult, WriteResult
 from deepagents.backends.utils import slice_read_response
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import InMemorySaver
@@ -20,39 +25,148 @@ from langgraph.store.base import BaseStore
 from langgraph.store.memory import InMemoryStore
 from langgraph.store.sqlite import AsyncSqliteStore, SqliteStore
 
-from vertical_harness.config.settings import StoreBackendType
+from vertical_harness.config.settings import HarnessSettings, StoreBackendType
 from vertical_harness.desktop_attachments import extract_text
-from vertical_harness.storage.namespace import tenant_memory_namespace
-
-if TYPE_CHECKING:
-    from langgraph.runtime import Runtime
-
-    from vertical_harness.config.settings import HarnessSettings
 
 logger = logging.getLogger(__name__)
 
 
 class DocumentFilesystemBackend(FilesystemBackend):
-    """Expose common office documents as paginated text to the agent."""
+    """Paginated UTF-8 and document reads with atomic text edits."""
 
-    _TEXT_DOCUMENTS = {".pdf", ".docx", ".xlsx", ".xlsm", ".pptx"}
-    _SCRIPT_DOCUMENTS = {
-        ".doc", ".ppt", ".pptm", ".docm", ".xls", ".xlsb", ".odt", ".ods", ".odp"
-    }
+    _TEXT_DOCUMENTS = frozenset({".pdf", ".docx", ".xlsx", ".xlsm", ".pptx"})
+    _SCRIPT_DOCUMENTS = frozenset(
+        {".doc", ".ppt", ".pptm", ".docm", ".xls", ".xlsb", ".odt", ".ods", ".odp"}
+    )
+
+    def __init__(self, *args: Any, **kwargs: Any):
+        super().__init__(*args, **kwargs)
+        self._document_cache: tuple[tuple[Any, ...], str] | None = None
 
     def read(self, file_path: str, offset: int = 0, limit: int = 2000) -> ReadResult:
-        suffix = Path(file_path).suffix.lower()
-        if suffix not in self._TEXT_DOCUMENTS | self._SCRIPT_DOCUMENTS:
-            return super().read(file_path, offset, limit)
-        path = self._resolve_path(file_path)
-        if not path.is_file():
-            return super().read(file_path, offset, limit)
-        if suffix in self._SCRIPT_DOCUMENTS:
+        """Read a window; extract and cache only the most recent document."""
+        offset, limit = max(0, offset), max(0, limit)
+        if not limit:
             return ReadResult(
-                error=f"{suffix} is not parsed by read_file; use a Python execution tool with a suitable parser."
+                file_data=FileData(content="", encoding="utf-8"), no_lines_requested=True
             )
-        content = extract_text(path)
-        return slice_read_response(FileData(content=content, encoding="utf-8"), offset, limit)
+        try:
+            path = self._resolve_path(file_path)
+            suffix = path.suffix.lower()
+            if suffix in self._SCRIPT_DOCUMENTS:
+                return ReadResult(
+                    error=f"{suffix} requires a suitable Python library; read_file does not parse it."
+                )
+            if suffix in self._TEXT_DOCUMENTS:
+                stat = path.stat()
+                key = (str(path), stat.st_size, stat.st_mtime_ns)
+                if self._document_cache is None or self._document_cache[0] != key:
+                    self._document_cache = (key, extract_text(path))
+                return slice_read_response(
+                    FileData(content=self._document_cache[1], encoding="utf-8"), offset, limit
+                )
+            if suffix in {".png", ".jpg", ".jpeg", ".webp", ".gif"}:
+                return super().read(file_path, offset, limit)
+            with path.open(encoding="utf-8-sig") as stream:
+                window = list(islice(stream, offset, offset + limit + 1))
+            if not window and offset:
+                return ReadResult(error=f"Line offset {offset} exceeds file length")
+            more = len(window) > limit
+            content = "".join(window[:limit])
+            if "\0" in content:
+                return ReadResult(error="Binary file: use a suitable Python library.")
+            end = offset + min(limit, len(window))
+            return ReadResult(
+                file_data=FileData(content=content, encoding="utf-8"),
+                start_line=offset + 1 if window else None,
+                end_line=end if window else None,
+                next_offset=end if more else None,
+                total_lines=None if more else end,
+            )
+        except (OSError, ValueError) as exc:
+            return ReadResult(error=f"Cannot read file ({type(exc).__name__}).")
+
+    def _text_path(self, file_path: str) -> Path:
+        """Apply native workspace checks and reject document/binary text edits."""
+        path = self._resolve_path(file_path)
+        if path.suffix.lower() in self._TEXT_DOCUMENTS | self._SCRIPT_DOCUMENTS:
+            raise ValueError("Office/PDF files must be edited with a suitable Python library")
+        if path.exists():
+            data = path.read_bytes()
+            if b"\0" in data:
+                raise ValueError("Binary files cannot be edited as text")
+            data.decode("utf-8-sig")
+        return path
+
+    @staticmethod
+    def _atomic_write(path: Path, data: bytes) -> None:
+        """Replace only after the complete file is flushed; keep the original on failure."""
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = None
+        try:
+            with tempfile.NamedTemporaryFile(dir=path.parent, delete=False) as stream:
+                temporary = Path(stream.name)
+                stream.write(data)
+                stream.flush()
+                os.fsync(stream.fileno())
+            if path.exists():
+                shutil.copymode(path, temporary)
+            os.replace(temporary, path)
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
+
+    def write(self, file_path: str, content: str) -> WriteResult:
+        """Write complete UTF-8 text atomically inside the workspace."""
+        try:
+            path = self._text_path(file_path)
+            self._atomic_write(path, content.encode("utf-8"))
+            return WriteResult(path=file_path)
+        except (OSError, ValueError) as exc:
+            return WriteResult(error=f"Write failed: {exc}")
+
+    def edit(
+        self, file_path: str, old_string: str, new_string: str, replace_all: bool = False
+    ) -> EditResult:
+        """Apply exact replacement while preserving BOM and existing newline bytes."""
+        try:
+            path = self._text_path(file_path)
+            original = path.read_bytes()
+            text = original.decode("utf-8-sig")
+            # Map normalized match positions back to the original, preserving untouched mixed line endings.
+            normalized = text.replace("\r\n", "\n").replace("\r", "\n")
+            old_string = old_string.replace("\r\n", "\n").replace("\r", "\n")
+            new_string = new_string.replace("\r\n", "\n").replace("\r", "\n")
+            if not old_string:
+                return EditResult(error="old_string must not be empty")
+            occurrences = normalized.count(old_string)
+            if not occurrences:
+                return EditResult(
+                    error="String not found; read the current file and use an exact match."
+                )
+            if occurrences > 1 and not replace_all:
+                return EditResult(
+                    error=f"String appears {occurrences} times; provide unique surrounding context or replace_all=True."
+                )
+            positions = [0]
+            i = 0
+            while i < len(text):
+                i += 2 if text[i : i + 2] == "\r\n" else 1
+                positions.append(i)
+            newline = "\r\n" if "\r\n" in text else "\r" if "\r" in text else "\n"
+            replacement = new_string.replace("\n", newline)
+            matches = list(re.finditer(re.escape(old_string), normalized))
+            for match in reversed(matches):
+                text = (
+                    text[: positions[match.start()]] + replacement + text[positions[match.end()] :]
+                )
+            data = (b"\xef\xbb\xbf" if original.startswith(b"\xef\xbb\xbf") else b"") + text.encode(
+                "utf-8"
+            )
+            self._atomic_write(path, data)
+            return EditResult(path=file_path, occurrences=occurrences)
+        except (OSError, ValueError) as exc:
+            return EditResult(error=f"Edit failed: {exc}")
 
 
 def _prepare_conn_string(settings: HarnessSettings) -> str:
@@ -69,7 +183,7 @@ def _prepare_conn_string(settings: HarnessSettings) -> str:
     # 第一步：获取解析后的存储目标路径
     target = settings.resolved_store_target
     # 第二步：若为物理文件路径，递归确保父目录已创建
-    if isinstance(target, Path):
+    if target != ":memory:":
         target.parent.mkdir(parents=True, exist_ok=True)
         return str(target)
     return target
@@ -89,7 +203,7 @@ def _prepare_checkpoint_conn_string(settings: HarnessSettings) -> str:
     # 第一步：获取解析后的检查点存储目标路径
     target = settings.resolved_checkpoint_target
     # 第二步：若为物理文件路径，递归确保父目录已创建
-    if isinstance(target, Path):
+    if target != ":memory:":
         target.parent.mkdir(parents=True, exist_ok=True)
         return str(target)
     return target
@@ -283,61 +397,3 @@ async def aopen_checkpointer(settings: HarnessSettings) -> AsyncIterator[BaseChe
         logger.debug(
             "async_checkpointer_context_exited", extra={"event_fields": {"backend": backend}}
         )
-
-
-def compose_backend(
-    workspace_root: Path,
-    store: BaseStore | None = None,
-    *,
-    memory_route: str = "/memories/",
-    namespace_factory: Callable[[Runtime[Any]], tuple[str, ...]] = tenant_memory_namespace,
-) -> BackendProtocol:
-    """通过 CompositeBackend 将原生 FilesystemBackend 与 StoreBackend 进行组合挂载。
-
-    :param workspace_root: 物理工作区根目录路径。
-    :type workspace_root: pathlib.Path
-    :param store: 可选的 LangGraph 长期存储实例；技能始终挂载于独立的内存存储。
-    :type store: langgraph.store.base.BaseStore | None
-    :param memory_route: 长期记忆在虚拟文件系统中的路由前缀，默认为 '/memories/'。
-    :type memory_route: str
-    :param namespace_factory: 接受运行时对象并返回隔离命名空间元组的可调用工厂。
-    :type namespace_factory: collections.abc.Callable[[langgraph.runtime.Runtime[typing.Any]], tuple[str, ...]]
-    :return: 组合后的虚拟文件系统后端 BackendProtocol 实例。
-    :rtype: deepagents.backends.protocol.BackendProtocol
-    :author: tongliga
-    :date: 2026-10-19
-    """
-    # 第一步：实例化底层工作区物理文件系统后端（启用虚拟路径模式）
-    fs_backend = DocumentFilesystemBackend(root_dir=str(workspace_root), virtual_mode=True)
-    # Plugin assets belong to this agent build, never to the user's workspace or memory store.
-    routes = {
-        "/skills/": StoreBackend(store=InMemoryStore(), namespace=lambda _rt: ("skills",))
-    }
-
-    # 第二步：规范化 POSIX 路由前缀（前后带斜杠，如 '/memories/'）
-    normalized_route = f"{PurePosixPath('/', memory_route.strip('/'))}/"
-    # 第三步：装配默认文件系统与长期记忆路由的 CompositeBackend 实例并返回
-    if normalized_route == "/skills/":
-        raise ValueError("memory_route must not overlap the reserved /skills/ route")
-    if store is not None:
-        routes[normalized_route] = StoreBackend(store=store, namespace=namespace_factory)
-    backend = CompositeBackend(default=fs_backend, routes=routes)
-    logger.debug(
-        "composite_backend_ready", extra={"event_fields": {"memory_route": normalized_route}}
-    )
-    return backend
-
-
-__all__ = [
-    "AsyncSqliteSaver",
-    "AsyncSqliteStore",
-    "SqliteSaver",
-    "SqliteStore",
-    "aopen_checkpointer",
-    "aopen_store",
-    "compose_backend",
-    "create_checkpointer",
-    "create_store",
-    "open_checkpointer",
-    "open_store",
-]

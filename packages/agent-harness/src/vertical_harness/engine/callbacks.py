@@ -231,9 +231,7 @@ class WorkflowLoggingHandler(BaseCallbackHandler):
         :date: 2026-10-19
         """
         # 第一步：安全解析 response 中的 Token 用量元数据
-        generations = getattr(response, "generations", [])
-        message = getattr(generations[0][0], "message", None) if generations and generations[0] else None
-        usage = getattr(message, "usage_metadata", None)
+        usage = response.generations[0][0].message.usage_metadata
         # 第二步：累计 Token 统计量并记录上报计数
         if usage is not None:
             with self._lock:

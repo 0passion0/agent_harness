@@ -7,6 +7,8 @@ import pytest
 
 @pytest.fixture(autouse=True)
 def disable_external_tracing(monkeypatch):
+    monkeypatch.delenv("LANGSMITH_PROJECT", raising=False)
+    monkeypatch.delenv("LANGSMITH_API_KEY", raising=False)
     monkeypatch.setenv("LANGSMITH_TRACING", "false")
     monkeypatch.setenv("LANGCHAIN_TRACING_V2", "false")
 

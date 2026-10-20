@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import asyncio
 import json
 import sys
@@ -8,32 +6,29 @@ import pytest
 from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.checkpoint.memory import InMemorySaver
-from langgraph.store.memory import InMemoryStore
 from langgraph.types import Command
 
 from vertical_harness import HarnessSettings, build_agent
-from vertical_harness.desktop_runtime import DesktopPlugin
 from vertical_harness.python_execution import python_file_tool
 
 
-def test_python_uses_workspace_and_configured_interpreter_without_agent_secrets(tmp_path, monkeypatch):
+def test_python_uses_workspace_and_configured_interpreter_without_agent_secrets(
+    tmp_path, monkeypatch
+):
     monkeypatch.setenv("OPENAI_API_KEY", "must-not-be-inherited")
     (tmp_path / "helper.py").write_text("MEAN = 2.5", encoding="utf-8")
-    code = (
-        "import os, sys, subprocess; from pathlib import Path; from helper import MEAN; "
-        "assert 'OPENAI_API_KEY' not in os.environ; "
-        "assert subprocess.check_output([sys.executable, '-c', \"print('子进程')\"], text=True).strip() == '子进程'; "
-        "Path('result.txt').write_text('真实结果', encoding='utf-8'); "
-        "assert Path(__file__).name == 'analysis.py'; "
-        "print(sys.executable); print(f'均值={MEAN}')"
-    )
+    code = "import os, sys, subprocess; from pathlib import Path; from helper import MEAN; assert 'OPENAI_API_KEY' not in os.environ; assert subprocess.check_output([sys.executable, '-c', \"print('子进程')\"], text=True).strip() == '子进程'; Path('result.txt').write_text('真实结果', encoding='utf-8'); assert Path(__file__).name == 'analysis.py'; print(sys.executable); print(f'均值={MEAN}')"
     (tmp_path / "analysis.py").write_text(code, encoding="utf-8")
-    result = asyncio.run(python_file_tool(tmp_path, sys.executable).ainvoke({"file_path": "/analysis.py"}))
+    result = asyncio.run(
+        python_file_tool(tmp_path, sys.executable).ainvoke({"file_path": "/analysis.py"})
+    )
     assert result["exit_code"] == 0
     assert sys.executable in result["stdout"]
     assert "均值=2.5" in result["stdout"]
     assert (tmp_path / "result.txt").read_text(encoding="utf-8") == "真实结果"
-    assert (tmp_path / result["stdout_path"].removeprefix("/")).read_text(encoding="utf-8") == result["stdout"]
+    assert (tmp_path / result["stdout_path"].removeprefix("/")).read_text(
+        encoding="utf-8"
+    ) == result["stdout"]
 
 
 def test_python_exposes_script_failure_and_output_truncation(tmp_path, monkeypatch):
@@ -48,7 +43,9 @@ def test_python_exposes_script_failure_and_output_truncation(tmp_path, monkeypat
 
     monkeypatch.setattr(python_execution.asyncio, "create_subprocess_exec", bounded_spawn)
     tool = python_file_tool(tmp_path, sys.executable)
-    (tmp_path / "analysis.py").write_text("print('中' * 1000000); raise ValueError('bad input')", encoding="utf-8")
+    (tmp_path / "analysis.py").write_text(
+        "print('中' * 1000000); raise ValueError('bad input')", encoding="utf-8"
+    )
     result = asyncio.run(tool.ainvoke({"file_path": "analysis.py"}))
     assert result["exit_code"] != 0
     assert "ValueError: bad input" in result["stderr"]
@@ -68,7 +65,7 @@ def test_script_path_validation_precedes_execution(tmp_path):
     tool = python_file_tool(workspace, sys.executable)
     with pytest.raises(ValueError, match="inside the workspace"):
         asyncio.run(tool.ainvoke({"file_path": "../outside.py"}))
-    with pytest.raises(ValueError, match=r"\.py file"):
+    with pytest.raises(ValueError, match="\\.py file"):
         asyncio.run(tool.ainvoke({"file_path": "data.txt"}))
     with pytest.raises(FileNotFoundError):
         asyncio.run(tool.ainvoke({"file_path": "missing.py"}))
@@ -92,9 +89,9 @@ def test_cancelling_python_waits_for_process_exit(tmp_path, monkeypatch):
 
         monkeypatch.setattr(python_execution.asyncio, "create_subprocess_exec", tracked_spawn)
         (tmp_path / "analysis.py").write_text("import time; time.sleep(60)", encoding="utf-8")
-        task = asyncio.create_task(python_file_tool(tmp_path, sys.executable).ainvoke({
-            "file_path": "analysis.py",
-        }))
+        task = asyncio.create_task(
+            python_file_tool(tmp_path, sys.executable).ainvoke({"file_path": "analysis.py"})
+        )
         await started.wait()
         task.cancel()
         with pytest.raises(asyncio.CancelledError):
@@ -114,17 +111,21 @@ def test_python_timeout_returns_failure_with_partial_output(tmp_path, monkeypatc
         return await wait_for(awaitable, timeout=1)
 
     monkeypatch.setattr(python_execution.asyncio, "wait_for", short_wait)
-    (tmp_path / "analysis.py").write_text("import time; print('已完成第一步', flush=True); time.sleep(60)", encoding="utf-8")
-    result = asyncio.run(python_file_tool(tmp_path, sys.executable).ainvoke({
-        "file_path": "analysis.py",
-    }))
+    (tmp_path / "analysis.py").write_text(
+        "import time; print('已完成第一步', flush=True); time.sleep(60)", encoding="utf-8"
+    )
+    result = asyncio.run(
+        python_file_tool(tmp_path, sys.executable).ainvoke({"file_path": "analysis.py"})
+    )
     assert result["timed_out"] is True
     assert result["exit_code"] != 0
     assert "已完成第一步" in result["stdout"]
     assert "120 seconds" in result["error"]
 
 
-@pytest.mark.parametrize("mode,approve", [("read_only", False), ("ask", False), ("ask", True), ("full", True)])
+@pytest.mark.parametrize(
+    "mode,approve", [("read_only", False), ("ask", False), ("ask", True), ("full", True)]
+)
 def test_python_permission_modes_in_composed_graph(tmp_path, monkeypatch, mode, approve):
     from vertical_harness.engine import compose
 
@@ -137,16 +138,39 @@ def test_python_permission_modes_in_composed_graph(tmp_path, monkeypatch, mode, 
             assert not any(getattr(item, "name", None) == "run_python" for item in tools)
             return self
 
-    monkeypatch.setattr(compose, "init_configured_model", lambda _settings: Model(responses=[
-        AIMessage(content="", tool_calls=[{"id": "python-call", "name": "execute_python_file", "args": {"file_path": "/analysis.py"}}]),
-        AIMessage(content="done"),
-    ]))
-    settings = HarnessSettings(_env_file=None, model="test:python", workspace_root=tmp_path,
-                               store_backend="memory", enable_memory=False)
-    options = {"runtimes": {"python": sys.executable}, "permission_mode": mode,
-               "max_context_tokens": 128_000, "agent_content": "", "skills": []}
-    agent = build_agent(settings, store=InMemoryStore(), checkpointer=InMemorySaver(),
-                        mcp_tools=[], plugins=[DesktopPlugin(options)])
+    monkeypatch.setattr(
+        compose,
+        "init_configured_model",
+        lambda _settings: Model(
+            responses=[
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "id": "python-call",
+                            "name": "execute_python_file",
+                            "args": {"file_path": "/analysis.py"},
+                        }
+                    ],
+                ),
+                AIMessage(content="done"),
+            ]
+        ),
+    )
+    settings = HarnessSettings(
+        _env_file=None,
+        model="test:python",
+        workspace_root=tmp_path,
+        store_backend="memory",
+        enable_memory=False,
+    )
+    options = {
+        "runtimes": {"python": sys.executable},
+        "permission_mode": mode,
+        "max_context_tokens": 128000,
+        "agent_content": "",
+    }
+    agent = build_agent(settings, checkpointer=InMemorySaver(), options=options)
 
     async def run():
         config = {"configurable": {"thread_id": "python"}}
@@ -160,10 +184,19 @@ def test_python_permission_modes_in_composed_graph(tmp_path, monkeypatch, mode, 
             assert not (tmp_path / "output.txt").exists()
             pending = state["__interrupt__"][0]
             assert pending.value["action_requests"][0]["args"] == {"file_path": "/analysis.py"}
-            state = await agent.ainvoke(Command(resume={pending.id: {
-                "decisions": [{"type": "approve" if approve else "reject"}],
-            }}), config)
-        messages = [m for m in state["messages"] if isinstance(m, ToolMessage) and m.name == "execute_python_file"]
+            state = await agent.ainvoke(
+                Command(
+                    resume={
+                        pending.id: {"decisions": [{"type": "approve" if approve else "reject"}]}
+                    }
+                ),
+                config,
+            )
+        messages = [
+            m
+            for m in state["messages"]
+            if isinstance(m, ToolMessage) and m.name == "execute_python_file"
+        ]
         assert len(messages) == 1
         if approve:
             assert json.loads(messages[0].content)["exit_code"] == 0

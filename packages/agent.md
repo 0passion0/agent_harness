@@ -1,18 +1,14 @@
-# 包管理目录 (packages) - Agent 指南与规范
+# Agent Harness
 
-## 目录定位与职责
-`packages/` 是整个项目的工作区包目录，通过 `uv` 统一管理。项目收敛为单一发行包 `packages/agent-harness`（分发名称 `vertical-agent-harness`），内部平级组织通用宿主 `vertical_harness` 与领域垂直插件 `vertical_plugins`。
+系统仅保留一个 Agent：网络检索、工作区文件工具、保存的 Python 脚本。
 
-## 包清单
-- `agent-harness/`：Vertical Agent Harness 发行包源码，包含：
-  - `src/vertical_harness/`：通用宿主脚手架，提供智能体执行环境、中间件、存储集成、评估管线与 CLI。
-  - `src/vertical_plugins/`：领域插件与公共契约层，包含 `common`（ABC 契约）、`data_analysis`（科研数据分析插件）与 `research_citation`（学术引文核验插件）。
-
-## 架构隔离与依赖规范
-1. **解耦原则**：
-   - 通用宿主 `vertical_harness` 和公共契约层 `vertical_plugins.common` 绝对禁止显式导入具体业务插件（如 `data_analysis` 或 `research_citation`）。
-   - 业务插件继承 `vertical_plugins.common.DomainPlugin` ABC 契约，并通过 `build(services) -> PluginContribution` 向宿主统一注册贡献。
-   - 宿主通过 `vertical_harness.engine.plugin_loader` 依据 entry point 动态发现并装配启用的白名单插件。
-2. **依赖管理**：基础安装不依赖可选数据分析库；`duckdb` 与 `openpyxl` 作为 `analysis` extra 可选依赖。
-3. **版本演进**：公共契约修改必须保持向后兼容。
-
+- 主循环使用 LangChain create_agent，复用 Deep Agents 文件、摘要和工具调用修复中间件。
+- 不引入业务插件、MCP、技能注册、长期记忆、评估、监督者或自研工作流。
+- 配置在 config/settings.py，组装在 engine/compose.py；桌面 RPC 在 desktop.py。
+- 文件操作在 storage/backends.py；文档阅读用 MarkItDown，编辑用 Python 格式库。
+- 聊天、附件、产物和数据库属于用户数据；不得因代码清理删除。
+- 身份、工作区边界、敏感文件拒绝、审批、超时和取消必须保留。
+- 日志使用 logging.py，不记录用户内容、密钥或任意输入对象。
+- 优先复用标准库和已安装依赖，不复制第三方实现，不为已删除 API 加兼容层。
+- 验证：uv run pytest、uv run ruff check .、uv run mypy；desktop 下 npm run typecheck、npm test、npm run build。
+- 不手动编辑生成的 openwiki/ 页面。

@@ -69,9 +69,6 @@ def test_streamed_tool_details_reach_the_original_cards(monkeypatch, tmp_path):
                     "permission_mode": "ask",
                     "max_context_tokens": 128000,
                     "agent_content": "",
-                    "skills": [],
-                    "mcp_servers": {},
-                    "enabled_plugins": [],
                 },
             },
         )

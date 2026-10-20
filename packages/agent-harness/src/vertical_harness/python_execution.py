@@ -32,8 +32,11 @@ def python_file_tool(workspace: Path, interpreter: str):
         if script.suffix != ".py" or not script.is_file():
             raise ValueError("Script path must name a .py file")
         # Do not pass the agent's API credential environment variables to subprocesses.
-        env = {key: value for key, value in os.environ.items()
-               if key.upper() in {"PATH", "SYSTEMROOT", "WINDIR", "TEMP", "TMP", "HOME", "USERPROFILE"}}
+        env = {
+            key: value
+            for key, value in os.environ.items()
+            if key.upper() in {"PATH", "SYSTEMROOT", "WINDIR", "TEMP", "TMP", "HOME", "USERPROFILE"}
+        }
         env.update(PYTHONIOENCODING="utf-8", PYTHONUTF8="1")
         run_dir = workspace / "runs" / "python" / uuid4().hex
         run_dir.mkdir(parents=True)
@@ -41,8 +44,17 @@ def python_file_tool(workspace: Path, interpreter: str):
         # Keep complete logs on disk so verbose scripts cannot fill the host's memory.
         with stdout_path.open("wb") as stdout_file, stderr_path.open("wb") as stderr_file:
             process = await asyncio.create_subprocess_exec(
-                interpreter, "-X", "utf8", "-E", "-s", str(script), cwd=workspace, env=env,
-                stdin=asyncio.subprocess.DEVNULL, stdout=stdout_file, stderr=stderr_file,
+                interpreter,
+                "-X",
+                "utf8",
+                "-E",
+                "-s",
+                str(script),
+                cwd=workspace,
+                env=env,
+                stdin=asyncio.subprocess.DEVNULL,
+                stdout=stdout_file,
+                stderr=stderr_file,
             )
             timed_out = False
             try:
@@ -63,9 +75,13 @@ def python_file_tool(workspace: Path, interpreter: str):
             "stderr_path": "/" + stderr_path.relative_to(workspace).as_posix(),
             "exit_code": process.returncode,
             "timed_out": timed_out,
-            "error": "Python execution exceeded 120 seconds; no automatic retry was performed." if timed_out else None,
-            "stdout": output[:12000], "stderr": errors[:12000],
-            "stdout_truncated": len(output) > 12000, "stderr_truncated": len(errors) > 12000,
+            "error": "Python execution exceeded 120 seconds; no automatic retry was performed."
+            if timed_out
+            else None,
+            "stdout": output[:12000],
+            "stderr": errors[:12000],
+            "stdout_truncated": len(output) > 12000,
+            "stderr_truncated": len(errors) > 12000,
         }
 
     return execute_python_file

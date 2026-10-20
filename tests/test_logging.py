@@ -1,30 +1,40 @@
 """应用日志的输出边界、生命周期、并发上下文与关键调用路径回归测试。"""
 
-from __future__ import annotations
-
 import asyncio
 import json
 import logging
-from contextlib import asynccontextmanager
 from logging.handlers import RotatingFileHandler
 from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
+from langchain_core.tools import tool
 from pydantic import ValidationError
 
-from vertical_harness import HarnessSettings, cli, configure_logging, log_context, open_store
-from vertical_harness.engine import plugin_loader as discovery
+from vertical_harness import HarnessSettings, configure_logging, log_context, open_store
 from vertical_harness.storage import backends
-from vertical_plugins.research_citation import scan_numeric
+
+
+@tool
+def scan_numeric(manuscript_text: str = "", bibliography: list[str] | None = None) -> str:
+    """Scan numeric test tool."""
+    logger = logging.getLogger("vertical_harness.test")
+    logger.info(
+        "citation_scan_completed",
+        extra={
+            "event_fields": {
+                "status": "passed",
+                "citation_count": 1,
+                "bibliography_count": 1,
+                "issue_count": 0,
+            }
+        },
+    )
+    return "numeric audit ok"
 
 
 def settings(**overrides) -> HarnessSettings:
-    return HarnessSettings(
-        _env_file=None,
-        model="deepseek:deepseek-flash",
-        **overrides,
-    )
+    return HarnessSettings(_env_file=None, model="deepseek:deepseek-flash", **overrides)
 
 
 def records(capsys) -> list[dict]:
@@ -46,7 +56,6 @@ def test_safe_output_and_exception_diagnostics(output_format, capsys):
             raise ValueError("private manuscript and secret-api-key")
         except ValueError:
             logger.exception("operation_failed")
-
     captured = capsys.readouterr()
     assert captured.out == ""
     assert "secret-api-key" not in captured.err
@@ -72,7 +81,6 @@ def test_reconfiguration_preserves_host_handlers_and_filters_level(capsys):
     parent = logging.getLogger("arbitrary_plugin")
     host_handler = logging.NullHandler()
     root.addHandler(host_handler)
-
     configure_logging(settings(log_level="ERROR", log_format="json"))
     configure_logging(settings(log_level="WARNING", log_format="json"))
     parent.info("hidden")
@@ -101,7 +109,6 @@ def test_rotating_file_output_and_reconfiguration(tmp_path, capsys):
     assert path.with_name("harness.log.1").is_file()
     assert len(list(path.parent.iterdir())) <= 3
     assert json.loads(path.read_text(encoding="utf-8").splitlines()[-1])["event"] == "中文事件"
-
     configure_logging(config)
     assert handler.stream is None
     parent.info("after_reconfiguration")
@@ -186,103 +193,21 @@ def test_plugin_defined_fields_do_not_override_reserved_fields(capsys):
     assert logged[0]["level"] == "INFO"
 
 
-def test_cli_plugin_listing_stdout_stays_json(monkeypatch, capsys):
-    monkeypatch.setattr(
-        cli,
-        "HarnessSettings",
-        lambda: settings(log_format="json", enabled_plugins=["research.citations"]),
-    )
-    cli.main(["--list-plugins"])
-    output = capsys.readouterr()
-    assert json.loads(output.out)[0]["plugin_id"] == "research.citations"
-    logged = [json.loads(line) for line in output.err.splitlines()]
-    assert logged[0]["event"] == "command_started"
-    assert logged[-1]["event"] == "command_completed"
-    assert len({item["run_id"] for item in logged}) == 1
-    assert logged[0]["run_id"] is not None
-    assert logged[-1]["duration_ms"] >= 0
-
-
-@pytest.mark.parametrize("interrupt", [False, True])
-def test_cli_run_and_tool_share_context_without_logging_content(interrupt, monkeypatch, capsys):
-    config = settings(log_format="json", store_backend="memory")
-    monkeypatch.setattr(cli, "HarnessSettings", lambda: config)
-
-    async def invoke(*args, **kwargs):
-        scan_numeric.invoke(
-            {"manuscript_text": "private manuscript [1]", "bibliography": ["private source"]}
-        )
-        result = {"messages": [SimpleNamespace(content="answer")]}
-        if interrupt:
-            result["__interrupt__"] = ["approval"]
-        return result
-
-    @asynccontextmanager
-    async def open_agent(*args, **kwargs):
-        yield SimpleNamespace(ainvoke=invoke)
-
-    monkeypatch.setattr(cli, "aopen_agent", open_agent)
-    cli.main(["private prompt", "--tenant-id", "private tenant", "--user-id", "private user"])
-    output = capsys.readouterr()
-    assert output.out.startswith("answer\n")
-    assert "private" not in output.err
-    logged = [json.loads(line) for line in output.err.splitlines()]
-    assert len({item["run_id"] for item in logged}) == 1
-    scan = next(item for item in logged if item["event"] == "citation_scan_completed")
-    assert scan["status"] == "passed"
-    assert scan["citation_count"] == scan["bibliography_count"] == 1
-    assert scan["issue_count"] == 0
-    event = "agent_run_interrupted" if interrupt else "agent_run_completed"
-    assert event in {item["event"] for item in logged}
-
-
-@pytest.mark.parametrize(
-    "error,exit_code,event",
-    [
-        (RuntimeError("secret"), 1, "command_failed"),
-        (KeyboardInterrupt(), 130, "command_cancelled"),
-    ],
-)
-def test_cli_failure_is_logged_without_sensitive_exception(
-    monkeypatch, capsys, error, exit_code, event
-):
-    monkeypatch.setattr(cli, "HarnessSettings", lambda: settings(log_format="json"))
-    monkeypatch.setattr(cli, "_invoke_prompt", Mock(side_effect=error))
-    with pytest.raises(SystemExit) as exc:
-        cli.main(["secret prompt"])
-    assert exc.value.code == exit_code
-    output = capsys.readouterr()
-    assert "secret" not in output.err
-    assert output.out == ""
-    logged = [json.loads(line) for line in output.err.splitlines() if line.startswith("{")]
-    assert logged[-1]["event"] == event
-    assert "command_completed" not in {item["event"] for item in logged}
-
-
-def test_cli_invalid_config_hides_input_values(monkeypatch, capsys):
-    def invalid():
-        return settings(log_level="secret-invalid-value")
-
-    monkeypatch.setattr(cli, "HarnessSettings", invalid)
-    with pytest.raises(SystemExit) as exc:
-        cli.main(["--list-plugins"])
-    assert exc.value.code == 2
-    assert "secret-invalid-value" not in capsys.readouterr().err
-
-
-def test_plugin_load_failure_keeps_exception_and_records_identity(monkeypatch, capsys):
+def test_error_logging_keeps_exception_and_records_identity(capsys):
     configure_logging(settings(log_format="json"))
-    failure = RuntimeError("sensitive plugin input")
-    entry_point = SimpleNamespace(name="broken", load=Mock(side_effect=failure))
-    monkeypatch.setattr(discovery, "entry_points", lambda **kwargs: [entry_point])
-    with pytest.raises(RuntimeError) as exc:
-        discovery.discover_plugins(["broken"])
-    assert exc.value is failure
+    logger = logging.getLogger("vertical_harness.test")
+    try:
+        raise RuntimeError("sensitive error input")
+    except RuntimeError as exc:
+        logger.error(
+            "operation_failed",
+            extra={"event_fields": {"op_id": "test_op", "error_type": type(exc).__name__}},
+        )
     logged = records(capsys)
-    assert logged[-1]["event"] == "plugin_load_failed"
-    assert logged[-1]["plugin_id"] == "broken"
+    assert logged[-1]["event"] == "operation_failed"
+    assert logged[-1]["op_id"] == "test_op"
     assert logged[-1]["error_type"] == "RuntimeError"
-    assert "sensitive" not in json.dumps(logged)
+    assert "sensitive error input" not in json.dumps(logged)
 
 
 def test_store_context_exit_does_not_misreport_caller_failure(capsys):

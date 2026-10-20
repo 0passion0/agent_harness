@@ -1,12 +1,14 @@
-# 脚本目录 (scripts) - Agent 指南与规范
+# Agent Harness
 
-## 目录定位与职责
-`scripts/` 目录存放用于代码构建、分发打包、发布验证和 CI/CD 自动化的可执行运维与辅助脚本。
+系统仅保留一个 Agent：网络检索、工作区文件工具、保存的 Python 脚本。
 
-## 核心脚本清单
-- `check_wheels.py`：构建与分发验证脚本。检查 monorepo 各包产出的 wheel 文件完整性、元数据有效性及内部依赖链接的正确性。
-
-## Agent 交互与执行指引
-1. **执行隔离**：执行脚本时建议使用 `uv run python scripts/<script_name>.py` 保证运行环境与主项目依赖完全一致。
-2. **退出码与标准流**：脚本在检测到异常时必须返回非零退出码（Exit Code != 0），并向 stderr 输出明确的错误摘要。
-3. **日志输出**：脚本内部使用标准 logging 或受控输出，记录关键检查步骤和最终状态。
+- 主循环使用 LangChain create_agent，复用 Deep Agents 文件、摘要和工具调用修复中间件。
+- 不引入业务插件、MCP、技能注册、长期记忆、评估、监督者或自研工作流。
+- 配置在 config/settings.py，组装在 engine/compose.py；桌面 RPC 在 desktop.py。
+- 文件操作在 storage/backends.py；文档阅读用 MarkItDown，编辑用 Python 格式库。
+- 聊天、附件、产物和数据库属于用户数据；不得因代码清理删除。
+- 身份、工作区边界、敏感文件拒绝、审批、超时和取消必须保留。
+- 日志使用 logging.py，不记录用户内容、密钥或任意输入对象。
+- 优先复用标准库和已安装依赖，不复制第三方实现，不为已删除 API 加兼容层。
+- 验证：uv run pytest、uv run ruff check .、uv run mypy；desktop 下 npm run typecheck、npm test、npm run build。
+- 不手动编辑生成的 openwiki/ 页面。

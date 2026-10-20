@@ -18,8 +18,6 @@ import type { Json } from '../../shared/protocol'
 import { Decision } from './components/Decision'
 import { Conversation } from './components/Conversation'
 import { SessionSidebar } from './components/SessionSidebar'
-import { CapabilityPicker, isCapabilityShortcut } from './components/CapabilityPicker'
-import type { CapabilityPickerHandle } from './components/CapabilityPicker'
 import { RunDetails } from './components/RunDetails'
 import { ToolCard } from './components/ToolCard'
 import { WorkspaceDirectory } from './components/WorkspaceDirectory'
@@ -37,10 +35,10 @@ import './styles/modern-aesthetics.css'
 type Theme = 'light' | 'dark'
 
 /** 右侧详情抽屉标签页类别 */
-type DetailTab = 'activity' | 'directory' | 'research' | 'files'
+type DetailTab = 'activity' | 'directory' | 'files'
 
 /** 设置面板标签页类别 */
-type SettingsTab = 'models' | 'agent' | 'mcp' | 'plugins' | 'usage'
+type SettingsTab = 'models' | 'agent' | 'permissions' | 'usage'
 
 /**
  * 首次进入或空任务时的引导快捷模板列表。
@@ -85,23 +83,11 @@ export default function App() {
   const [settingsTab, setSettingsTab] = useState<SettingsTab>('models')
   const [dragging, setDragging] = useState(false)
   const [detailWidth, setDetailWidth] = useState(340)
-  const [selectedPlugins, setSelectedPlugins] = useState<string[]>([])
-  const [selectedSkills, setSelectedSkills] = useState<string[]>([])
-  useEffect(() => {
-    setSelectedPlugins([])
-    setSelectedSkills([])
-  }, [project?.id, state.snapshot?.session_id])
-  const submitTask = async () => {
-    if (await send(selectedPlugins, selectedSkills)) {
-      setSelectedPlugins([])
-      setSelectedSkills([])
-    }
-  }
+  const submitTask = async () => { await send() }
 
   const isResizing = useRef(false)
   const dragDepth = useRef(0)
   const composer = useRef<HTMLTextAreaElement>(null)
-  const capabilityPicker = useRef<CapabilityPickerHandle>(null)
   const search = useRef<HTMLInputElement>(null)
 
   // 处理任务详情面板宽度的鼠标拖拽调节事件
@@ -186,7 +172,7 @@ export default function App() {
   useEffect(() => {
     const openWorkbench = () => {
       setView('task')
-      setDetailTab('research')
+      setDetailTab('activity')
       setDetailOpen(true)
     }
     addEventListener('medpeer:open-workbench', openWorkbench)
@@ -367,12 +353,7 @@ export default function App() {
           inspect={c.inspectConfig}
           save={c.saveConfig}
           remove={c.removeConfig}
-          toggleSkill={c.toggleSkill}
-          testMcp={c.testMcp}
-          importSkills={c.importSkills}
           testProfile={c.testProfile}
-          readSkill={c.readSkill}
-          saveSkill={c.saveSkill}
         /> : <>
           {/* 对话列表或空任务引导卡片 */}
           {state.snapshot?.messages.length || state.pendingPrompt || state.stream.length || activityCount || busy ? (
@@ -432,15 +413,9 @@ export default function App() {
             {state.question && state.runId && <Decision
               key={state.question.interaction_id}
               kind={state.question.kind}
-              pluginId={state.question.plugin_id}
-              pluginName={application?.plugins.find(plugin => plugin.id === state.question!.plugin_id)?.name}
               question={state.question.question}
               actionRequests={state.question.action_requests}
               options={state.question.options}
-              purpose={state.question.purpose}
-              inputScope={state.question.input_scope}
-              plannedOutputs={state.question.planned_outputs}
-              allowedEffects={state.question.allowed_effects}
               onAnswer={value => answer(state.runId!, state.question!.interaction_id, value)}
               onStop={() => void stop()}
             />}
@@ -471,35 +446,8 @@ export default function App() {
                 onChange={event => {
                   const val = event.target.value
                   setDraft(val)
-                  // 若用户键入以 '/' 开头的斜杠指令，自动唤起命令与扩展能力浮层
-                  if (val.startsWith('/')) {
-                    if (!capabilityPicker.current?.isOpen()) {
-                      capabilityPicker.current?.open(val.slice(1))
-                    }
-                  } else if (!val.trim() && capabilityPicker.current?.isOpen()) {
-                    capabilityPicker.current?.close()
-                  }
                 }}
                 onKeyDown={event => {
-                  // 第一步：若能力选择浮层已开启，优先交由浮层处理方向键、回车与退出
-                  if (capabilityPicker.current?.isOpen()) {
-                    if (event.key === 'ArrowDown' || event.key === 'ArrowUp' || event.key === 'Enter') {
-                      if (capabilityPicker.current.handleKeyDown?.(event)) {
-                        return
-                      }
-                    }
-                    if (event.key === 'Escape') {
-                      event.preventDefault()
-                      capabilityPicker.current.close()
-                      if (draft.startsWith('/')) setDraft('')
-                      return
-                    }
-                  }
-                  // 第二步：空输入框键入 '/' 快捷唤起能力浮层
-                  if (isCapabilityShortcut(event) && !draft.trim()) {
-                    capabilityPicker.current?.open('')
-                    return
-                  }
                   // 第三步：普通回车触发任务提交
                   if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
                     event.preventDefault()
@@ -523,56 +471,9 @@ export default function App() {
                     <Sparkles size={13}/>{application?.model?.model ?? '未连接模型'}
                   </span>
                   <span className="context-sep" />
-                  <CapabilityPicker
-                    ref={capabilityPicker}
-                    application={application}
-                    plugins={selectedPlugins}
-                    skills={selectedSkills}
-                    setPlugins={setSelectedPlugins}
-                    setSkills={setSelectedSkills}
-                    disabled={busy || !canCompose}
-                    onEscape={() => composer.current?.focus()}
-                    externalQuery={draft.startsWith('/') ? draft.slice(1) : ''}
-                    onSelectPrompt={prompt => {
-                      setDraft(prompt)
-                      requestAnimationFrame(() => composer.current?.focus())
-                    }}
-                    onCapabilityApplied={() => {
-                      if (draft.startsWith('/')) {
-                        setDraft('')
-                      }
-                      requestAnimationFrame(() => composer.current?.focus())
-                    }}
-                    onClearSession={() => {
-                      setView('task')
-                      void loadSession('session.clear')
-                      if (draft.startsWith('/')) setDraft('')
-                    }}
-                    onToggleDetail={() => {
-                      setDetailTab('activity')
-                      setDetailOpen(true)
-                      if (draft.startsWith('/')) setDraft('')
-                    }}
-                    onOpenSettings={tab => {
-                      openSettings(tab as SettingsTab)
-                      if (draft.startsWith('/')) setDraft('')
-                    }}
-                  />
+                  
                   <span className="context-sep" />
-                  <button
-                    className="composer-tool-hint"
-                    disabled={!canCompose}
-                    onClick={() => {
-                      if (capabilityPicker.current?.isOpen()) {
-                        capabilityPicker.current.close()
-                      } else {
-                        capabilityPicker.current?.open()
-                      }
-                    }}
-                    title="选择扩展插件与技能 (/)"
-                  >
-                    <Wrench size={14} />插件
-                  </button>
+                  
                 </div>
                 <div className="composer-actions">
                   <TokenWindowPopup report={state.snapshot?.token_usage} onOpenSettings={() => openSettings('models')} />
@@ -617,9 +518,7 @@ export default function App() {
           <button role="tab" aria-selected={detailTab === 'directory' || detailTab === 'files'} onClick={() => setDetailTab('directory')}>
             <Folder size={14} />目录
           </button>
-          <button role="tab" aria-selected={detailTab === 'research'} onClick={() => setDetailTab('research')}>
-            <CircleHelp size={14} />研究
-          </button>
+          
         </div>
         <div className="detail-body">
           {detailTab === 'activity' ? <>
@@ -632,19 +531,8 @@ export default function App() {
                 <p className="detail-empty">当前没有正在进行的工具调用。历史工具参数和结果见上方已保存运行。</p>
               )}
             </section>
-          </> : (detailTab === 'directory' || detailTab === 'files') ? (
-            <WorkspaceDirectory workspace={workspace} onChooseWorkspace={() => void chooseWorkspace()} lastRunFinished={state.lastRunSaved} />
-          ) : (
-            <section className="detail-section">
-              <h3>研究扩展</h3>
-              {(application?.plugins ?? []).map(plugin => <article className="plugin-card" key={plugin.id}>
-                <strong>{plugin.name}</strong><span>{plugin.loaded ? '已加载' : plugin.enabled ? '已启用' : '已停用'}</span>
-                <p>{plugin.description}</p>
-                {plugin.workflows.length > 0 && <ul>{plugin.workflows.map(workflow => <li key={workflow.name}><strong>{workflow.name}</strong> · {workflow.description}</li>)}</ul>}
-              </article>)}
-              {!application?.plugins.length && <p className="detail-empty">尚未发现可用插件。</p>}
-            </section>
-          )}
+          </> : <WorkspaceDirectory workspace={workspace} onChooseWorkspace={() => void chooseWorkspace()} lastRunFinished={state.lastRunSaved} />}
+
         </div>
       </aside>}
     </div>

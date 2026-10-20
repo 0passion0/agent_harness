@@ -20,14 +20,11 @@ select = ["E", "F", "I", "UP", "B", "SIM", "C4", "RUF"]
 ignore = ["E501", "RUF001", "RUF002", "RUF003"]
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.12"
 files = [
-  "packages/agent-harness/src/vertical_plugins/common",
-  "packages/agent-harness/src/vertical_harness/engine/plugin_loader.py",
+  "packages/agent-harness/src/vertical_harness/context.py",
   "packages/agent-harness/src/vertical_harness/config",
-  "packages/agent-harness/src/vertical_harness/storage/namespace.py",
 ]
 follow_imports = "silent"
 ignore_missing_imports = true
 check_untyped_defs = true
-

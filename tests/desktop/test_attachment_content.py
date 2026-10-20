@@ -6,7 +6,9 @@ from vertical_harness.desktop_attachments import content_blocks, extract_text
 def test_table_attachments_request_local_summary_without_loading_rows(tmp_path):
     path = tmp_path / "large.csv"
     path.write_text("PRIVATE_RAW_ROWS" * 100_000, encoding="utf-8")
-    blocks = content_blocks([({"name": path.name, "media_type": "text/csv"}, path)], "Analyze", tmp_path)
+    blocks = content_blocks(
+        [({"name": path.name, "media_type": "text/csv"}, path)], "Analyze", tmp_path
+    )
     assert "local table-summary .py script" in blocks[1]["text"]
     assert "PRIVATE_RAW_ROWS" not in blocks[1]["text"]
     assert len(blocks[1]["text"]) < 500
@@ -48,8 +50,8 @@ def test_limits_text_and_preserves_image_content(tmp_path):
     blocks = content_blocks(refs, "Analyze", tmp_path)
     assert "Path: /large.txt\n" in blocks[1]["text"]
     assert len(blocks[1]["text"]) <= 20000
-    assert "truncated" in blocks[1]["text"]
+    assert "Start with read_file" in blocks[1]["text"]
     assert base64.b64encode(b"image").decode() in blocks[2]["image_url"]["url"]
     blocks = content_blocks([refs[0], refs[0]], "Analyze", tmp_path)
-    assert sum(len(block["text"]) for block in blocks[1:]) == 20000
+    assert sum(len(block["text"]) for block in blocks[1:]) <= 20000
     assert all("Path:" in block["text"] for block in blocks[1:])

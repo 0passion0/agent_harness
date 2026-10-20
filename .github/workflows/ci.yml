@@ -1,4 +1,4 @@
-name: Python quality and plugin compatibility
+name: Harness quality
 
 on:
   push:
@@ -22,7 +22,7 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           python-version: ${{ matrix.python }}
-      - run: uv sync --frozen --all-packages --extra dev
+      - run: uv sync --frozen --all-packages --extra dev --extra desktop
       - run: uv run --frozen ruff check .
       - run: uv run --frozen mypy
       - run: uv run --frozen pytest
@@ -33,6 +33,4 @@ jobs:
           uv export --frozen --all-packages --no-dev --no-emit-workspace --no-hashes --output-file /tmp/wheel-constraints.txt
           uv pip install --python .wheel-env/bin/python --constraint /tmp/wheel-constraints.txt dist/vertical_agent_harness-*.whl
           cd /tmp
-          "$GITHUB_WORKSPACE/.wheel-env/bin/python" "$GITHUB_WORKSPACE/scripts/check_wheels.py" --base
-          uv pip install --python "$GITHUB_WORKSPACE/.wheel-env/bin/python" --constraint /tmp/wheel-constraints.txt "$GITHUB_WORKSPACE"/dist/vertical_agent_harness-*.whl --extra analysis
-          "$GITHUB_WORKSPACE/.wheel-env/bin/python" "$GITHUB_WORKSPACE/scripts/check_wheels.py" --with-analysis
+          "$GITHUB_WORKSPACE/.wheel-env/bin/python" "$GITHUB_WORKSPACE/scripts/check_wheels.py"

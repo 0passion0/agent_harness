@@ -31,7 +31,7 @@ describe('agent state', () => {
   })
 
   it('discards a question after cancellation', () => {
-    let state = reduceAgent(initialState, { event: 'interaction.request', session_id: 's', run_id: 'r', data: { plugin_id: 'research', interaction_id: 'i', kind: 'question', question: '为何？' } })
+    let state = reduceAgent(initialState, { event: 'interaction.request', session_id: 's', run_id: 'r', data: { interaction_id: 'i', kind: 'question', question: '为何？' } })
     state = reduceAgent(state, { event: 'run.finished', session_id: 's', run_id: 'r', data: { status: 'cancelled', snapshot: { session_id: 's', thread_id: 't', thread_ids: ['t'], messages: [], attachments: [], artifacts: [], runs: [], totals: {}, unsettled_history: false } } })
     expect(state.question).toBeNull()
     expect(state.phase).toBe('idle')
@@ -85,7 +85,7 @@ describe('stream event aggregation', () => {
   })
 
   it('retains workflow event identity and hierarchy for expandable run cards', () => {
-    const record = { kind: 'workflow.node', seq: 4, operation_id: 'op-1', parent_ids: ['parent'], node: 'search', agent_name: 'Research', plugin_id: 'research', workflow_name: 'literature_search', status: 'running', summary: 'Searching' }
+    const record = { kind: 'workflow.node', seq: 4, operation_id: 'op-1', parent_ids: ['parent'], node: 'search', agent_name: 'Research', status: 'running', summary: 'Searching' }
     const state = reduceAgent(initialState, { event: 'run.event', session_id: 's', run_id: 'r', data: record })
     expect(state.events).toContainEqual(record)
   })

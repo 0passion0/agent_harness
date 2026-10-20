@@ -24,14 +24,17 @@ class ToolBindableFakeModel(FakeListChatModel):
 
 @pytest.mark.parametrize("history_messages,expected_calls", [(80, 1), (88, 2)])
 def test_native_compaction_waits_until_ninety_percent_of_475k(
-    tmp_path, history_messages, expected_calls,
+    tmp_path,
+    history_messages,
+    expected_calls,
 ):
     model = ToolBindableFakeModel(
         responses=["Done."] if expected_calls == 1 else ["History summary.", "Done."],
         profile={"max_input_tokens": 1_000_000},
     )
     agent = create_deep_agent(
-        model=model, backend=FilesystemBackend(root_dir=tmp_path),
+        model=model,
+        backend=FilesystemBackend(root_dir=tmp_path),
         middleware=[_summarization_middleware(model, FilesystemBackend(root_dir=tmp_path))],
         checkpointer=InMemorySaver(),
     )
@@ -143,14 +146,23 @@ def test_completed_script_is_trimmed_before_the_next_model_call(tmp_path) -> Non
     (tmp_path / "analysis.py").write_text(script, encoding="utf-8")
     history = [
         HumanMessage(content="Analyze the supplied table."),
-        AIMessage(content="", tool_calls=[{
-            "name": "write_file", "args": {"file_path": "/analysis.py", "content": script},
-            "id": "saved-script", "type": "tool_call",
-        }]),
+        AIMessage(
+            content="",
+            tool_calls=[
+                {
+                    "name": "write_file",
+                    "args": {"file_path": "/analysis.py", "content": script},
+                    "id": "saved-script",
+                    "type": "tool_call",
+                }
+            ],
+        ),
         ToolMessage(content="Updated file /analysis.py", tool_call_id="saved-script"),
     ]
     agent = create_deep_agent(
-        model=model, backend=backend, middleware=[_summarization_middleware(model, backend)],
+        model=model,
+        backend=backend,
+        middleware=[_summarization_middleware(model, backend)],
         checkpointer=InMemorySaver(),
     )
     config = {"configurable": {"thread_id": "saved-script-test"}}

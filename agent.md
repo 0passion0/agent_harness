@@ -1,46 +1,14 @@
-# 根目录 (Root) - Agent 指南与全局规范
+# Agent Harness
 
-## 目录定位与职责
-本根目录 `agent_harness` 是面向垂直领域复杂工作流的智能体测试与组装脚手架（Vertical Agent Harness）。项目由两层核心体系组成：
-1. 通用宿主脚手架（`packages/agent-harness`）：负责多租户隔离、配置加载、存储后端适配、MCP 协议集成、动态模型路由、中间件链组装以及工作流状态机管理（基于 Deep Agents 与 LangGraph）。
-2. 领域垂直插件（`packages/agent-harness/src/vertical_plugins`）：遵循 ABC 插件契约扩展特定业务工具、工作流与评估套件（如 `research_citation` 与 `data_analysis`）。
+系统仅保留一个 Agent：网络检索、工作区文件工具、保存的 Python 脚本。
 
-## 架构与核心组件
-- `packages/`：包含统一发行包 `packages/agent-harness`（内部组织为 `vertical_harness` 宿主与 `vertical_plugins` 插件）。
-- `docs/`：系统设计与运维架构规范文档（架构、评估、稳定性、流式传输、Token 效率）。
-- `examples/`：可执行示例与评估样例数据集。
-- `scripts/`：项目构建、CI 验证与辅助运维脚本。
-- `tests/`：端到端与单元测试集，覆盖全部核心路径及插件集成。
-- `pyproject.toml`：uv 工作区定义、代码格式化（ruff）与静态类型检查（mypy）配置。
-- `AGENTS.md`：OpenWiki 知识库引导规范。
-- `agent.md`：面向 AI 智能体开发者的全局规范与快速导览。
-
-## 关键工作流与交互时序
-1. **环境与依赖初始化**：通过 `uv sync` 构建虚拟环境，链接各工作区包。
-2. **插件自动发现与组装**：通过 `vertical_harness.engine.plugin_loader` 扫描 entry points 启用的插件，由 `AgentComposer` 聚合工作流、工具、子智能体与技能。
-3. **安全执行与隔离**：主智能体以证据优先提示词启动，受限于租户隔离命名空间与沙箱文件系统权限，并在运行全程输出受控结构化事件日志。
-
-## 约束与设计不变量
-1. **隐私安全第一原则**：
-   - 严禁在日志、异常追踪或输出中泄露用户敏感输入（如未脱敏提示词、原稿正文、用户隐私数据）。
-   - 禁止在日志 record 中直接拼接任意领域对象，必须使用受控字段。
-2. **纯监督者权限收敛**：
-   - 在监督者模式下，主智能体文件系统写操作限制在只读安全路径，屏蔽直接底层执行工具，强制工作流委派。
-3. **幂等性与时间旅行**：
-   - 必须通过检查点持久化保证长运行工作流可重放、可分支分叉与故障安全恢复。
-
-## 日志与可观测性要求
-- 全局使用 `vertical_harness.logging` 的结构化日志格式，记录包含 `timestamp`、`level`、`logger`、`event`、`run_id` 及受控 `event_fields`。
-- 所有函数与核心代码块必须包含详细调试或运行日志，记录调用开始、结束、关键分支及异常状态，不得出现日志盲区。
-- 日志级别遵循标准约定：DEBUG 记录内部流转与细节参数，INFO 记录关键生命周期事件，WARNING 记录预期内中断或重试，ERROR/EXCEPTION 记录严重故障。
-
-## 测试与验证指引
-- 单元与集成测试：`uv run pytest`（必须全部通过且无意外警告）。
-- 静态代码检查：`uv run ruff check`。
-- 代码格式校验：`uv run ruff format --check`。
-- 类型静态分析：`uv run mypy`。
-
-## 开发规范与维护要点
-- 代码必须遵循 Python 3.11+ 规范，包含完整的类型提示（type hints）。
-- 所有公共与内部函数、类必须配备详尽的中文 Docstring，清晰阐释用途、入参、返回值与抛出异常。
-- 遵循单一职责设计，不修改或破坏生成的 `openwiki/` 内容。
+- 主循环使用 LangChain create_agent，复用 Deep Agents 文件、摘要和工具调用修复中间件。
+- 不引入业务插件、MCP、技能注册、长期记忆、评估、监督者或自研工作流。
+- 配置在 config/settings.py，组装在 engine/compose.py；桌面 RPC 在 desktop.py。
+- 文件操作在 storage/backends.py；文档阅读用 MarkItDown，编辑用 Python 格式库。
+- 聊天、附件、产物和数据库属于用户数据；不得因代码清理删除。
+- 身份、工作区边界、敏感文件拒绝、审批、超时和取消必须保留。
+- 日志使用 logging.py，不记录用户内容、密钥或任意输入对象。
+- 优先复用标准库和已安装依赖，不复制第三方实现，不为已删除 API 加兼容层。
+- 验证：uv run pytest、uv run ruff check .、uv run mypy；desktop 下 npm run typecheck、npm test、npm run build。
+- 不手动编辑生成的 openwiki/ 页面。

@@ -8,11 +8,9 @@ const noop = async () => {}
 const props: UserSettingsPageProps = {
   initialTab: 'usage', application: {
     build_mode: 'production', projects: [], active_project_id: null, model: null,
-    skills: [],
-    runtimes: { python: '', node: '' }, plugins: [], permission_mode: 'ask', data_dir: 'data'
+    runtimes: { python: '', node: '' }, permission_mode: 'ask', data_dir: 'data'
   }, config: null, busy: false, apply: noop, inspect: noop, save: noop, remove: noop,
-  toggleSkill: noop, testMcp: noop, importSkills: noop, testProfile: async () => '',
-  readSkill: async () => null, saveSkill: noop
+  testProfile: async () => ''
 }
 
 const priced: UsageModel = {

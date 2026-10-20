@@ -1,15 +1,14 @@
-# Agent Harness 包目录 (packages/agent-harness) - Agent 指南与规范
+# Agent Harness
 
-## 目录定位与职责
-`packages/agent-harness/` 是 Vertical Agent Harness 的核心代码库，发布为 Python 包 `vertical-agent-harness`。它同时包含宿主框架 `vertical_harness` 与内置业务插件 `vertical_plugins`。它封装了生产级智能体运行时，支撑多模型接入、长周期任务中断与恢复、动态模型路由、安全沙箱及结构化日志。
+系统仅保留一个 Agent：网络检索、工作区文件工具、保存的 Python 脚本。
 
-## 目录结构
-- `src/`：包源码根目录，包含平级组织的 `vertical_harness`（宿主运行时）与 `vertical_plugins`（业务插件与契约）。
-- `pyproject.toml`：本包的项目定义、依赖配置、可选依赖组（`analysis`、`postgres`、`dev`）、entry points 与 wheel 构建配置。
-
-## 核心设计模式
-1. **单一组装点（Single Point of Assembly）**：通过 `vertical_harness.engine.compose` 完成模型、中间件、存储后端和插件贡献的统一校验与装配。
-2. **插件 ABC 契约隔离**：所有插件继承 `vertical_plugins.common.DomainPlugin` ABC 抽象基类，根目录严格仅有一个 `__init__.py` 文件，通过 `build(services)` 注入贡献。
-3. **多租户与命名空间隔离**：持久化状态和全局存储在物理或逻辑层面严格依照 `tenant_id` 和 `user_id` 实施命名空间隔离。
-4. **安全证据优先**：默认注入严格证据链提示词，并在监督模式下禁用危险的文件系统工具。
-
+- 主循环使用 LangChain create_agent，复用 Deep Agents 文件、摘要和工具调用修复中间件。
+- 不引入业务插件、MCP、技能注册、长期记忆、评估、监督者或自研工作流。
+- 配置在 config/settings.py，组装在 engine/compose.py；桌面 RPC 在 desktop.py。
+- 文件操作在 storage/backends.py；文档阅读用 MarkItDown，编辑用 Python 格式库。
+- 聊天、附件、产物和数据库属于用户数据；不得因代码清理删除。
+- 身份、工作区边界、敏感文件拒绝、审批、超时和取消必须保留。
+- 日志使用 logging.py，不记录用户内容、密钥或任意输入对象。
+- 优先复用标准库和已安装依赖，不复制第三方实现，不为已删除 API 加兼容层。
+- 验证：uv run pytest、uv run ruff check .、uv run mypy；desktop 下 npm run typecheck、npm test、npm run build。
+- 不手动编辑生成的 openwiki/ 页面。
