@@ -80,7 +80,11 @@ export class Backend {
    * @param root - 项目工作区根目录绝对物理地址
    * @param emit - 向主应用派发引擎事件帧的回调函数
    */
-  constructor(private root: string, private emit: (event: EngineFrame) => void) {}
+  constructor(
+    private root: string,
+    private emit: (event: EngineFrame) => void,
+    private packaged = false
+  ) {}
 
   /**
    * 启动桌面 Python 智能体引擎子进程，发布包优先使用随包运行时。
@@ -96,7 +100,7 @@ export class Backend {
     // 第一步：定位 Python 解释器绝对路径
     const resourcesPath = process.resourcesPath ?? path.join(this.root, 'desktop', 'resources')
     const bundled = bundledPython(resourcesPath)
-    const python = existsSync(bundled) ? bundled : path.join(this.root, '.venv', 'Scripts', 'python.exe')
+    const python = this.packaged ? bundled : path.join(this.root, '.venv', 'Scripts', 'python.exe')
     if (!existsSync(python)) throw new Error('未找到随包 Python 或项目 .venv，请按项目说明准备 Python 运行时')
 
     // 第二步：派生 Python 进程
@@ -166,7 +170,8 @@ export class Backend {
             python: selectScriptPython(
               configure.options.runtimes.python,
               process.resourcesPath ?? path.join(this.root, 'desktop', 'resources'),
-              path.join(this.root, '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python')
+              path.join(this.root, '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python'),
+              this.packaged
             )
           }
         }

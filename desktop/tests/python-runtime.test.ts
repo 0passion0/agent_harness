@@ -11,3 +11,12 @@ it('prefers bundled Python over a configured interpreter and falls back when abs
   expect(selectScriptPython('C:/custom/python.exe', 'C:/app/resources')).toBe('C:/custom/python.exe')
   expect(selectScriptPython('', 'C:/app/resources', 'C:/repo/.venv/Scripts/python.exe')).toBe('C:/repo/.venv/Scripts/python.exe')
 })
+
+it('uses the configured or fallback interpreter in development even when bundled Python exists', async () => {
+  const { existsSync } = await import('node:fs')
+  vi.mocked(existsSync).mockReturnValue(true)
+  expect(selectScriptPython('C:/custom/python.exe', 'C:/app/resources', 'C:/repo/.venv/Scripts/python.exe', false))
+    .toBe('C:/custom/python.exe')
+  expect(selectScriptPython('', 'C:/app/resources', 'C:/repo/.venv/Scripts/python.exe', false))
+    .toBe('C:/repo/.venv/Scripts/python.exe')
+})

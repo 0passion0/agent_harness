@@ -15,8 +15,9 @@ def python_file_tool(workspace: Path, interpreter: str):
     async def execute_python_file(file_path: str) -> dict:
         """Run an existing workspace .py script with the selected Python interpreter.
 
-        First write complete code with write_file/edit_file, then pass its relative or virtual
-        path (analysis.py or /analysis.py). Code strings and shell commands are not accepted.
+        Create a runnable script with write_file; for subsequent changes, read only the affected
+        lines and use edit_file for targeted replacements. Pass its relative or virtual path
+        (analysis.py or /analysis.py). Code strings and shell commands are not accepted.
         Scripts run with the user's permissions, not in a security sandbox; their working
         directory is the workspace. Variables do not persist between runs. Print concise
         results and save deliverables to files. Check exit_code before reporting success.

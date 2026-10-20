@@ -173,6 +173,63 @@ it('keeps the running command addressable if the terminal snapshot fails', async
   expect(s.events.at(-1)).toMatchObject({ event: 'run.finished', data: { status: 'cancelled', snapshot: { runs: [expect.anything()] } } })
 })
 
+it.each(['model.started', 'tool.started'])('saves an in-flight %s run once when the backend exits without making RPC requests', async type => {
+  const s = setup(); await s.application.initialize(); await s.command('project.create', { name: '崩溃恢复' })
+  const snapshot = await s.command('session.snapshot') as any, run = randomUUID()
+  await s.command('run.start', { text: '执行任务' }, run)
+  s.application.receive({ event: 'agent.event', data: event(run, snapshot.thread_id, type) })
+  await s.application.serial(async () => {})
+  const original = s.request.getMockImplementation()!
+  s.request.mockClear()
+  s.request.mockImplementation(async () => { throw new Error('Backend is unavailable') })
+  const exited = { event: 'backend.exited' as const, data: { message: 'Python exited' } }
+  s.application.receive(exited)
+  s.application.receive({ event: 'agent.event', data: event(run, snapshot.thread_id, 'run.completed') })
+  s.application.receive(exited)
+  await s.application.serial(async () => {})
+  expect(s.request).not.toHaveBeenCalled()
+  expect(s.events.filter(frame => frame.event === 'protocol.error')).toEqual([])
+  expect(s.events.at(-1)).toEqual(exited)
+
+  s.request.mockImplementation(original)
+  const restored = new DesktopApplication(s.directory, { request: s.request } as unknown as Backend, () => s.application.state().user, () => {})
+  await restored.initialize()
+  const result = await restored.command({ id: 'snapshot', method: 'session.snapshot', params: {} }) as any
+  expect(result).toMatchObject({ session_id: snapshot.session_id, runs: [{ id: run, status: 'failed', records: [expect.objectContaining({ operation_id: 'call' })] }] })
+  expect(result.runs).toHaveLength(1)
+  expect(result.runs[0].started_at).toEqual(expect.any(String))
+  expect(result.runs[0].finished_at).toEqual(expect.any(String))
+  expect(result.runs[0].requests).toHaveLength(type === 'model.started' ? 1 : 0)
+  expect(Object.keys(result.runs[0].tools)).toHaveLength(type === 'tool.started' ? 1 : 0)
+  expect(result.active_run).toBeUndefined()
+  expect((await restored.command({ id: 'again', method: 'session.snapshot', params: {} }) as any).runs).toEqual(result.runs)
+  expect(s.request.mock.calls.some(([method]) => method === 'run.start' || method === 'run.resume')).toBe(false)
+})
+
+it('does not create a failed run when an idle backend exits', async () => {
+  const s = setup(); await s.application.initialize(); await s.command('project.create', { name: '空闲' })
+  s.request.mockClear()
+  s.application.receive({ event: 'backend.exited', data: { message: 'Python exited' } })
+  await s.application.serial(async () => {})
+  expect(s.request).not.toHaveBeenCalled()
+  expect(await s.command('session.snapshot')).toMatchObject({ runs: [] })
+})
+
+it('settles the current session unfinished run after application restart without replaying tools', async () => {
+  const s = setup(); await s.application.initialize(); await s.command('project.create', { name: '重启' })
+  const snapshot = await s.command('session.snapshot') as any, run = randomUUID()
+  await s.command('run.start', { text: '执行任务' }, run)
+  s.request.mockClear()
+  const restored = new DesktopApplication(s.directory, { request: s.request } as unknown as Backend, () => s.application.state().user, () => {})
+  await restored.initialize()
+  const result = await restored.command({ id: 'snapshot', method: 'session.snapshot', params: {} }) as any
+  expect(result).toMatchObject({ session_id: snapshot.session_id, runs: [{ id: run, status: 'failed', records: [] }] })
+  expect(result.runs).toHaveLength(1)
+  expect(result.active_run).toBeUndefined()
+  expect((await restored.command({ id: 'again', method: 'session.snapshot', params: {} }) as any).runs).toEqual(result.runs)
+  expect(s.request.mock.calls.some(([method]) => method === 'run.start' || method === 'run.resume')).toBe(false)
+})
+
 it('tests MCP using the selected global or project configuration', async () => {
   const s = setup(); await s.application.initialize(); await s.command('project.create', { name: 'MCP' })
   await s.command('config.save', { scope: 'global', kind: 'mcp', content: JSON.stringify({ mcpServers: { global: { transport: 'stdio', command: 'node' } } }) })
@@ -252,17 +309,29 @@ it('retains workflow metadata and counts plugin model usage once in the durable 
   expect((await s.command('usage.stats', { period: '', model: '' }) as any).totals.total_tokens).toBe(18)
 })
 
-it('restores a paused run with its original identity and records', async () => {
+it.each([true, false])('restores a durable paused run after backend exit when interrupt notification was delivered: %s', async delivered => {
   const s = setup(); await s.application.initialize(); await s.command('project.create', { name: '恢复' })
   const snapshot = await s.command('session.snapshot') as any, run = randomUUID()
   await s.command('run.start', { text: '继续' }, run)
   s.application.receive({ event: 'agent.event', data: event(run, snapshot.thread_id, 'custom.progress', { kind: 'workflow.node', plugin_id: 'research.citations', node: 'review', status: 'running' }) })
   const interrupts = [{ id: 'question-1', value: { question: '补充说明？' } }]
-  s.application.receive({ event: 'agent.event', data: event(run, snapshot.thread_id, 'run.interrupted', { interrupts }) })
+  if (delivered) s.application.receive({ event: 'agent.event', data: event(run, snapshot.thread_id, 'run.interrupted', { interrupts }) })
   await s.application.serial(async () => {})
   s.snapshots.set(snapshot.thread_id, { messages: [], interrupts, run_id: run })
+  s.request.mockClear()
+  s.application.receive({ event: 'backend.exited', data: { message: 'Python exited while paused' } })
+  await s.application.serial(async () => {})
+  expect(s.request).not.toHaveBeenCalled()
   const restored = new DesktopApplication(s.directory, { request: s.request } as unknown as Backend, () => s.application.state().user, () => {})
-  await restored.initialize(); await restored.command({ id: 'snapshot', method: 'session.snapshot', params: {} })
+  await restored.initialize()
+  expect(await restored.command({ id: 'snapshot', method: 'session.snapshot', params: {} })).toMatchObject({ runs: [], active_run: { id: run, records: [expect.objectContaining({ kind: 'workflow.node' })] } })
   await restored.command({ id: 'answer', method: 'interaction.answer', params: { run_id: run, interaction_id: 'question-1', answer: '说明' } })
   expect(s.request).toHaveBeenCalledWith('run.resume', { thread_id: snapshot.thread_id, run_id: run, decisions: { 'question-1': '说明' } })
+  s.snapshots.set(snapshot.thread_id, { messages: [], interrupts: [], run_id: run })
+  restored.receive({ event: 'agent.event', data: event(run, snapshot.thread_id, 'run.completed') })
+  await restored.serial(async () => {})
+  const completed = await restored.command({ id: 'completed', method: 'session.snapshot', params: {} }) as any
+  expect(completed.runs).toHaveLength(1)
+  expect(completed.runs[0]).toMatchObject({ id: run, status: 'complete', records: [expect.objectContaining({ kind: 'workflow.node' })] })
+  expect(completed.active_run).toBeUndefined()
 })

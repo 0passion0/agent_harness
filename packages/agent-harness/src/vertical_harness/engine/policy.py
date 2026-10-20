@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+from asyncio import CancelledError
 from collections import Counter
 from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
 from dataclasses import replace
@@ -28,6 +29,7 @@ from langchain.agents.middleware import (
 from langchain.agents.middleware.types import ToolCallRequest
 from langchain_core.messages import AIMessage, AnyMessage, HumanMessage, ToolMessage
 from langchain_core.messages.utils import count_tokens_approximately
+from langgraph.errors import GraphBubbleUp
 from langgraph.types import Command, interrupt
 from pydantic import BaseModel, Field, ValidationError
 
@@ -743,6 +745,31 @@ class PluginAuthorizationGateway:
         :author: tongliga
         :date: 2026-10-19
         """
+        record = self._execution_approval(
+            plugin_id=plugin_id,
+            workflow_name=workflow_name,
+            user_id=user_id,
+            tenant_id=tenant_id,
+            thread_id=thread_id,
+            run_id=run_id,
+            input_data=input_data,
+            effect=effect,
+        )
+        if record is not None:
+            self._start_execution(record, execution_id)
+
+    def _execution_approval(
+        self,
+        *,
+        plugin_id: str,
+        workflow_name: str,
+        user_id: str,
+        tenant_id: str,
+        thread_id: str,
+        run_id: str | None,
+        input_data: dict[str, Any] | None,
+        effect: SideEffect,
+    ) -> PluginApprovalRecord | None:
         # 第一步：阻断任何模型伪造的 approved=True / authorized=True 参数
         payload = _extract_payload_from_input(input_data)
         spoofed_key = _contains_spoofed_auth_flag(payload)
@@ -809,10 +836,10 @@ class PluginAuthorizationGateway:
                     f"{list(record.input_scope)}; re-authorization required."
                 )
 
-        # 第七步：绑定当前 run_id 并将状态推进至 running
+        # 第七步：绑定当前 run_id
         if record.run_id is None and run_id:
             record.run_id = run_id
-        self._start_execution(record, execution_id)
+        return record
 
     def _start_execution(self, record: PluginApprovalRecord, execution_id: str | None) -> None:
         req = self._requests.get(record.request_id)
@@ -1302,18 +1329,18 @@ class SupervisorPolicyMiddleware(AgentMiddleware[Any, RunContext, Any]):
             )
 
         # 第七步：若绑定了 PluginAuthorizationGateway，强制执行统一授权网关校验
+        approval = None
         if self._auth_gateway is not None:
             plugin_id = self._auth_gateway._workflow_to_plugin.get(subagent_type, subagent_type)
             turn_id = self._auth_gateway._selected_by_thread.get(thread_id, (None, frozenset()))[0]
             try:
-                self._auth_gateway.verify_execution(
+                approval = self._auth_gateway._execution_approval(
                     plugin_id=plugin_id,
                     workflow_name=subagent_type,
                     user_id=user_id,
                     tenant_id=tenant_id,
                     thread_id=thread_id,
                     run_id=turn_id,
-                    execution_id=tool_call_id,
                     input_data=raw_args,
                     effect=workflow.effect,
                 )
@@ -1378,7 +1405,6 @@ class SupervisorPolicyMiddleware(AgentMiddleware[Any, RunContext, Any]):
                         tenant_id=tenant_id,
                         run_id=turn_id,
                     )
-                    self._auth_gateway._start_execution(approval, tool_call_id)
                 else:
                     self._auth_gateway.reject_request(req.request_id)
                     return ToolMessage(
@@ -1480,6 +1506,8 @@ class SupervisorPolicyMiddleware(AgentMiddleware[Any, RunContext, Any]):
                 status="error",
             )
 
+        if self._auth_gateway is not None and approval is not None:
+            self._auth_gateway._start_execution(approval, tool_call_id)
         return None
 
     def _post_dispatch_validate(
@@ -1588,7 +1616,16 @@ class SupervisorPolicyMiddleware(AgentMiddleware[Any, RunContext, Any]):
                 update={"artifact": {"supervisor_policy": {"dispatched": False}}}
             )
         # 第二步：调用下游处理器执行工具
-        result = handler(request)
+        try:
+            result = handler(request)
+        except GraphBubbleUp:
+            raise
+        except CancelledError:
+            self._finish_dispatch(request, "cancelled")
+            raise
+        except Exception:
+            self._finish_dispatch(request, "failed")
+            raise
         # 第三步：执行后置输出模式验收与委派元数据标记
         return self._mark_dispatch(request, self._post_dispatch_validate(request, result))
 
@@ -1615,9 +1652,26 @@ class SupervisorPolicyMiddleware(AgentMiddleware[Any, RunContext, Any]):
                 update={"artifact": {"supervisor_policy": {"dispatched": False}}}
             )
         # 第二步：调用下游异步处理器执行工具
-        result = await handler(request)
+        try:
+            result = await handler(request)
+        except GraphBubbleUp:
+            raise
+        except CancelledError:
+            self._finish_dispatch(request, "cancelled")
+            raise
+        except Exception:
+            self._finish_dispatch(request, "failed")
+            raise
         # 第三步：执行后置输出模式验收与委派元数据标记
         return self._mark_dispatch(request, self._post_dispatch_validate(request, result))
+
+    def _finish_dispatch(
+        self,
+        request: ToolCallRequest,
+        status: Literal["completed", "failed", "cancelled"],
+    ) -> None:
+        if self._auth_gateway is not None and request.tool_call["name"] == "task":
+            self._auth_gateway.finish_execution(request.tool_call["id"], status=status)
 
     def _mark_dispatch(
         self, request: ToolCallRequest, result: ToolMessage | Command[Any]
@@ -1641,12 +1695,7 @@ class SupervisorPolicyMiddleware(AgentMiddleware[Any, RunContext, Any]):
         msg = _extract_tool_message(result, tool_call_id)
         if msg is None:
             return result
-        if self._auth_gateway is not None and request.tool_call.get("name") == "task":
-            is_err = getattr(msg, "status", None) == "error"
-            self._auth_gateway.finish_execution(
-                tool_call_id,
-                status="failed" if is_err else "completed",
-            )
+        self._finish_dispatch(request, "failed" if msg.status == "error" else "completed")
         artifact = dict(msg.artifact) if isinstance(msg.artifact, dict) else {}
         artifact["supervisor_policy"] = {
             **artifact.get("supervisor_policy", {}),

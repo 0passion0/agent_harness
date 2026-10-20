@@ -79,7 +79,12 @@ BASE_PROMPT = (
     "inputs. A successful tool call or existing artifact alone does not prove the requested "
     "analysis succeeded. Report failed or untested steps explicitly; never label them passed "
     "or claim independent recomputation without tool evidence. "
-    "For Python computation, write a complete .py file with write_file/edit_file, then call "
+    "Find files with glob and locate relevant text with grep before reading narrow line ranges. "
+    "Use read_file offset/limit and its next offset for pagination; avoid repeated whole-file reads. "
+    "Use write_file to create complete new files. For changes to existing files, read the affected "
+    "region and use edit_file with the smallest unique old_string and its replacement; preserve "
+    "unrelated content. Do not resend the entire file for a local change. "
+    "For Python computation, save a runnable .py file, then call "
     "execute_python_file with its workspace path. Batch related calculations in that script; "
     "do not execute code snippets or wrap scripts in runpy/subprocess. Check exit_code and "
     "the resulting files before reporting success; inspect saved logs to diagnose failures."
@@ -807,7 +812,24 @@ def build_agent(
 
     middleware.append(
         FilesystemMiddleware(
-            backend=backend, tool_token_limit_before_evict=3_000, _permissions=permissions
+            backend=backend,
+            tool_token_limit_before_evict=3_000,
+            grep_max_count=100,
+            custom_tool_descriptions={
+                "write_file": (
+                    "Create a new file with complete content, or intentionally replace a whole file. "
+                    "Existing content is overwritten. For a local change to an existing file, "
+                    "read the affected lines and use edit_file instead of resending the whole file."
+                ),
+                "edit_file": (
+                    "Edit an existing file by exact text replacement. Read the affected region first. "
+                    "Use the smallest unique old_string, preserving exact source whitespace, and "
+                    "new_string for its replacement; omit read status headers. Leave unrelated "
+                    "content out of both strings. Multiple matches fail unless replace_all=true "
+                    "is intended; if ambiguous, read more surrounding lines to make old_string unique."
+                ),
+            },
+            _permissions=permissions,
         )
     )
 

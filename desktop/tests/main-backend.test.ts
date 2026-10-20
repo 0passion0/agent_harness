@@ -1,9 +1,12 @@
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
+import { spawn } from 'node:child_process'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { Backend } from '../src/main/backend'
 import type { EngineFrame } from '../src/main/backend'
+
+vi.mock('node:child_process', { spy: true })
 
 it('starts the repository Python bridge, configures isolated paths and shuts down', async () => {
   const temporary = mkdtempSync(path.join(tmpdir(), 'harness-rpc-'))
@@ -24,4 +27,18 @@ it('starts the repository Python bridge, configures isolated paths and shuts dow
     rmSync(temporary, { recursive: true })
   }
   expect(events).toEqual([])
+}, 20000)
+
+it('reports an unexpected Python process exit before another request can restart it', async () => {
+  let notifyExit!: (frame: EngineFrame) => void
+  const exited = new Promise<EngineFrame>(resolve => { notifyExit = resolve })
+  const backend = new Backend(path.resolve(import.meta.dirname, '../..'), frame => notifyExit(frame))
+  try {
+    await backend.request('environment', {})
+    const child = vi.mocked(spawn).mock.results.at(-1)!.value
+    expect(child.kill()).toBe(true)
+    expect(await exited).toMatchObject({ event: 'backend.exited', data: { message: expect.stringContaining('Python 进程已退出') } })
+  } finally {
+    await backend.close()
+  }
 }, 20000)

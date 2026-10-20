@@ -40,7 +40,7 @@ let restoreError: Error | null = null
 const emit = (frame: EventFrame): void => {
   if (window && !window.isDestroyed()) window.webContents.send('backend:event', frame)
 }
-const backend = new Backend(root, frame => desktop.receive(frame))
+const backend = new Backend(root, frame => desktop.receive(frame), app.isPackaged)
 
 /**
  * 校验 IPC 调用的来源安全性。

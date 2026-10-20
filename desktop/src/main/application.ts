@@ -409,6 +409,11 @@ export class DesktopApplication {
       token_usage: result.token_usage
     }
 
+    if (restoreInterrupts && !this.running && !result.interrupts.length && saved.active_run) {
+      const userMessage = [...result.messages].reverse().find(message => message.type === 'human')
+      this.saveRun({ ...saved.active_run, thread: session.id }, 'failed', saved, userMessage?.data.id as string | undefined)
+    }
+
     if (result.interrupts.length && saved.active_run) {
       snapshot.active_run = {
         id: saved.active_run.id,
@@ -737,6 +742,11 @@ export class DesktopApplication {
   receive(frame: EngineFrame): void {
     void this.serial(async () => {
       if (frame.event === 'backend.exited') {
+        if (this.running) {
+          const saved = this.saved(this.running.thread)
+          saved.active_run = { id: this.running.id, started: this.running.started, records: this.running.records }
+          this.save(this.running.thread, saved)
+        }
         this.running = null
         this.emit(frame)
         return
@@ -819,8 +829,15 @@ export class DesktopApplication {
     const run = this.running!
     const snapshot = await this.snapshot(run.thread, false)
     const saved = this.saved(run.thread)
-    const records = run.records as Json[]
     const userMessage = [...snapshot.messages].reverse().find(message => message.type === 'human')
+    this.saveRun(run, status, saved, userMessage?.data.id as string | undefined)
+    snapshot.runs = saved.runs
+    this.running = null
+    this.emit({ event: 'run.finished', session_id: run.thread, run_id: run.id, data: { status, snapshot } })
+  }
+
+  private saveRun(run: Pick<Running, 'id' | 'thread' | 'started' | 'records'>, status: 'complete' | 'failed' | 'cancelled', saved: Saved, userMessageId?: string): void {
+    const records = run.records as Json[]
     const requests = new Map(run.records.filter(record => record.kind === 'model_start' || record.kind === 'model_end').map(record => [record.operation_id, record]))
     saved.runs.push({
       id: run.id,
@@ -828,17 +845,14 @@ export class DesktopApplication {
       finished_at: new Date().toISOString(),
       status,
       records: run.records,
-      user_message_id: userMessage?.data.id as string | undefined,
+      user_message_id: userMessageId,
       requests: [...requests.values()] as Json[],
       tools: Object.fromEntries(run.records.flatMap((record, i) => record.call_id ? [[record.call_id, records[i]]] : [])),
       elapsed: (Date.now() - run.started) / 1000
     })
     delete saved.active_run
     this.save(run.thread, saved)
-    snapshot.runs = saved.runs
     this.account().touch(run.thread)
-    this.running = null
-    this.emit({ event: 'run.finished', session_id: run.thread, run_id: run.id, data: { status, snapshot } })
   }
 }
 

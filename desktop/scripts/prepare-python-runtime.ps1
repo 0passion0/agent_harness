@@ -36,14 +36,14 @@ try {
   uv pip install --system --break-system-packages --python $python.FullName --no-deps $wheel.FullName
   if ($LASTEXITCODE -ne 0) { throw 'uv could not install the harness wheel' }
 
-  & $python.FullName -I -c "import vertical_harness.desktop, vertical_plugins.data_analysis, numpy, pandas, scipy, sklearn, statsmodels, duckdb, openpyxl; print('runtime imports ok')"
+  & $python.FullName -I -c "import vertical_harness.desktop, vertical_plugins.data_analysis, numpy, pandas, scipy, sklearn, statsmodels, lifelines, matplotlib, duckdb, openpyxl, pypdf, docx, pptx; print('runtime imports ok')"
   if ($LASTEXITCODE -ne 0) { throw 'the staged Python runtime failed its import check' }
 
   $destinationParent = Split-Path -Parent $destinationPath
   New-Item -ItemType Directory -Path $destinationParent -Force | Out-Null
   New-Item -ItemType Directory -Path $destinationPath | Out-Null
   Copy-Item -Path (Join-Path $python.Directory.FullName '*') -Destination $destinationPath -Recurse
-  & (Join-Path $destinationPath 'python.exe') -I -c "import vertical_harness.desktop, vertical_plugins.data_analysis, numpy, pandas, scipy, sklearn, statsmodels, duckdb, openpyxl; print('relocated runtime imports ok')"
+  & (Join-Path $destinationPath 'python.exe') -I -c "import vertical_harness.desktop, vertical_plugins.data_analysis, numpy, pandas, scipy, sklearn, statsmodels, lifelines, matplotlib, duckdb, openpyxl, pypdf, docx, pptx; print('relocated runtime imports ok')"
   if ($LASTEXITCODE -ne 0) { throw 'the relocated Python runtime failed its import check' }
 } finally {
   if ($locationPushed) { Pop-Location }

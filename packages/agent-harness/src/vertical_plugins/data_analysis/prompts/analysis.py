@@ -10,7 +10,8 @@ from __future__ import annotations
 DATA_ANALYSIS_INSTRUCTIONS = (
     "When a user requests tabular data profiling, statistical analysis, or a Chinese research report "
     "for files in `{workspace_root}`, read the `data-analysis-scientific-data-analysis` skill. "
-    "Choose one execution route: write a complete .py script with write_file/edit_file and "
+    "Choose one execution route: create a runnable .py script with write_file, use edit_file "
+    "for targeted changes to existing scripts, and "
     "run it with execute_python_file for advanced methods when available, "
     "including the initial compact local table summary; do not delegate profile pages first. "
     "For this plugin's supported basic analyses, use the task tool with "
