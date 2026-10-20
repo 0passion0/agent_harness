@@ -5,12 +5,11 @@ import path from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { Backend } from '../src/main/backend'
 import { DesktopApplication } from '../src/main/application'
-import type { Command, EventFrame, UserProfile } from '../src/shared/protocol'
+import type { Command, EventFrame } from '../src/shared/protocol'
 
 it.skipIf(process.env.DESKTOP_LIVE_TEST !== '1')('runs DeepSeek with real attachments, workspace tools, approval, usage and checkpoint restoration', async () => {
   const directory = mkdtempSync(path.join(tmpdir(), 'desktop-live-'))
   mkdirSync(path.resolve(import.meta.dirname, '../test-artifacts'), { recursive: true })
-  const user: UserProfile = { userID: 9001, realName: 'Live test', userName: 'live', userAvatar: '', userPhone: '', userCredit: 0, isCo: false, isBeta: false }
   const events: EventFrame[] = []
   let application: DesktopApplication
   let backend = new Backend(path.resolve(import.meta.dirname, '../..'), frame => application.receive(frame))
@@ -23,7 +22,7 @@ it.skipIf(process.env.DESKTOP_LIVE_TEST !== '1')('runs DeepSeek with real attach
   })
   const command = (method: string, params = {}, id = randomUUID()) => application.serial(() => application.command({ id, method, params } as Command))
   try {
-    application = new DesktopApplication(directory, backend, () => user, receive)
+    application = new DesktopApplication(directory, backend, receive)
     await application.initialize()
     await command('project.create', { name: '真实接口验证' })
     await command('permission.set', { mode: 'full' })
@@ -50,7 +49,7 @@ it.skipIf(process.env.DESKTOP_LIVE_TEST !== '1')('runs DeepSeek with real attach
     const exported = await command('session.export', { session_id: snapshot.session_id }) as any; expect(exported.text).toContain('用户')
     await backend.close()
     backend = new Backend(path.resolve(import.meta.dirname, '../..'), frame => application.receive(frame))
-    application = new DesktopApplication(directory, backend, () => user, receive)
+    application = new DesktopApplication(directory, backend, receive)
     await application.initialize()
     expect(await command('session.snapshot')).toMatchObject({ session_id: snapshot.session_id, messages: snapshot.messages, attachments: snapshot.attachments, artifacts: snapshot.artifacts })
     await command('permission.set', { mode: 'ask' })

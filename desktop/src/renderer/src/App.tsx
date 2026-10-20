@@ -26,9 +26,7 @@ import { WorkspaceDirectory } from './components/WorkspaceDirectory'
 import { UserConfig } from './plugins/user_config'
 import { AttachmentChips } from './components/AttachmentChips'
 import { TokenWindowPopup } from './components/TokenWindowPopup'
-import { LoginScreen } from './features/auth/LoginScreen'
 import { LoadingScreen } from './features/boot/LoadingScreen'
-import { AccountMenu } from './features/auth/AccountMenu'
 import './settings.css'
 import './v2.css'
 import './v3.css'
@@ -42,7 +40,7 @@ type Theme = 'light' | 'dark'
 type DetailTab = 'activity' | 'directory' | 'research' | 'files'
 
 /** 设置面板标签页类别 */
-type SettingsTab = 'models' | 'agent' | 'mcp' | 'plugins' | 'profile' | 'credits' | 'usage'
+type SettingsTab = 'models' | 'agent' | 'mcp' | 'plugins' | 'usage'
 
 /**
  * 首次进入或空任务时的引导快捷模板列表。
@@ -130,8 +128,7 @@ export default function App() {
 
   // 派生计算界面状态
   const connected = application !== null && state.phase !== 'disconnected'
-  const modelReady = !!application?.user
-  const canCompose = connected && modelReady && !!project
+  const canCompose = connected && !!project
   const hasProjects = (application?.projects?.length ?? 0) > 0
   const sendDisabled = busy || !canCompose || !draft.trim()
   const title = sessions.find(item => item.id === state.snapshot?.session_id)?.title ??
@@ -143,7 +140,7 @@ export default function App() {
     : state.phase === 'question' ? '等待确认'
     : state.phase === 'stopping' ? '正在停止'
     : state.phase === 'running' ? '正在工作'
-    : !project || !modelReady ? '待配置'
+    : !project ? '待配置'
     : '就绪'
 
   // 同步主题至文档根元素
@@ -212,11 +209,6 @@ export default function App() {
     return <LoadingScreen theme={theme} error={error} onRetry={() => void c.retryStartup?.()} />
   }
 
-  // 2. 若未登录则直接展示全屏登录页面
-  if (!application.user) {
-    return <LoginScreen theme={theme} />
-  }
-
   return <div
     className={`app product-v2 product-v3 ${theme}`}
     onDragEnterCapture={event => {
@@ -245,7 +237,7 @@ export default function App() {
       if (!isFileDrag(event)) return
       if (view !== 'task' || !(event.target as Element).closest('.task-main')) return
       if (!canCompose || busy) {
-        c.reportError('请先登录并选择项目；运行任务时不可添加文件。')
+        c.reportError('请先选择项目；运行任务时不可添加文件。')
         return
       }
       void c.importDroppedFiles([...event.dataTransfer.files])
@@ -291,7 +283,6 @@ export default function App() {
         >
           <Settings2 size={19} />
         </button>
-        {application?.user && <AccountMenu user={application.user} busy={busy} onError={c.reportError} />}
       </nav>
 
       {/* 历史会话与项目侧边栏 */}
@@ -395,13 +386,9 @@ export default function App() {
                     <span>MEDPEER RESEARCH ASSISTANT</span>
                   </div>
                 )}
-                <h1>{!connected ? '工作台暂不可用' : !modelReady ? '登录 MedPeer' : !project ? (hasProjects ? '选择一个项目' : '新建项目') : '从一个任务开始'}</h1>
-                <p>{!connected ? '本地服务尚未就绪。检查启动日志与 Python 环境。' : !modelReady ? '登录 MedPeer 账户以使用内置模型。' : !project ? (hasProjects ? '在左侧选择项目，或打开已有的本地文件夹。' : '创建新项目或打开已有的本地文件夹。') : '描述目标即可开始。执行过程和交付文件会保留在当前项目下。'}</p>
-                {!modelReady && connected ? (
-                  <button className="primary-action empty-cta" onClick={() => openSettings('models')}>
-                    登录 MedPeer <ArrowRight size={15} />
-                  </button>
-                ) : !project && connected ? (
+                <h1>{!connected ? '工作台暂不可用' : !project ? (hasProjects ? '选择一个项目' : '新建项目') : '从一个任务开始'}</h1>
+                <p>{!connected ? '本地服务尚未就绪。检查启动日志与 Python 环境。' : !project ? (hasProjects ? '在左侧选择项目，或打开已有的本地文件夹。' : '创建新项目或打开已有的本地文件夹。') : '描述目标即可开始。执行过程和交付文件会保留在当前项目下。'}</p>
+                {!project && connected ? (
                   hasProjects ? (
                     <button className="primary-action empty-cta" onClick={() => { setSidebarOpen(true); search.current?.focus() }}>
                       选择项目 <ArrowRight size={15} />
@@ -480,7 +467,7 @@ export default function App() {
                 value={draft}
                 disabled={busy || !canCompose}
                 rows={2}
-                placeholder={!connected ? '本地服务未连接…' : !modelReady ? '先登录 MedPeer…' : !project ? (hasProjects ? '先选择项目…' : '先新建项目…') : '描述你希望完成的任务…'}
+                placeholder={!connected ? '本地服务未连接…' : !project ? (hasProjects ? '先选择项目…' : '先新建项目…') : '描述你希望完成的任务…'}
                 onChange={event => {
                   const val = event.target.value
                   setDraft(val)

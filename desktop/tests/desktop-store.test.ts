@@ -44,7 +44,7 @@ describe('DesktopStore', () => {
     expect(stats.dates).toEqual(['2026-01-01'])
   })
   it('binds selected project paths and deletes only that project session', () => {
-    const root = temp(); const account = new LocalStore(root, 12); const project = account.createProject('one')
+    const root = temp(); const account = new LocalStore(root); const project = account.createProject('one')
     const workspace = path.join(root, 'selected'); mkdirSync(workspace)
     expect(account.bindProject(project.id, workspace).path).toBe(workspace)
     const session = account.createSession(); expect(account.deleteSession(session.id)).toEqual([])

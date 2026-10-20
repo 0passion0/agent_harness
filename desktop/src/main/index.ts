@@ -12,11 +12,9 @@ import { mkdirSync, realpathSync, statSync } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { AuthStore, ticketProfile } from './auth-store'
 import { Backend } from './backend'
 import { assertFilePaths, assertSender, validateCommand } from './commands'
 import { DesktopApplication } from './application'
-import { SsoLogin } from './sso-login'
 import { scanDirectory, copyFilesToWorkspace } from './workspace-files'
 import type { ConfigScope, EventFrame } from '../shared/protocol'
 
@@ -29,11 +27,8 @@ const rendererFile = path.join(import.meta.dirname, '../renderer/index.html')
 const rendererUrl = new URL(process.env.ELECTRON_RENDERER_URL ?? pathToFileURL(rendererFile).href).href
 
 let window: BrowserWindow
-let auth: AuthStore
-let login: SsoLogin
 let desktop: DesktopApplication
 let startup: Promise<unknown>
-let restoreError: Error | null = null
 
 
 /** 向渲染进程广播后端事件帧 */
@@ -110,9 +105,8 @@ async function open(file: string): Promise<void> {
 async function start(): Promise<void> {
   Menu.setApplicationMenu(null)
   mkdirSync(path.join(dataDirectory, 'logs'), { recursive: true })
-  auth = new AuthStore(path.join(dataDirectory, 'credentials.bin'))
-  desktop = new DesktopApplication(dataDirectory, backend, () => auth.user, emit)
-  startup = auth.restore().catch(error => { restoreError = error }).then(() => desktop.initialize())
+  desktop = new DesktopApplication(dataDirectory, backend, emit)
+  startup = desktop.initialize()
 
   window = new BrowserWindow({
     width: 1440,
@@ -129,31 +123,10 @@ async function start(): Promise<void> {
     }
   })
 
-  login = new SsoLogin(() => window, (ticket, details, cookies) => desktop.serial(async () => {
-    const profile = ticketProfile(ticket, details)
-    idle()
-    auth.save(profile, cookies)
-    restoreError = null
-    return desktop.accountChanged()
-  }))
-
-  // ===== 1. 后端命令与身份认证 IPC 路由 =====
+  // ===== 1. 后端命令 IPC 路由 =====
   handle('backend:command', raw => {
     const command = validateCommand(raw)
-    if (restoreError && command.method === 'app.snapshot') throw restoreError
     return desktop.command(command)
-  })
-  ipcMain.handle('auth:login', async event => {
-    trusted(event)
-    await startup
-    return login.login()
-  })
-  handle('auth:logout', () => {
-    idle()
-    login.close()
-    auth.clear()
-    restoreError = null
-    return desktop.accountChanged()
   })
 
   // ===== 2. 工作区绑定与数据目录路由 =====
@@ -238,7 +211,6 @@ if (!app.requestSingleInstanceLock()) {
   app.on('before-quit', event => {
     if (quitting) return
     event.preventDefault()
-    login?.close()
     void backend.close().then(
       () => {
         quitting = true

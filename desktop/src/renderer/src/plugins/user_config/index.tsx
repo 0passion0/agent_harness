@@ -19,8 +19,6 @@ import {
   Layers3,
   PlugZap,
   ShieldCheck,
-  UserRound,
-  Wallet,
   Sparkles,
   Info,
   Sliders,
@@ -35,7 +33,7 @@ import type { ApplicationState, ConfigScope, ConfigView, EnvironmentInfo } from 
 import { UsageSettings } from './UsageSettings'
 
 /** 设置面板分类标签页类型 */
-type Tab = 'models' | 'agent' | 'mcp' | 'plugins' | 'profile' | 'credits' | 'usage'
+type Tab = 'models' | 'agent' | 'mcp' | 'plugins' | 'usage'
 
 export type UserSettingsPageProps = {
   initialTab?: Tab
@@ -74,10 +72,8 @@ const categories = [
     ]
   },
   {
-    label: '账户与用量',
+    label: '统计与用量',
     entries: [
-      { id: 'profile', label: '个人信息', icon: UserRound },
-      { id: 'credits', label: '研值', icon: Wallet },
       { id: 'usage', label: 'Token 消耗', icon: Database }
     ]
   }
@@ -176,8 +172,6 @@ export function UserConfig({
     agent: '指令与 Skills',
     mcp: 'MCP 服务',
     plugins: '插件与权限',
-    profile: '个人信息',
-    credits: '研值',
     usage: 'Token 消耗'
   } as const)[tab]
 
@@ -235,9 +229,7 @@ export function UserConfig({
               {tab === 'models' ? '模型连接由当前 Python 后端提供，模型标识设置对所有项目生效。'
                 : tab === 'plugins' ? '管理已发现插件的启用状态、工作流与执行权限。'
                 : tab === 'agent' ? '让 Agent 理解你的项目规则，按需加载技能。'
-                : tab === 'profile' ? '查看当前登录的 MedPeer 账户信息和研值余额。'
                 : tab === 'usage' ? '查看各模型已报告的 Token 消耗。'
-                : tab === 'credits' ? '查看账户研值余额与本机用量的研值估算。'
                 : '连接可选的外部工具服务。'}
             </p>
           </header>
@@ -249,41 +241,8 @@ export function UserConfig({
             </div>
           )}
 
-          {/* 账户个人信息页 */}
-          {tab === 'profile' && (
-            <section className="pref-section usage-profile modern-card">
-              <h2>MedPeer 账户</h2>
-              {application?.user ? (
-                <>
-                  <div className="usage-profile-head">
-                    {application.user.userAvatar ? (
-                      <img src={application.user.userAvatar} alt="" />
-                    ) : (
-                      <span>{(application.user.realName || application.user.userName || '用').slice(0, 1)}</span>
-                    )}
-                    <div>
-                      <strong>{application.user.realName || application.user.userName || '用户'}</strong>
-                      <small>{application.user.userName}</small>
-                    </div>
-                  </div>
-                  <dl className="profile-details-dl">
-                    <div><dt>账号 ID</dt><dd>{application.user.userID}</dd></div>
-                    <div><dt>手机号</dt><dd>{application.user.userPhone || '未提供'}</dd></div>
-                    <div><dt>研值余额</dt><dd className="credits-val">{application.user.userCredit}</dd></div>
-                  </dl>
-                  <p className="pref-desc">账户余额由 MedPeer 提供。下方用量页的研值仅为估算，不会扣减此余额。</p>
-                </>
-              ) : (
-                <p className="pref-desc">正在连接账户…</p>
-              )}
-            </section>
-          )}
-
-          {/* 研值统计 */}
-          {tab === 'credits' && <UsageSettings mode="credits" user={application?.user ?? null} />}
-
           {/* Token 消耗报表 */}
-          {tab === 'usage' && <UsageSettings mode="tokens" user={application?.user ?? null} />}
+          {tab === 'usage' && <UsageSettings />}
 
           {/* 全局模型与 Token 上限设置 */}
           {tab === 'models' && (

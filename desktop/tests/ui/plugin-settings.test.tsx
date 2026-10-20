@@ -6,7 +6,7 @@ const noop = async () => {}
 const props: UserSettingsPageProps = {
   initialTab: 'plugins', application: {
     build_mode: 'production', projects: [], active_project_id: null, model: null,
-    user: null, runtimes: { python: '', node: '' }, skills: [],
+    runtimes: { python: '', node: '' }, skills: [],
     plugins: [
       { id: 'research', name: 'Research', description: 'Research tools', version: '1.0', workflows: [{ name: 'Search', description: 'Search sources' }], interaction_kinds: [], enabled: true, configured: true, loaded: true }
     ],

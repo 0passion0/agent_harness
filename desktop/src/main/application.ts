@@ -9,7 +9,7 @@
 
 import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs'
 import path from 'node:path'
-import type { ApplicationState, AppPlugin, Command, ConfigScope, EventFrame, Json, Question, RunRecord, SessionTokenReport, SkillDescriptor, Snapshot, UserProfile } from '../shared/protocol'
+import type { ApplicationState, AppPlugin, Command, ConfigScope, EventFrame, Json, Question, RunRecord, SessionTokenReport, SkillDescriptor, Snapshot } from '../shared/protocol'
 import type { Backend, EngineFrame, EngineEvent, Interrupt } from './backend'
 import { DesktopStore } from './desktop-store'
 import { LocalStore, writeAtomic } from './local-store'
@@ -76,10 +76,10 @@ const emptySnapshot = (): Snapshot => ({
  * 桌面端核心业务应用控制器。
  */
 export class DesktopApplication {
-  /** 当前登录账号的本地索引存储实例 */
-  private local: LocalStore | null = null
+  /** 本地项目与历史会话索引存储实例 */
+  private local: LocalStore
   /** 当前项目或通用偏好数据存储实例 */
-  private files: DesktopStore | null = null
+  private files: DesktopStore
   /** 后端报告的 Python/Node 运行时环境信息 */
   private environment: Environment | null = null
   /** 当前正在执行或暂停等待交互的任务句柄 */
@@ -94,15 +94,20 @@ export class DesktopApplication {
    *
    * @param directory - 系统应用数据目录 (userData)
    * @param backend - 后端 Python 进程通信客户端
-   * @param user - 获取当前已登录用户档案的回调函数
    * @param emit - 向渲染进程推送事件帧的回调函数
    */
   constructor(
     readonly directory: string,
     private backend: Pick<Backend, 'request'>,
-    private user: () => UserProfile | null,
     private emit: (frame: EventFrame) => void
-  ) {}
+  ) {
+    this.local = new LocalStore(this.directory)
+    const globalDir = path.join(this.directory, 'global')
+    const projectDir = this.local.activeProject ? this.local.projectDirectory() : globalDir
+    const workspace = this.local.activeProject?.path ?? path.join(projectDir, 'workspace')
+    mkdirSync(workspace, { recursive: true })
+    this.files = new DesktopStore(projectDir, workspace, globalDir)
+  }
 
   /**
    * 将异步操作推入单线程串行执行队列，确保前置任务完成后才执行下一个动作。
@@ -117,22 +122,16 @@ export class DesktopApplication {
   }
 
   /**
-   * 获取当前登录账号的 LocalStore 实例。
-   *
-   * @throws Error 当尚未登录或 local 未初始化时抛出
+   * 获取 LocalStore 实例。
    */
   private account(): LocalStore {
-    if (!this.local || !this.user()) throw new Error('请先登录')
     return this.local
   }
 
   /**
    * 获取当前生效的 DesktopStore 本地数据存储实例。
-   *
-   * @throws Error 当尚未登录或 files 实例未就绪时抛出
    */
   storage(): DesktopStore {
-    if (!this.files) throw new Error('请先登录')
     return this.files
   }
 
@@ -164,55 +163,32 @@ export class DesktopApplication {
    */
   private selectFiles(): void {
     const local = this.account()
-    const directory = local.activeProject ? local.projectDirectory() : path.join(local.directory, 'preferences')
+    const globalDir = path.join(this.directory, 'global')
+    const directory = local.activeProject ? local.projectDirectory() : globalDir
     const workspace = local.activeProject?.path ?? path.join(directory, 'workspace')
     mkdirSync(workspace, { recursive: true })
-    this.files = new DesktopStore(directory, workspace, local.directory)
+    this.files = new DesktopStore(directory, workspace, globalDir)
   }
 
   /**
-   * 初始化应用运行时环境、用户存储及后端能力目录。
+   * 初始化应用运行时环境及后端能力目录。
    *
    * @returns 初始化的应用程序全局状态
    */
   async initialize(): Promise<ApplicationState> {
     this.environment = await this.backend.request<Environment>('environment', {})
-    if (this.user()) {
-      this.local = new LocalStore(this.directory, Number(this.user()!.userID))
-      this.selectFiles()
-    }
     this.catalog = await this.backend.request<Catalog>('catalog.get', {})
-    if (this.user()) await this.configurePreferences()
+    await this.configurePreferences()
     return this.state()
-  }
-
-  /**
-   * 用户登录凭据变更或注销时的状态重置与通知。
-   *
-   * @returns 变更后的最新应用状态
-   */
-  async accountChanged(): Promise<ApplicationState> {
-    this.idle()
-    this.local = null
-    this.files = null
-    if (this.user()) {
-      this.local = new LocalStore(this.directory, Number(this.user()!.userID))
-      this.selectFiles()
-    }
-    if (this.user()) await this.configurePreferences()
-    const state = this.state()
-    this.emit({ event: 'app.ready', data: state })
-    this.emit({ event: 'ready', data: this.local?.activeProject ? await this.snapshot() : emptySnapshot() })
-    return state
   }
 
   /**
    * 组装包含启用与授权状态的可用插件列表。
    */
   private plugins(): AppPlugin[] {
-    const settings = this.files?.readSettings()
-    const enabled = settings?.plugins ?? {}
-    const authorized = this.files?.authorizedPlugins() ?? []
+    const settings = this.files.readSettings()
+    const enabled = settings.plugins ?? {}
+    const authorized = this.files.authorizedPlugins()
     return this.catalog.plugins.map(plugin => ({
       ...plugin,
       interaction_kinds: ['plugin_authorization'],
@@ -227,26 +203,25 @@ export class DesktopApplication {
    * 聚合生成前端所需的当前全局 ApplicationState 应用快照。
    */
   state(): ApplicationState {
-    const settings = this.files?.readSettings()
-    const model = settings?.model_code || this.environment?.model
+    const settings = this.files.readSettings()
+    const model = settings.model_code || this.environment?.model
     return {
       build_mode: 'development',
-      user: this.user(),
-      projects: this.local?.projects ?? [],
-      active_project_id: this.local?.activeProject?.id ?? null,
+      projects: this.local.projects,
+      active_project_id: this.local.activeProject?.id ?? null,
       model: model ? {
         provider: model.startsWith('deepseek:') ? 'deepseek' : 'harness',
         model: model.replace(/^deepseek:/, '')
       } : null,
       plugins: this.plugins(),
-      skills: this.files ? this.catalog.skills.map(skill => ({
+      skills: this.catalog.skills.map(skill => ({
         ...skill,
-        enabled: !skill.plugin_id || settings?.plugins[skill.plugin_id] === true
-      })) : [],
-      runtimes: settings?.runtimes ?? { python: '', node: '' },
-      permission_mode: settings?.permission_mode ?? 'ask',
+        enabled: !skill.plugin_id || settings.plugins[skill.plugin_id] === true
+      })),
+      runtimes: settings.runtimes,
+      permission_mode: settings.permission_mode,
       data_dir: this.directory,
-      max_context_tokens: settings?.max_context_tokens ?? 475000
+      max_context_tokens: settings.max_context_tokens
     }
   }
 
@@ -264,7 +239,7 @@ export class DesktopApplication {
     }))
     await this.backend.request('configure', {
       tenant_id: local.activeProject!.id,
-      user_id: String(this.user()!.userID),
+      user_id: 'default',
       workspace_root: this.workspace(),
       runtime_data_dir: local.projectDirectory(),
       options: {
@@ -295,7 +270,7 @@ export class DesktopApplication {
     const files = this.storage(), settings = files.readSettings(), config = files.inspectConfig('global')
     await this.backend.request('configure', {
       tenant_id: 'preferences',
-      user_id: String(this.user()!.userID),
+      user_id: 'default',
       workspace_root: files.workspace,
       runtime_data_dir: files.directory,
       options: {
@@ -502,16 +477,13 @@ export class DesktopApplication {
     const { method, params } = command
     if (method === 'protocol.hello') return { protocol: '2.0' }
     if (method === 'app.snapshot') {
-      if (this.user() && !this.running) await this.configurePreferences()
+      if (!this.running) await this.configurePreferences()
       return this.state()
     }
-    if (method === 'app.environment') return { ...this.environment, data_dir: this.directory, project_path: this.local?.activeProject?.path ?? null }
-    if (method === 'session.snapshot' && !this.local?.activeProject) return emptySnapshot()
-    if (method === 'session.search' && !this.user()) return []
-    if (method === 'session.list' && !this.user()) return []
-    if (method === 'plugin.list' && !this.user()) return []
+    if (method === 'app.environment') return { ...this.environment, data_dir: this.directory, project_path: this.local.activeProject?.path ?? null }
+    if (method === 'session.snapshot' && !this.local.activeProject) return emptySnapshot()
 
-    const local = this.account(), files = this.storage()
+    const local = this.local, files = this.files
     switch (method) {
       case 'session.list':
         return local.sessions()

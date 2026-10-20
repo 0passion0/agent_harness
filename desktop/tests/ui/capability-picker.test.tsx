@@ -9,7 +9,6 @@ const mockApplication: ApplicationState = {
   permission_mode: 'full',
   data_dir: '/data',
   runtimes: { python: 'python', node: 'node' },
-  user: { userID: 1, realName: '测试用户', userName: 'tester', userAvatar: '', userPhone: '', userCredit: 100, isCo: false, isBeta: true },
   model: { provider: 'medpeer', model: 'agnes-3.0-flash' },
   projects: [{ id: 'proj-1', name: '测试科研项目', path: '/test' }],
   plugins: [

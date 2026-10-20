@@ -1,13 +1,13 @@
 /**
  * @file local-store.ts
- * @description 按用户账号哈希隔离的本地项目与历史会话索引存储模块。
- * 维护用户关联的本地项目列表、当前激活项目、会话元数据（标题、创建与更新时间），
+ * @description 本地项目与历史会话索引存储模块。
+ * 维护本地项目列表、当前激活项目、会话元数据（标题、创建与更新时间），
  * 并提供会话检索、重命名、删除及原子写入保护。对话正文由底层 Checkpointer 持久化。
  * @author tongliga
  * @date 2026-10-16
  */
 
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import type { ApplicationState, SessionItem } from '../shared/protocol'
@@ -26,9 +26,9 @@ type Session = SessionItem & { project_id: string }
  * 本地 index.json 文件保存的完整索引结构契约。
  */
 type Index = {
-  /** 当前账号拥有的项目列表 */
+  /** 已创建的项目列表 */
   projects: Project[]
-  /** 当前账号下的全部历史会话列表 */
+  /** 全部历史会话列表 */
   sessions: Session[]
   /** 当前处于激活选中状态的项目 ID */
   active_project_id: string | null
@@ -52,11 +52,10 @@ export function writeAtomic(file: string, data: string | Buffer): void {
 }
 
 /**
- * 用户本地账户数据索引管理器。
- * 按照 SHA256(userId) 将不同登录账户的数据完全物理隔离存储。
+ * 本地项目与会话数据索引管理器。
  */
 export class LocalStore {
-  /** 当前账号本地数据根目录绝对物理地址 */
+  /** 本地数据根目录绝对物理地址 */
   readonly directory: string
   /** 索引文件 index.json 绝对物理路径 */
   private readonly file: string
@@ -64,13 +63,12 @@ export class LocalStore {
   private index: Index
 
   /**
-   * 初始化指定用户的本地存储实例。
+   * 初始化本地存储实例。
    *
-   * @param dataDirectory - 系统应用数据目录 (userData)
-   * @param userId - 当前登录用户的数字 ID
+   * @param directory - 本地存储根目录物理绝对路径
    */
-  constructor(dataDirectory: string, userId: number) {
-    this.directory = path.join(dataDirectory, 'accounts', createHash('sha256').update(String(userId)).digest('hex'))
+  constructor(directory: string) {
+    this.directory = path.resolve(directory)
     this.file = path.join(this.directory, 'index.json')
     this.index = existsSync(this.file)
       ? JSON.parse(readFileSync(this.file, 'utf8')) as Index
@@ -78,7 +76,7 @@ export class LocalStore {
   }
 
   /**
-   * 获取当前账号下已创建的所有项目列表。
+   * 获取已创建的所有项目列表。
    */
   get projects(): Project[] {
     return this.index.projects
@@ -116,10 +114,10 @@ export class LocalStore {
    * 切换当前激活的项目。
    *
    * @param id - 待激活的项目 ID
-   * @throws Error 当指定 ID 的项目不属于当前账号时抛出
+   * @throws Error 当指定 ID 的项目不存在时抛出
    */
   selectProject(id: string): void {
-    if (!this.index.projects.some(project => project.id === id)) throw new Error('项目不属于当前账号')
+    if (!this.index.projects.some(project => project.id === id)) throw new Error('项目不存在')
     this.index.active_project_id = id
     this.save()
   }
@@ -134,7 +132,7 @@ export class LocalStore {
    */
   bindProject(id: string, projectPath: string): Project {
     const project = this.index.projects.find(item => item.id === id)
-    if (!project) throw new Error('项目不属于当前账号')
+    if (!project) throw new Error('项目不存在')
     if (!statSync(projectPath).isDirectory()) throw new Error('请选择文件夹')
     project.path = realpathSync(projectPath)
     this.save()
@@ -174,7 +172,7 @@ export class LocalStore {
    */
   session(id: string): Session {
     const session = this.index.sessions.find(item => item.id === id && item.project_id === this.activeProject?.id)
-    if (!session) throw new Error('会话不属于当前项目或账号')
+    if (!session) throw new Error('会话不属于当前项目')
     return session
   }
 

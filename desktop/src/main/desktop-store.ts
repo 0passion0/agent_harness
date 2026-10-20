@@ -175,27 +175,27 @@ export class DesktopStore {
   readonly directory: string
   /** 关联的工作区根目录绝对物理地址 */
   readonly workspace: string
-  /** 当前登录账号的独立物理数据根目录 */
-  readonly accountDirectory: string
+  /** 全局配置目录 */
+  readonly globalDirectory: string
   /** 会话附件元数据索引文件 attachments.json 绝对物理路径 */
   private readonly attachmentManifest: string
   /** 生成交付成果元数据索引文件 artifacts.json 绝对物理路径 */
   private readonly artifactManifest: string
 
   /**
-   * 初始化项目与账号存储引擎。
+   * 初始化项目与全局存储引擎。
    *
    * @param directory - 项目专属数据存储目录
    * @param workspace - 本地代码工作区目录
-   * @param accountDirectory - 账号级全局配置目录
+   * @param globalDirectory - 全局配置目录
    */
-  constructor(directory: string, workspace: string, accountDirectory: string) {
+  constructor(directory: string, workspace: string, globalDirectory: string) {
     this.directory = path.resolve(directory)
     this.workspace = path.resolve(workspace)
-    this.accountDirectory = path.resolve(accountDirectory)
+    this.globalDirectory = path.resolve(globalDirectory)
     mkdirSync(this.directory, { recursive: true })
     mkdirSync(this.workspace, { recursive: true })
-    mkdirSync(this.accountDirectory, { recursive: true })
+    mkdirSync(this.globalDirectory, { recursive: true })
     this.attachmentManifest = path.join(this.directory, 'attachments.json')
     this.artifactManifest = path.join(this.directory, 'artifacts.json')
   }
@@ -331,12 +331,12 @@ export class DesktopStore {
   }
 
   /**
-   * 读取当前账号已被用户授权免二次确认调用的插件 ID 白名单。
+   * 读取已被用户授权免二次确认调用的插件 ID 白名单。
    *
    * @returns 授权插件 ID 字符串数组
    */
   authorizedPlugins(): string[] {
-    const grants = this.readJson<unknown>(path.join(this.accountDirectory, 'plugin-authorizations.json'), [])
+    const grants = this.readJson<unknown>(path.join(this.globalDirectory, 'plugin-authorizations.json'), [])
     if (!Array.isArray(grants) || grants.some(id => typeof id !== 'string')) throw new Error('Invalid plugin authorizations')
     return grants
   }
@@ -347,7 +347,7 @@ export class DesktopStore {
    * @param ids - 批准授权的插件 ID 列表
    */
   authorizePlugins(ids: string[]): void {
-    atomicJson(path.join(this.accountDirectory, 'plugin-authorizations.json'), [...new Set([...this.authorizedPlugins(), ...ids])])
+    atomicJson(path.join(this.globalDirectory, 'plugin-authorizations.json'), [...new Set([...this.authorizedPlugins(), ...ids])])
   }
 
   /**
@@ -536,7 +536,7 @@ export class DesktopStore {
    * @returns 桌面客户端通用偏好配置
    */
   readSettings(): DesktopSettings {
-    const settings = this.readJson<DesktopSettings>(path.join(this.accountDirectory, 'settings.json'), defaults)
+    const settings = this.readJson<DesktopSettings>(path.join(this.globalDirectory, 'settings.json'), defaults)
     return { ...settings, plugins: { ...defaults.plugins, ...settings.plugins } }
   }
 
@@ -546,7 +546,7 @@ export class DesktopStore {
    * @param patch - 偏好配置局部变更对象
    */
   saveSettings(patch: Partial<DesktopSettings>): void {
-    atomicJson(path.join(this.accountDirectory, 'settings.json'), {
+    atomicJson(path.join(this.globalDirectory, 'settings.json'), {
       ...this.readSettings(),
       ...patch,
       runtimes: { ...this.readSettings().runtimes, ...patch.runtimes }
@@ -561,7 +561,7 @@ export class DesktopStore {
    * @param record - 单次调用用量记录
    */
   recordUsage(projectId: string, sessionId: string, record: UsageRecord): void {
-    const file = path.join(this.accountDirectory, 'usage.json')
+    const file = path.join(this.globalDirectory, 'usage.json')
     const records = this.readJson<Array<UsageRecord & { project_id: string; session_id: string }>>(file, [])
     const index = records.findIndex(item => item.request_id === record.request_id)
     if (index >= 0) {
@@ -582,7 +582,7 @@ export class DesktopStore {
    * @returns 聚合完成的结构化用量统计报表
    */
   usageStats(period: string, model: string, session?: { projectId: string; sessionId: string }): UsageStats {
-    const all = this.readJson<Array<UsageRecord & { project_id: string; session_id: string }>>(path.join(this.accountDirectory, 'usage.json'), [])
+    const all = this.readJson<Array<UsageRecord & { project_id: string; session_id: string }>>(path.join(this.globalDirectory, 'usage.json'), [])
       .filter(item => !session || (item.project_id === session.projectId && item.session_id === session.sessionId))
     const dates = all.map(item => new Date(item.requested_at).toLocaleDateString('en-CA', { timeZone: 'Asia/Shanghai' }))
     const selected = all.filter((item, i) => dates[i].startsWith(period) && (!model || item.model === model))
@@ -654,14 +654,14 @@ export class DesktopStore {
 
   /** 获取指定范围的配置查找目录层叠顺序列表 */
   private configLayers(scope: ConfigScope): string[] {
-    if (scope === 'global') return [path.join(this.accountDirectory, 'config')]
+    if (scope === 'global') return [path.join(this.globalDirectory, 'config')]
     if (scope !== 'project') throw new Error('Invalid config scope')
-    return [path.join(this.directory, 'config'), ...(this.workspace ? [path.join(this.workspace, '.medpeer')] : []), path.join(this.accountDirectory, 'config')]
+    return [path.join(this.directory, 'config'), ...(this.workspace ? [path.join(this.workspace, '.medpeer')] : []), path.join(this.globalDirectory, 'config')]
   }
 
   /** 获取指定范围配置持久化写入的目标目录 */
   private configWriteDir(scope: ConfigScope): string {
-    if (scope === 'global') return path.join(this.accountDirectory, 'config')
+    if (scope === 'global') return path.join(this.globalDirectory, 'config')
     if (scope === 'project') return path.join(this.directory, 'config')
     throw new Error('Invalid config scope')
   }

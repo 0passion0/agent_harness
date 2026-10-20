@@ -14,21 +14,20 @@ app.on('browser-window-created', (_event, window) => {
   window.webContents.once('did-finish-load', async () => {
     try {
       const result = await window.webContents.executeJavaScript(`new Promise(resolve => {
-        function check() { if(document.querySelector('.auth-submit')||document.querySelector('.task-composer')) resolve({bridge:typeof window.medpeer.command,text:document.body.innerText}); else requestAnimationFrame(check); } check();
+        function check() { if(document.querySelector('.task-composer')) resolve({bridge:typeof window.medpeer.command,text:document.body.innerText}); else requestAnimationFrame(check); } check();
       })`)
       assert.equal(result.bridge, 'function')
       const initial = await window.webContents.executeJavaScript(`window.medpeer.command({id:'startup-check',method:'app.snapshot',params:{}})`)
-      assert.ok(initial.user === null || initial.user.userID === -1)
+      assert.ok(initial.user === undefined)
       if (process.env.ELECTRON_RENDERER_URL) {
         console.log('Electron development URL startup IPC passed:', window.webContents.getURL())
         clearTimeout(timer); app.quit(); timer = setTimeout(() => app.exit(1), 5000)
         return
       }
-      writeFileSync(path.join(screenshots, 'login.png'), (await window.webContents.capturePage(undefined, { stayAwake: true })).toPNG())
-      const profile = { userID: 7, realName: 'Smoke', userName: 'smoke', userAvatar: '', userPhone: '', userCredit: 0, isCo: false, isBeta: false }
+      writeFileSync(path.join(screenshots, 'app.png'), (await window.webContents.capturePage(undefined, { stayAwake: true })).toPNG())
       const plugins = [{ id: 'research.citations', name: '引用核查', description: '核查参考文献', version: '1.0', workflows: [{ name: 'check_references', description: '检查引用' }], enabled: true, configured: true, loaded: true, interaction_kinds: ['plugin_authorization'] }]
       const skills = [{ id: 'global:citations', name: '引用写作规范', description: '格式规范', source: '全局', enabled: true }]
-      const state = { user: profile, build_mode: 'development', projects: [{ id: 'project', name: '测试项目', path: process.env.DESKTOP_SMOKE_DIR }], active_project_id: 'project', model: {provider:'deepseek',model:'deepseek-flash'}, plugins,skills,runtimes:{python:'',node:''},permission_mode:'ask',data_dir:process.env.DESKTOP_SMOKE_DIR,max_context_tokens:128000 }
+      const state = { build_mode: 'development', projects: [{ id: 'project', name: '测试项目', path: process.env.DESKTOP_SMOKE_DIR }], active_project_id: 'project', model: {provider:'deepseek',model:'deepseek-flash'}, plugins,skills,runtimes:{python:'',node:''},permission_mode:'ask',data_dir:process.env.DESKTOP_SMOKE_DIR,max_context_tokens:128000 }
       const workflowRecords = [
         { kind: 'workflow', seq: 1, operation_id: 'workflow-1', plugin_id: 'research.citations', workflow_name: 'check_references', status: 'running' },
         { kind: 'workflow.node', seq: 2, operation_id: 'node-1', parent_ids: ['workflow-1'], node: 'verify', status: 'running' },
@@ -159,7 +158,7 @@ app.on('browser-window-created', (_event, window) => {
         await until(()=>document.querySelector('.workflow-card').textContent.includes('已核查 3 条引用'));
         if(!document.querySelector('.workflow-card-heading').textContent.includes('已完成'))throw new Error('Workflow terminal status missing');
         click('设置与连接');await until(()=>document.querySelector('.settings-content-scroll'));
-        const tabs=['全局模型','插件与权限','指令与 Skills','MCP 服务','个人信息','研值','Token 消耗'];
+        const tabs=['全局模型','插件与权限','指令与 Skills','MCP 服务','Token 消耗'];
         for(const label of tabs){click(label,'.settings-navigation button');await until(()=>document.querySelector('.settings-main-header h1')?.textContent===label);await new Promise(resolve=>setTimeout(resolve,40));}
         click('返回任务');await until(()=>document.querySelector('.task-composer'));
         document.querySelector('[aria-label="切换执行详情"]').click();await until(()=>document.querySelector('.task-detail'));
@@ -169,7 +168,7 @@ app.on('browser-window-created', (_event, window) => {
         document.querySelector('.new-chat').click();await until(()=>document.querySelector('.task-empty'));
         return {tabs:tabs.length,text:document.body.innerText,dark:document.querySelector('.product-v3').classList.contains('dark')};
       })()`)
-      assert.equal(checked.tabs,7);assert.equal(checked.dark,true);assert.deepEqual(errors,[])
+      assert.equal(checked.tabs,5);assert.equal(checked.dark,true);assert.deepEqual(errors,[])
       // Reuse the completed report to check the actual CSS cascade in Chromium.
       session = 'layout-report'
       messages = [{type:'ai',data:{content:'先检查工作区中的文件和字段。'}},{type:'ai',data:{content:report}}]

@@ -227,28 +227,6 @@ export type SessionItem = {
 }
 
 /**
- * MedPeer 单点登录认证成功后的用户基础资料。
- */
-export type UserProfile = {
-  /** 用户在平台的唯一主键 ID */
-  userID: string | number
-  /** 真实姓名 */
-  realName: string
-  /** 平台登录用户名 */
-  userName: string
-  /** 头像 URL */
-  userAvatar: string
-  /** 绑定手机号 */
-  userPhone: string
-  /** 当前账户研值余额 */
-  userCredit: number
-  /** 企业机构合作方身份标识 */
-  isCo: Json
-  /** 内测/公测用户权限标识 */
-  isBeta: Json
-}
-
-/**
  * 智能体运行时向用户发起的交互式问题（如需确认或需要补充材料）。
  */
 export type Question = {
@@ -325,8 +303,6 @@ export type ApplicationState = {
   /** Exa 联网搜索引擎配置状态 */
   /** 当前系统加载的插件列表及配置 */
   plugins: AppPlugin[]
-  /** 当前登录的用户信息，未登录时为 null */
-  user: UserProfile | null
   /** 本机已检测或配置的脚本运行时环境 */
   runtimes: { python: string; node: string }
   /** 工具调用安全执行权限模式：只读 / 操作前询问 / 完全访问 */
@@ -479,10 +455,6 @@ export type DesktopAPI = {
   selectWorkspace(): Promise<string | null>
   /** 向 Python 后端发送标准 JSON-RPC 命令 */
   command(command: Command): Promise<unknown>
-  /** 调起 MedPeer SSO 登录模态窗口 */
-  login(): Promise<ApplicationState>
-  /** 注销当前用户登录状态并清除本地凭据 */
-  logout(): Promise<ApplicationState>
   /** 订阅后端推送事件帧，返回注销监听器的回调函数 */
   onEvent(listener: (event: EventFrame) => void): () => void
   /** 使用系统默认程序打开生成的交付物成果文件 */

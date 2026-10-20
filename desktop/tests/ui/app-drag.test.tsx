@@ -26,7 +26,7 @@ const controller = vi.hoisted(() => ({
     phase: 'idle', snapshot: null, tools: {}, pendingPrompt: null, stream: [],
     question: null, runId: null, lastRunSaved: false, error: null, events: []
   },
-  application: { user: {}, active_project_id: 'project', projects: [], model: null },
+  application: { active_project_id: 'project', projects: [], model: null },
   project: { name: 'project' }, workspace: '', draft: '', setDraft: vi.fn(),
   attachments: [], setAttachments: vi.fn(), sessions: [], sessionSearch: '',
   searchSessions: vi.fn(), plugins: [], pluginStates: {}, config: {}, error: '',
@@ -46,8 +46,6 @@ vi.mock('../../src/renderer/src/components/RunDetails', () => ({ RunDetails: () 
 vi.mock('../../src/renderer/src/components/ToolCard', () => ({ ToolCard: () => null }))
 vi.mock('../../src/renderer/src/components/AttachmentChips', () => ({ AttachmentChips: () => null }))
 vi.mock('../../src/renderer/src/components/TokenWindowPopup', () => ({ TokenWindowPopup: () => null }))
-vi.mock('../../src/renderer/src/features/auth/LoginScreen', () => ({ LoginScreen: () => null }))
-vi.mock('../../src/renderer/src/features/auth/AccountMenu', () => ({ AccountMenu: () => null }))
 
 import App from '../../src/renderer/src/App'
 import { WorkspaceDirectory } from '../../src/renderer/src/components/WorkspaceDirectory'

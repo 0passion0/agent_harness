@@ -5,7 +5,7 @@ import path from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { DesktopApplication } from '../src/main/application'
 import type { Backend, EngineEvent, Interrupt } from '../src/main/backend'
-import type { Command, EventFrame, UserProfile } from '../src/shared/protocol'
+import type { Command, EventFrame } from '../src/shared/protocol'
 
 const directories: string[] = []
 const tokenReport = { max_tokens: 32000, used_tokens: 20, remaining_tokens: 31980, used_ratio: 20 / 32000, remaining_ratio: 31980 / 32000, sections: Object.fromEntries(['system_prompt', 'skills', 'mcp', 'memory', 'history'].map(name => [name, { name, tokens: name === 'history' ? 20 : 0, bytes: 0, ratio_of_used: name === 'history' ? 1 : 0, ratio_of_max: name === 'history' ? 20 / 32000 : 0, description: name }])), summary_text: '上下文估算 20 / 32000' }
@@ -22,18 +22,13 @@ function setup() {
     if (method === 'model.test' || method === 'mcp.test' || method === 'run.stop' || method === 'session.delete') return {}
     throw new Error(`Unexpected bridge method: ${method}`)
   })
-  let user: UserProfile | null = { userID: 7, realName: 'test', userName: 'test', userAvatar: '', userPhone: '', userCredit: 0, isCo: false, isBeta: false }
-  const application = new DesktopApplication(directory, { request } as unknown as Backend, () => user, frame => events.push(frame))
+  const application = new DesktopApplication(directory, { request } as unknown as Backend, (frame: EventFrame) => events.push(frame))
   const command = (method: string, params = {}, id = randomUUID()) => application.serial(() => application.command({ id, method, params } as Command))
-  return { application, command, request, snapshots, events, directory, logout: () => { user = null } }
+  return { application, command, request, snapshots, events, directory }
 }
 function event(run: string, thread: string, type: string, data = {}): EngineEvent { return { run_id: run, thread_id: thread, type, data, operation_id: 'call', name: 'test', agent_name: null } }
 
-it('boots without login, then creates projects and restores isolated sessions from disk', async () => {
-  const s = setup(); s.logout(); await s.application.initialize()
-  expect(await s.command('session.snapshot')).toMatchObject({ messages: [], session_id: '' })
-  expect(await s.command('session.search', { query: '' })).toEqual([])
-  await expect(s.command('project.create', { name: 'x' })).rejects.toThrow('登录')
+it('creates projects and restores isolated sessions from disk', async () => {
   const t = setup(); await t.application.initialize()
   await expect(t.command('project.create', { name: ' ' })).rejects.toThrow('名称')
   await t.command('project.create', { name: '研究项目' })
@@ -43,7 +38,7 @@ it('boots without login, then creates projects and restores isolated sessions fr
   expect(second.session_id).not.toBe(first.session_id)
   expect(await t.command('session.search', { query: '历史' })).toHaveLength(1)
   await t.command('session.resume', { session_id: first.session_id })
-  const restored = new DesktopApplication(t.directory, { request: t.request } as unknown as Backend, () => t.application.state().user, () => {})
+  const restored = new DesktopApplication(t.directory, { request: t.request } as unknown as Backend, () => {})
   await restored.initialize()
   expect(await restored.command({ id: 'snapshot', method: 'session.snapshot', params: {} })).toMatchObject({ session_id: first.session_id })
   await t.command('session.delete', { session_id: second.session_id })
@@ -192,7 +187,7 @@ it.each(['model.started', 'tool.started'])('saves an in-flight %s run once when 
   expect(s.events.at(-1)).toEqual(exited)
 
   s.request.mockImplementation(original)
-  const restored = new DesktopApplication(s.directory, { request: s.request } as unknown as Backend, () => s.application.state().user, () => {})
+  const restored = new DesktopApplication(s.directory, { request: s.request } as unknown as Backend, () => {})
   await restored.initialize()
   const result = await restored.command({ id: 'snapshot', method: 'session.snapshot', params: {} }) as any
   expect(result).toMatchObject({ session_id: snapshot.session_id, runs: [{ id: run, status: 'failed', records: [expect.objectContaining({ operation_id: 'call' })] }] })
@@ -220,7 +215,7 @@ it('settles the current session unfinished run after application restart without
   const snapshot = await s.command('session.snapshot') as any, run = randomUUID()
   await s.command('run.start', { text: '执行任务' }, run)
   s.request.mockClear()
-  const restored = new DesktopApplication(s.directory, { request: s.request } as unknown as Backend, () => s.application.state().user, () => {})
+  const restored = new DesktopApplication(s.directory, { request: s.request } as unknown as Backend, () => {})
   await restored.initialize()
   const result = await restored.command({ id: 'snapshot', method: 'session.snapshot', params: {} }) as any
   expect(result).toMatchObject({ session_id: snapshot.session_id, runs: [{ id: run, status: 'failed', records: [] }] })
@@ -256,7 +251,7 @@ it('passes explicit selections and resumes a structured plugin approval only for
   await s.command('interaction.answer', { run_id: run, interaction_id: 'approval-1', answer: 'approve' })
   expect(s.request).toHaveBeenCalledWith('run.resume', { thread_id: snapshot.thread_id, run_id: run, decisions: { 'approval-1': { request_id: 'req-1', approved: true } } })
   expect(s.application.storage().authorizedPlugins()).toEqual(['research.citations'])
-  const restored = new DesktopApplication(s.directory, { request: s.request } as unknown as Backend, () => s.application.state().user, () => {})
+  const restored = new DesktopApplication(s.directory, { request: s.request } as unknown as Backend, () => {})
   await restored.initialize()
   expect(s.request.mock.calls.filter(([method]) => method === 'configure').at(-1)![1].options.authorized_plugins).toEqual(['research.citations'])
   await expect(s.command('interaction.answer', { run_id: run, interaction_id: 'approval-1', answer: 'approve' })).rejects.toThrow('失效')
@@ -322,7 +317,7 @@ it.each([true, false])('restores a durable paused run after backend exit when in
   s.application.receive({ event: 'backend.exited', data: { message: 'Python exited while paused' } })
   await s.application.serial(async () => {})
   expect(s.request).not.toHaveBeenCalled()
-  const restored = new DesktopApplication(s.directory, { request: s.request } as unknown as Backend, () => s.application.state().user, () => {})
+  const restored = new DesktopApplication(s.directory, { request: s.request } as unknown as Backend, () => {})
   await restored.initialize()
   expect(await restored.command({ id: 'snapshot', method: 'session.snapshot', params: {} })).toMatchObject({ runs: [], active_run: { id: run, records: [expect.objectContaining({ kind: 'workflow.node' })] } })
   await restored.command({ id: 'answer', method: 'interaction.answer', params: { run_id: run, interaction_id: 'question-1', answer: '说明' } })

@@ -23,12 +23,6 @@ const api: DesktopAPI = {
   /** 向 Python 后端发送标准 JSON-RPC 命令 */
   command: (command: Command) => ipcRenderer.invoke('backend:command', command),
 
-  /** 调起 MedPeer SSO 登录模态窗口 */
-  login: () => ipcRenderer.invoke('auth:login'),
-
-  /** 注销当前用户登录状态并清除本地凭据 */
-  logout: () => ipcRenderer.invoke('auth:logout'),
-
   /** 使用系统默认程序打开生成的交付物成果文件 */
   openArtifact: (path: string) => ipcRenderer.invoke('artifact:open', path),
 
