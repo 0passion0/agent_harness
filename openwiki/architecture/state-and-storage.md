@@ -1,107 +1,76 @@
 ---
 type: concept
-title: 状态隔离与分层存储
-description: 剖析短时会话 Checkpointer、多租户命名空间 SHA-256 身份隔离、SqliteStore 持久化生命周期以及 CompositeBackend 虚拟文件系统路由机制。
-tags: [storage, sqlite, state-management, multi-tenancy, backends]
+title: 状态管理、检查点与文档后端
+description: 剖析 CheckpointFactory 会话检查点生命周期、StoreFactory 键值存储持久化以及 DocumentFilesystemBackend 文档读取与文件操作。
+tags: [storage, sqlite, state-management, checkpoint, markitdown, document-backend]
 sources:
-  - id: openwiki-source-92998700fd6d64010a4cecca
-    resource: repo://packages/agent-harness/src/vertical_harness/storage/backends.py
-  - id: openwiki-source-03421093e23299854e4dcf40
-    resource: repo://packages/agent-harness/src/vertical_harness/storage/namespace.py
-generated: { by: "antigravity", at: "2026-10-19T02:30:03.285Z" }
+  - id: openwiki-source-b2d3c4fe5f46c92d7d63b4ff
+    resource: repo://packages/agent-harness/src/vertical_harness/storage/checkpoint.py
+  - id: openwiki-source-98010c0db5dd2894595be8e5
+    resource: repo://packages/agent-harness/src/vertical_harness/storage/document_backend.py
+  - id: openwiki-source-65d4a856be05761cb8003001
+    resource: repo://packages/agent-harness/src/vertical_harness/storage/store.py
 verified:
   - by: openwiki/0.7.2
-    at: 2026-10-19T05:51:52.758Z
+    at: 2026-10-21T02:48:18.086Z
+generated: { by: "antigravity", at: "2026-10-21T02:48:18.086Z" }
 ---
 
-# 状态隔离与分层存储
+# 状态管理、检查点与文档后端
 
-在复杂 Agent 系统中，不同生命周期的状态必须进行物理与逻辑分离。`vertical-agent-harness` 严格将系统状态划分为短时会话、长期知识库与工作区产物三层，并在 `vertical_harness.storage` 子包（含 [storage/namespace.py](../../packages/agent-harness/src/vertical_harness/storage/namespace.py) 与 [storage/backends.py](../../packages/agent-harness/src/vertical_harness/storage/backends.py)）中依托 LangGraph 原生 `SqliteStore` 与 Deep Agents `CompositeBackend` 实现了透明解耦存储。
+在垂直领域智能体宿主中，状态持久化与文件交互构成了智能体与用户交互的基础。`vertical-agent-harness` 在 `vertical_harness.storage` 模块中提供了会话检查点工厂 `CheckpointFactory`、状态存储工厂 `StoreFactory`，以及基于 MarkItDown 的虚拟文件系统后端 `DocumentFilesystemBackend`。
 
-## 1. 三类状态分离原则
+## 1. 状态生命周期划分
 
-根据 [docs/ARCHITECTURE.md](../../docs/ARCHITECTURE.md)，系统定义了三种正交的状态生命周期：
+根据 [docs/ARCHITECTURE.md](../../docs/ARCHITECTURE.md)，系统将状态清晰划分为检查点与文件产物两类：
 
-1. **短期会话状态 (Thread State / Checkpointer)**：
-   - 包含当前会话消息列表、Agent 执行计划、中间状态；
+1. **短期会话与执行图状态 (Checkpointer)**：
+   - 包含当前会话消息序列、智能体执行计划与中间节点状态；
    - 关联具体的 `thread_id`；
-   - 本地开发与 CLI 默认使用 SQLite Checkpointer（`SqliteSaver` / `AsyncSqliteSaver`，路径 `<runtime_data_dir>/checkpoints.sqlite`），配合 `durability="sync"` 确保每个节点执行后同步落盘，支持跨进程恢复与 Time Travel 回放；生产部署可注入分布式持久化 Checkpointer（如 Postgres）。
-2. **长期记忆与偏好 (Long-term Store)**：
-   - 存储跨线程的项目偏好、经过核准的专业记忆与业务策略；
-   - 依托 LangGraph 原生 `BaseStore`（默认提供 `SqliteStore` 与 `AsyncSqliteStore`）；
-   - 按 `(tenant_id, user_id, bucket)` 命名空间进行多租户物理与逻辑隔离。
-3. **工作区产物与文件证据 (Artifacts / Filesystem)**：
-   - 用户手稿、原始输入文件、分析草稿与不可变证据；
-   - 存放在由 `FilesystemBackend` 托管的物理工作区磁盘目录中（默认 `./.agent-workspace`）。
+   - 默认通过 SQLite 检查点保存器（`SqliteSaver` / `AsyncSqliteSaver`）实现持久化，测试与临时环境支持内存模式（`InMemorySaver`）。
+2. **工作区产物与文档数据 (Document Filesystem Backend)**：
+   - 包含用户输入文档、分析中间产物与生成成果；
+   - 托管在由 `DocumentFilesystemBackend` 管理的物理工作区磁盘目录中（默认 `./.agent-workspace`）。
+3. **用户数据资产保护硬约束**：
+   - 聊天会话记录、上传附件、交付产物与 SQLite 数据库均属于不可替代的用户资产，任何代码清理与重构操作严禁删除。
 
-## 2. 多租户命名空间确定性哈希隔离 (`storage/namespace.py`)
+## 2. CheckpointFactory 检查点生命周期 (`storage/checkpoint.py`)
 
-LangGraph 原生 `SqliteStore` 在底层使用点号 `.` 作为命名空间分段的拼接分隔符（例如 `ns1.ns2.ns3`）。为了彻底避免特殊字符破坏底层分隔符或在清洗过程中产生哈希碰撞，系统采用确定性 SHA-256 身份隔离机制：
+[packages/agent-harness/src/vertical_harness/storage/checkpoint.py](../../packages/agent-harness/src/vertical_harness/storage/checkpoint.py) 负责管理 LangGraph 检查点保存器的生命周期：
 
-```python
-def _identity_segment(value: str | None) -> str:
-    if not isinstance(value, str) or not value.strip():
-        raise ValueError("Memory namespaces require nonempty trusted tenant/user/bucket IDs")
-    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+- **连接串预备 (`_prepare_checkpoint_conn_string`)**：解析 `settings.resolved_checkpoint_target`，当为文件路径时自动递归创建父目录。
+- **即用型检查点创建 (`create_checkpointer`)**：
+  - 纯内存模式返回 `InMemorySaver()`。
+  - SQLite 模式建立跨线程共享连接并执行 `checkpointer.setup()` 完成表结构初始化。
+- **同步上下文管理器 (`open_checkpointer`)**：基于 `SqliteSaver.from_conn_string` 安全打开并执行 `setup()`，退出上下文时安全关闭连接。
+- **异步上下文管理器 (`aopen_checkpointer`)**：基于 `AsyncSqliteSaver.from_conn_string` 管理异步生命周期。
 
-def tenant_memory_namespace(
-    runtime: Runtime[RunContext] | None = None,
-    *,
-    bucket: str = "memories",
-) -> tuple[str, ...]:
-    context = getattr(runtime, "context", None) if runtime is not None else None
-    return (
-        "file_memory_v2",
-        _identity_segment(getattr(context, "tenant_id", None)),
-        _identity_segment(getattr(context, "user_id", None)),
-        _identity_segment(bucket),
-    )
-```
+## 3. StoreFactory 键值存储生命周期 (`storage/store.py`)
 
-- **Fail-Fast 强校验**：拒绝空值或全空白字符，杜绝未经授权共享或静默回退到全局默认租户。
-- **SHA-256 摘要隔离**：通过 `_identity_segment` 计算 UTF-8 编码的 64 位十六进制 SHA-256 哈希元组，避免命名空间注入攻击与字符污染。
-- **显式迁移工具 (`copy_memory_namespace`)**：提供安全的只读扫描与幂等写入迁移工具，在核准所有权后安全将历史条目复制至新命名空间，杜绝覆盖风险。
+[packages/agent-harness/src/vertical_harness/storage/store.py](../../packages/agent-harness/src/vertical_harness/storage/store.py) 统一封装了原生 LangGraph `BaseStore` 的实例创建与连接管理：
 
-## 3. SqliteStore 生命周期管理 (`storage/backends.py`)
+- **模式切换**：根据 `settings.store_backend` 分流纯内存（`StoreBackendType.MEMORY`）与 SQLite（`StoreBackendType.SQLITE`）。
+- **初始化 setup()**：建立连接时自动执行 `store.setup()`，确保底层键值表结构与索引就绪。
+- **上下文管理**：提供同步 `open_store` 与异步 `aopen_store`，保障连接句柄的优雅释放。
 
-[packages/agent-harness/src/vertical_harness/storage/backends.py](../../packages/agent-harness/src/vertical_harness/storage/backends.py) 封装了基于文件的 SQLite 与内存存储生命周期：
+## 4. DocumentFilesystemBackend 虚拟文档系统 (`storage/document_backend.py`)
 
-- **连接路径预备 (`_prepare_conn_string`)**：基于 `settings.resolved_store_target` 获取目标路径；若为本地文件 `Path`，自动递归创建父目录。
-- **直接创建与自动化表初始化 (`create_store`)**：建立连接时指定 `check_same_thread=False` 与 `isolation_level=None`（自动提交模式），实例化 `SqliteStore` 后自动调用 `store.setup()` 创建底层键值表结构与索引。
-- **上下文管理器**：
-  - 同步接口：`open_store(settings)` 利用 `SqliteStore.from_conn_string` 管理连接并在进入上下文时执行 `store.setup()`。
-  - 异步接口：`aopen_store(settings)` 利用 `AsyncSqliteStore.from_conn_string` 提供异步生命周期并执行 `await store.setup()`。
-  - 纯内存模式：当配置 `settings.store_backend == StoreBackendType.MEMORY` 时，优雅降级为 `InMemoryStore()`。
+[packages/agent-harness/src/vertical_harness/storage/document_backend.py](../../packages/agent-harness/src/vertical_harness/storage/document_backend.py) 继承自 DeepAgents 的 `FilesystemBackend`，实现了工作区文件系统协议与多模态文档格式提取：
 
-## 4. CompositeBackend 虚拟文件系统挂载
-
-为了让大模型使用直观的文件操作工具（如读取 `/memories/AGENTS.md`）而无需学习专有 API，系统通过 `compose_backend` 实现了复合后端挂载：
-
-```mermaid
-flowchart LR
-    A["Agent 虚拟文件系统访问"] --> B{"路径前缀判断"}
-    B -- "/draft.txt" --> C["FilesystemBackend (直接写入物理磁盘)"]
-    B -- "/memories/..." --> D["StoreBackend (重定向至 SqliteStore)"]
-```
-
-- **物理工作区映射**：默认路由指向 `FilesystemBackend(root_dir=str(workspace_root), virtual_mode=True)`，文件真实落盘在本地目录。
-- **记忆路由重定向**：使用 `PurePosixPath` 规范化虚拟记忆路由前缀（默认 `/memories/`），通过 `StoreBackend(store=store, namespace=namespace_factory)` 拦截并透明转换为对 `SqliteStore` 的键值存取，绝不会在磁盘上创建物理子目录。
-- **测试验证**：在 [tests/test_store.py](../../tests/test_store.py) 中针对隔离性进行了回归验证，确认向 `/memories/AGENTS.md` 写入的内容仅存在于 SQLite 数据库内，磁盘上无物理对应文件。
-
-## 5. Checkpoint 持久化与 Time Travel Fork (`engine/time_travel.py`)
-
-为支持跨进程会话恢复、确定性调试与分支实验，框架深度集成了 LangGraph Checkpointer 与 Deep Agents 的同步落盘机制：
-
-- **同步持久化 (`durability="sync"`)**：默认启用同步持久化策略，无论是主智能体 Supervisor 还是挂载的 `CompiledSubAgent` 工作流，每一步节点执行完毕后均同步落盘至 SQLite 检查点数据库（`SqliteSaver` / `AsyncSqliteSaver`），避免异步落盘导致的状态滞后或丢失。
-- **检查点历史检索与快照**：通过 `get_checkpoint_history(agent, thread_id)` 与 `get_checkpoint_snapshot(agent, thread_id, checkpoint_id)` 检索会话的完整快照链，输出包含 `checkpoint_id`、父检查点、当前活跃节点 `next_nodes` 与更新时间的时间线。
-- **Time Travel 原地回放与状态分叉 (`fork_checkpoint` / `time_travel_invoke`)**：
-  - **原地回放**：通过指定 `--checkpoint-id` 直接从历史状态恢复执行。
-  - **状态注入分叉**：支持注入 `--update-state` 覆盖历史消息或上下文参数，探索不同决策路径。
-  - **跨线程分支 (Fork)**：支持通过 `--fork-thread-id` 将历史检查点完整克隆至新线程，新旧线程彼此隔离，互不干扰。
-  - **策略一致性保障**：由于 `SupervisorPolicyMiddleware` 直接从当前检查点的 `messages` 历史重建调度次数与状态，执行 Time Travel 回溯或分叉后，工作流监督策略自动与回溯点保持严格一致。
+- **Office 与 PDF 高保真 Markdown 读取**：
+  - 支持 `.pdf`、`.docx`、`.xlsx`、`.xlsm`、`.pptx` 等多种主流文档格式。
+  - 集成 MarkItDown 将二进制文档动态转换为结构化 Markdown 文本，并配备最近文档缓存（`_document_cache`）避免重复解析。
+- **分页读取与文本保护**：
+  - `read(file_path, offset, limit)` 支持行级分页读取，默认单次上限 2000 行，有效防止大文件撑爆大模型上下文窗口。
+  - 读取时自动验证非二进制 UTF-8 编码，遇到非文本二进制文件安全提示智能体使用专用脚本处理。
+- **原子化文件写入与精准局部编辑**：
+  - `write` 操作采用临时文件加原子重命名（`replace`）机制，杜绝部分写入导致的文件损坏。
+  - `edit` 操作提供基于行与字符串的精准匹配替换（`EditResult`），智能体只需提供最小唯一修改上下文，禁止全文件盲目重写。
+- **工作区边界约束**：
+  - 严格限制在 `root_dir` 内操作，禁止通过 `../` 目录穿越逃逸到宿主敏感目录。
 
 ## 相关页面
 
-- [Harness 系统架构与核心组装](./overview.md)：查看 `build_agent` 如何调用 `compose_backend`。
-- [环境变量配置与运维部署](../operations/configuration.md)：查看存储后端配置与数据库路径推断规则。
-- [MedPeer 桌面前端工作台](../integrations/desktop-workbench.md)：了解桌面工作台的独立本地数据持久化与账户目录结构。
+- [Harness 系统架构与核心组装](./overview.md)：了解状态后端在 AgentComposer 中的装配。
+- [动态模型路由与模型适配](./model-routing.md)：查看状态上下文在模型路由中的应用。
+- [桌面端集成与 JSON-RPC 通信](../integrations/desktop-workbench.md)：了解桌面事件循环中的检查点回放。

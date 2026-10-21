@@ -1,18 +1,18 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:7bb77e6eebe66cbebf20d16e7e82f02722b75074cebdcf25267218cf646ad620",
+  "pageVersion": "sha256:3174a3c36fea0b09aaeb08900059a37f4f68dfd0d3738281fbb4ba28aafc5b6b",
   "claims": [
     {
       "id": "claim_6467ab64523a43faaf57ff219e85441d",
-      "statement": "make_router 通过 settings.has_dynamic_routing 检查 VA_ECONOMY_MODEL 与 VA_QUALITY_MODEL，若两者均未配置则返回 None，若仅配置其一则抛出 ValueError，保证配置成对生效。",
+      "statement": "ModelRouting.make_router 通过 settings.has_dynamic_routing 检查 VA_ECONOMY_MODEL 与 VA_QUALITY_MODEL，若两者均未配置则返回 None，若仅配置其一则抛出 ValueError，保证配置成对生效。",
       "evidence": [
         {
-          "resource": "repo://packages/agent-harness/src/vertical_harness/config/settings.py#L248-L265",
-          "version": "repo-lines-v1:sha256:c4d4702c7b9e191a5cd12d3bb1b9a56cda427d401c3a0f6b2e84f73f7ed8a566:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM4YmRhMjAzYTZiMmQ0Mjk5NjAyYTllNDdmMWJiZjJkMTM2ZmVhODQ3NDc3NDQ3ODNhOTRhY2Y3YjdlODU3YTYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdlYjcwMjU3NTkzZGEwNmY2ODJhM2RkZGE1NGE5ZDI2MGQ0ZmM1MTRmNjQ1MjM3ZjVjYTc0YjA4ZjhkYTYxYTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjNkYzg3YWIwMTQ3OTRmMGQ3ZDE1NTc1YWQ3YjU3OTJhOWRmOTU3OTg4NjBjNTNlMzc5MzZjZjNkNzZjMDNhOWIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjY3M2E0MDJkNjNiYzRmOWExZGU0OGE5YzRmMDE2NDljNDgyMThkYzExYTc2MWY3YjIwYjRiN2I2NjY2N2VlMzEifQ"
+          "resource": "repo://packages/agent-harness/src/vertical_harness/config/settings.py",
+          "version": "repo-file-v1:sha256:21b2091d0f8944714b3c74842c8046e631ffe2e6b088d6dcd0d56367377281a2"
         },
         {
-          "resource": "repo://packages/agent-harness/src/vertical_harness/engine/routing.py#L46-L66",
-          "version": "repo-lines-v1:sha256:4782056492d0e0b7146b3381d8392b815af30f5ee209f5862c78036a906051b9:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBkYTVmMzVkOWE0N2NkNDUxYjg5NTk0NjRiMzQyZDhjMDdkZDM1ZmI3Mzc0ZjBmZWEyZmI1OGI0NjhiZDRhMWYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdlYjcwMjU3NTkzZGEwNmY2ODJhM2RkZGE1NGE5ZDI2MGQ0ZmM1MTRmNjQ1MjM3ZjVjYTc0YjA4ZjhkYTYxYTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ1MTBiN2IzNmFmZjU3M2FkNzc1MGQ4MDQxNzU1M2NmYjZhZDQ2N2MyMDE3NjllY2MwNGJlYzQwZmFiYzQ1NjMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjRjNzc0NjdiNjgxZjljYWFjMDA3ZGMxOGZjOTcyYTQ5MzJlNjY1ZTgyNjBkNjU2ZjRmMWRjNTRkYmMyMzI1OTYifQ"
+          "resource": "repo://packages/agent-harness/src/vertical_harness/core/routing.py",
+          "version": "repo-file-v1:sha256:6707d1f34ab610f0d42b44656f7c7cf342958131e4fbebd056796ae8b3e1124d"
         }
       ]
     },
@@ -21,28 +21,28 @@
       "statement": "动态路由中间件通过 LangChain 的 wrap_model_call 与 awrap_model_call 拦截同步与异步模型调用，从 request.runtime.context 读取 task_tier（默认为 TaskTier.QUALITY），并在 task_tier 为 TaskTier.ECONOMY 时重定向到经济型模型，其余情况走高品质模型。",
       "evidence": [
         {
-          "resource": "repo://packages/agent-harness/src/vertical_harness/engine/routing.py#L67-L139",
-          "version": "repo-lines-v1:sha256:5f5e0aad034a90b2d0f36583345eb3a781f352a43bcdb32bd74e66f88090c6cd:eyJzZWxlY3RlZExpbmVDb3VudCI6NzMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM3NThkZjczZmM4N2I2ZTU2YzEyM2VjNzVhZjkwOWNjZjFiNGY0YjYxMjUzNDQ5ZmYxMWM3OTVlNWU2N2FkNmEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI5ZGFmOTdlODgzYzRjNzE0NzZhNjI0NzVkNzY2ZTBhYmQ5ZWZmZDYzZWVkYzVhOTQyYmI4MWRmYjQ1NzAyNGYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImI5MWQzMWUwMTc1ZTZkMzhiYjE5ODUyMjMzNmRiMzllMzQwNTRlZWQ4YzUyZDc5M2ZhMzdiNTRkNTlmNWQ4YmUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU1OTM5ZjQ4YTM2MmJjNjlkMzQwNmIyM2U2YzI3OWRiMGYzYjJiZWZlY2UxMGY5MWNiNjU0NGFkY2FjZTU1YjEifQ"
+          "resource": "repo://packages/agent-harness/src/vertical_harness/middleware/routing.py",
+          "version": "repo-file-v1:sha256:4c1ce0d4ab4b669e539ed3ad8f490f6bcd7a798cbdd6c8cf218d2a601aaed1aa"
         }
       ]
     },
     {
       "id": "claim_9228ca67bd1a413c9eccebaf0cc6538d",
-      "statement": "init_configured_model 封装了 LangChain init_chat_model，通过 HarnessSettings.model_init_kwargs 安全解包 api_key 的 SecretStr 并透传非空 base_url。",
+      "statement": "ModelRouting.init_configured_model 封装了 LangChain init_chat_model，通过 HarnessSettings.model_init_kwargs 安全解包 api_key 的 SecretStr 并透传非空 base_url。",
       "evidence": [
         {
-          "resource": "repo://packages/agent-harness/src/vertical_harness/config/settings.py#L231-L246",
-          "version": "repo-lines-v1:sha256:1e48071206888a409c0a361b3884f9dfada2e5ece7b8c36824b0bc700ba9af0b:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM4YmRhMjAzYTZiMmQ0Mjk5NjAyYTllNDdmMWJiZjJkMTM2ZmVhODQ3NDc3NDQ3ODNhOTRhY2Y3YjdlODU3YTYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQxZWVjNGExMjhmMDY2MTQ5Nzk2ZDg5ZTQ3Yzk5MTg0NjYxZGJhYTVhM2UyYjI0Yzg1ZDlhMWFiNmI4ODM4MjUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE2ZjgzNDZkZGNlOGY2Mzc3NTU1MmNjOTZlMWMxMjk5Y2MwMjhmMDI1NmE1NmYyNGQxZWVlMWNmNTMwMjc4ZTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQxZmE3ZGE1NzY3ZjRiMTNhNjFmYzc1NzgzMTNmNTI4NmFkZWIzNWU4YTI0NjYwZDU5NjMyY2M1MjAwMzQzMjkifQ"
+          "resource": "repo://packages/agent-harness/src/vertical_harness/config/settings.py",
+          "version": "repo-file-v1:sha256:21b2091d0f8944714b3c74842c8046e631ffe2e6b088d6dcd0d56367377281a2"
         },
         {
-          "resource": "repo://packages/agent-harness/src/vertical_harness/engine/routing.py#L22-L43",
-          "version": "repo-lines-v1:sha256:17b670f7ce76fc62f0c53f7868f56b7cf9bea6c01e3f55a613fe39554847781f:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA2NjI3YTc2ZjZhM2ExMjBhMWUxOGUxOWE5MDQ0NDk1ZDI1OThjMGFkMTU5MGViOGZiNzZjMTJlZTlkMTgzZmQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI2MmM5MzVmOTkyOGY2MWE3ZDQ5ZjVhZGIzOTRjZjQxOGVjNWM3OTM0MmE5ZThlZmM2NzE0NzE5MTBhOGI4N2EiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRmNTIxOGRkNWVjM2EwZmIyNjRhNzQ1MDYyMjc0YzhhYTE0M2NjYTVmNjFlMWU3ZDdkY2IyMTBiMzJiYTEzMjQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU0ZWQwYzNmZmY0YjAyOWMxMzE1MDJlNmYxMjc2ZjE2MDE5MmJhMjM5ZDg1ODM5YjlkNjU5YWMxYTE3Mjk0YjAifQ"
+          "resource": "repo://packages/agent-harness/src/vertical_harness/core/routing.py",
+          "version": "repo-file-v1:sha256:6707d1f34ab610f0d42b44656f7c7cf342958131e4fbebd056796ae8b3e1124d"
         }
       ]
     }
   ],
   "verification": {
     "by": "openwiki/0.7.2",
-    "at": "2026-10-19T05:51:52.758Z"
+    "at": "2026-10-21T02:48:18.086Z"
   }
 }

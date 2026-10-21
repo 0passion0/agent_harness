@@ -1,22 +1,22 @@
 ---
 type: concept
-title: 测试架构与质量保证
-description: 分析基于 pytest 的契约单元测试、解析器与 Toolkit 集成测试、安全防御校验（防目录穿越与严格模式）、SQLite 存储生命周期及桌面前端自动化测试。
-tags: [testing, pytest, quality-assurance, regression, contracts, desktop]
+title: 测试体系与质量验证
+description: 分析基于 pytest 的核心单元测试、类结构断言测试、受控文件后端测试、流式事件测试及桌面端自动化验证。
+tags: [testing, pytest, quality-assurance, regression, class-structure, deepagents]
 sources:
-  - id: openwiki-source-83ccb301171788f9ae087a4a
-    resource: repo://tests/test_schema.py
-  - id: openwiki-source-09d2a8f36f3ecb7ab9487ab2
-    resource: repo://tests/test_store.py
-generated: { by: "antigravity", at: "2026-10-19T05:32:42.641Z" }
+  - id: openwiki-source-514d063d3e68d0bfa50ee4a0
+    resource: repo://tests/test_class_structure.py
+  - id: openwiki-source-45067006fb2fec631673a66d
+    resource: repo://tests/test_deepagents_harness.py
 verified:
   - by: openwiki/0.7.2
-    at: 2026-10-19T05:51:52.758Z
+    at: 2026-10-21T02:48:18.086Z
+generated: { by: "antigravity", at: "2026-10-21T02:48:18.086Z" }
 ---
 
-# 测试架构与质量保证
+# 测试体系与质量验证
 
-`vertical-agent-harness` 贯彻“测试驱动与确定性验证优先”原则。系统并未将业务正确性简单托付给不可控的模型自由生成，而是围绕数据契约、安全防御边界、多租户存储隔离与引用核验算法编写了严密的确定性测试套件。
+`vertical-agent-harness` 贯彻“测试驱动与确定性验证优先”原则。系统针对核心架构硬约束、单一主智能体装配、文档文件系统操作、流式事件分发及桌面端交互编写了严密的自动化回归测试套件。
 
 ## 1. 测试套件结构
 
@@ -24,108 +24,81 @@ verified:
 
 ```text
 tests/
-├── conftest.py                # 全局 pytest fixtures 与环境清理
-├── test_data_analysis.py      # 科研数据分析插件、表格画像、报告核验与 8 阶段管道测试
-├── test_evaluation.py         # 评估体系、数据集与评分逻辑测试
-├── test_logging.py            # 应用结构化日志、格式化脱敏、并发上下文与轮转测试
-├── test_mcp.py                # MCP 服务配置、stdio/HTTP 传输、Tool Annotations 与生命周期测试
-├── test_plugin_architecture.py# 后端插件目录单一 py 规范、DomainPlugin ABC 契约与分层隔离测试
-├── test_schema.py             # 数据契约、解析器与 Toolkit 集成、安全防御与配置测试
-├── test_stabilization.py      # 确定性重试、并发稳定性与异常恢复测试
-├── test_store.py              # 原生 SQLite 存储生命周期、异步操作与复合后端隔离测试
-├── test_supervisor_workflows_and_time_travel.py # Supervisor 工作流委派、三层状态契约、监督策略与 Time Travel Fork
-└── test_workflow_logging.py   # 基于本地假模型的完整 Deep Agents 工作流回调执行树测试
+├── conftest.py                   # 全局 pytest fixtures 与环境初始化
+├── test_class_structure.py       # 纯类接口封装与 __all__ 架构硬约束断言
+├── test_deepagents_harness.py    # deepagents.create_deep_agent 单一智能体装配与原生委派测试
+├── test_compose_summarization.py # 90% 上下文容量压缩摘要中间件触发测试
+├── test_filesystem_tools.py     # DocumentFilesystemBackend 与受控文件工具测试
+├── test_logging.py               # 结构化安全日志脱敏与运行上下文追踪测试
+├── test_model_call_limit.py      # 模型调用次数上限熔断防御测试
+├── test_model_content_budget.py  # 请求 Token 预算与内容截断测试
+├── test_model_retry.py           # 模型网络重试与指数退避测试
+├── test_multimodal.py            # 多模态附件转换与图像 Base64 编码测试
+├── test_observability.py         # LangSmith 追踪会话生命周期测试
+├── test_stabilization.py         # 确定性并发稳定性与状态隔离测试
+├── test_store.py                 # StoreFactory 与 CheckpointFactory 持久化生命周期测试
+├── test_streaming.py             # AgentStreaming 流式事件分发与中断处理测试
+├── test_workflow_logging.py      # LangChain 回调生命周期事件追踪测试
+└── desktop/                      # 桌面端专属 Python 桥接集成测试
+    ├── test_attachment_content.py
+    ├── test_bridge.py
+    ├── test_document_backend.py
+    ├── test_python_execution.py
+    ├── test_runtime.py
+    └── test_tool_events.py
 ```
 
-运行全部测试：
-```bash
-pytest -q
+## 2. 核心架构约束断言 (`test_class_structure.py`)
+
+[tests/test_class_structure.py](../../tests/test_class_structure.py) 是系统架构硬约束的看门狗，确保重构与开发过程中不发生架构退化：
+- **纯类接口断言**：断言 `vertical_harness` 所有导出接口均为类，严禁包含孤立的模块级转发函数或已废弃别名（如 `build_agent = AgentComposer.build_agent`）。
+- **`__all__` 规范断言**：断言模块内部 `__all__` 仅包含显式公共类名，无函数别名。
+- **废弃包隔离断言**：断言旧版本中的 `engine/` 与 `aop/` 转发包已被完全物理删除，不存在隐式 `sys.modules` 映射。
+
+## 3. 单一智能体与委派测试 (`test_deepagents_harness.py`)
+
+[tests/test_deepagents_harness.py](../../tests/test_deepagents_harness.py) 覆盖了基于 `deepagents.create_deep_agent` 的核心功能：
+- **智能体图装配**：验证 `AgentComposer.build_agent` 成功组装主智能体图，挂载 `FilesystemMiddleware`、`SummarizationMiddleware`、`ContextLimitMiddleware` 等中间件栈。
+- **原生子任务委派**：验证 `subagents` 包含 `general-purpose` 智能体，且子智能体强制继承主智能体的工作区物理根路径、敏感路径拦截规则与审批配置。
+- **沙箱规则校验**：断言对 `/**/.env`、日志文件与 SQLite 数据库文件的读写请求被安全沙箱拒绝。
+
+## 4. 文件系统与文档后端测试 (`test_filesystem_tools.py`)
+
+[tests/test_filesystem_tools.py](../../tests/test_filesystem_tools.py) 验证基于 MarkItDown 的受控文档后端：
+- **文档读取与缓存**：验证 Office/PDF 二进制文件被正确提取为 Markdown 文本，并测试 LRU 缓存命中机制。
+- **分页与行截断**：测试通过 `offset` 与 `limit` 参数实现文本分页读取，防止超长大文件溢出。
+- **原子修改 (`edit_file`)**：验证基于最小唯一旧字符串的精准局部替换与回滚保护。
+
+## 5. 存储生命周期测试 (`test_store.py`)
+
+[tests/test_store.py](../../tests/test_store.py) 覆盖状态持久化机制：
+- **SQLite 与 Memory 切换**：测试 `StoreFactory.create_store` 在内存模式与 SQLite 模式下的表结构自动初始化（`setup()`）。
+- **同步与异步上下文**：通过 `open_store` 与 `aopen_store` 验证跨会话数据的写入、读取与自动清理。
+
+## 6. 验证执行命令
+
+所有后端验证命令必须在项目本地虚拟环境中执行：
+
+```powershell
+# 运行全部单元测试
+.\.venv\Scripts\python -m pytest
+
+# 代码风格与静态规范检查
+.\.venv\Scripts\python -m ruff check .
+
+# 核心模块类型检查
+.\.venv\Scripts\python -m mypy
 ```
 
-## 2. 数据契约、组件集成与安全防御测试 (`test_schema.py`)
-
-在 [tests/test_schema.py](../../tests/test_schema.py) 中，针对系统边界与子包协同定义了多组关键回归测试：
-
-### 2.1 严格输入防御与引用核查 (`test_schema_rejects_extras` / `test_reference_mismatch`)
-- **拒绝未知字段 (`test_schema_rejects_extras`)**：验证当外部向 `ReferenceCheckInput` 传入未声明字段（如 `unexpected=True`）时，Pydantic 必须抛出 `ValidationError`，防范非预期参数注入。
-- **引用异常精准捕获 (`test_reference_mismatch`)**：传入正文引用 `[1]` 与 `[3]`、但参考文献列表仅有 2 篇的输入样本调用 `scan_numeric`，断言状态判定为 `CheckStatus.ISSUES`，且精确捕获 `(IssueKind.OUT_OF_RANGE, 3)` 与 `(IssueKind.UNCITED, 2)`。
-
-### 2.2 解析器、Toolkit 与 `AgentComposer` 集成 (`test_citation_parser_and_toolkit_integration`)
-- **纯函数解析与评估验证**：断言 `extract_cited_indices("Refs [1, 3-5] and [2].")` 输出 `[1, 2, 3, 4, 5]`，且 `evaluate_references` 在引用完全匹配时返回 `CheckStatus.PASSED`。
-- **`BaseToolkit` 批量包装与 HITL 中断验证**：验证 `ToolContribution.from_toolkit(ResearchCitationToolkit(), effect=SideEffect.WRITE, exposure=Exposure.EAGER)` 自动将 `requires_approval` 置为 `True`，并生成 `{"allowed_decisions": ["approve", "reject"]}` 中断配置。
-- **`AgentComposer` 插件注册验证**：验证 `ResearchCitationPlugin` 满足 `@runtime_checkable` 的 `DomainPlugin` 协议，且注册到 `AgentComposer` 后成功挂载工作流 `citation_audit`（`composer.workflows`）、将门控工具归入 `gated_tools`，并将技能文件挂载至 `/skills/research-citations-numeric-citation-audit/SKILL.md`。
-
-### 2.3 防目录遍历与标识符校验 (`test_plugin_contract`)
-- **恶意插件 ID 拦截**：断言包含路径遍历字符的插件标识符（如 `../../evil`）无法通过 `PluginManifest` 校验。
-- **恶意技能路径拦截**：断言包含 `..` 相对跳转符的技能路径（如 `../hack/SKILL.md`）必须被 `SkillAsset` 字段校验器拦截，防止攻击者读取或覆盖宿主私有文件。
-
-### 2.4 业务规则、模型显式配置与 CLI 验证
-- **已核实结论必须有证据 (`test_verified_finding_requires_evidence`)**：验证 `AuditFinding` 当 `status="verified"` 时若证据为空，必须抛出校验异常。
-- **模型显式配置与 CLI 插件列表 (`test_settings_require_explicit_model`)**：在清除环境变量 `VA_MODEL` 的情况下，实例化 `HarnessSettings` 必须因缺少必填项而报错，禁止静默回退到默认模型；显式配置后验证 `model_init_kwargs` 解包行为，并通过 `cli_main(["--list-plugins"])` 验证 CLI 正常输出 `research.citations` 插件清单。
-
-## 3. 存储生命周期与隔离测试 (`test_store.py`)
-
-在 [tests/test_store.py](../../tests/test_store.py) 中，对底层存储和文件系统的解耦机制进行了深入验证：
-
-### 3.1 同步与异步 SQLite 生命周期
-- **跨会话持久化 CRUD (`test_native_sqlite_store_lifecycle_and_crud`)**：
-  - 会话 1：通过 `open_store` 写入用户偏好键值数据，上下文退出并关闭连接。
-  - 会话 2：重新调用 `open_store` 打开数据库，验证数据可被正确重载读取，并在执行 `delete` 后返回 `None`。
-  - 文件物理验证：断言工作区根目录下确实生成了 `store.sqlite` 文件。
-- **异步存储验证 (`test_native_async_sqlite_store_lifecycle`)**：通过 `aopen_store` 异步上下文管理器验证对 `AsyncSqliteStore` 的 `aput` 与 `aget` 操作。
-
-### 3.2 复合后端存储路由与字符清洗
-- **工作区与记忆隔离 (`test_composite_backend_routes_memories_to_sqlite_store`)**：
-  - 普通文件写入（如 `/draft.txt`）直接在本地磁盘工作区中创建物理文件。
-  - 长期记忆文件（如 `/memories/AGENTS.md`）通过 `CompositeBackend` 被路由重定向至 `SqliteStore`，**磁盘上绝不会创建 `memories/` 物理文件夹**。
-  - 命名空间身份哈希隔离验证：针对包含点号的租户 ID `lab.a` 与用户 ID `researcher.7`，断言其在存储中通过确定性 SHA-256 摘要派生为合法的命名空间元组，避免破坏 LangGraph 命名空间分隔。
-
-## 4. Supervisor 工作流与 Time Travel 回溯测试 (`test_supervisor_workflows_and_time_travel.py`)
-
-在 [tests/test_supervisor_workflows_and_time_travel.py](../../tests/test_supervisor_workflows_and_time_travel.py) 中，对 Supervisor 委派机制、三层状态隔离、监督治理策略与检查点分叉进行了全链路回归覆盖：
-
-### 4.1 三层状态模式隔离与参数提取测试
-- **三层模式强制约束 (`test_workflow_contribution_requires_explicit_schemas`)**：验证 `WorkflowContribution` 实例化时若缺少 `internal_state`、`input_schema` 或 `output_schema` 必须抛出 `ValidationError`。
-- **消息提取与纯文本提取 (`test_citation_workflow_standalone_message_extraction`)**：验证工作流入口节点支持直接从 `HumanMessage` 纯文本或 Markdown ` ```json ` 代码块提取入参并执行 Pydantic 严格校验。
-
-### 4.2 确定性监督策略治理 (`SupervisorPolicyMiddleware`)
-- **白名单与租户 RBAC 拦截 (`test_supervisor_policy_blocks_unauthorized_plugin`)**：验证当主智能体试图调用未注册的工作流或无权限租户时，中间件直接拦截并返回友好错误。
-- **依赖关系顺序校验 (`test_supervisor_policy_enforces_workflow_dependencies`)**：验证声明了 `depends_on` 的工作流在前置任务未成功执行前被阻断委派。
-- **调度上限防御 (`test_supervisor_policy_enforces_max_dispatches`)**：验证超过 `max_dispatches` 重试阈值后立即熔断，防止主智能体与工作流陷入无限死循环。
-- **结果幂等复用与结构验收 (`test_supervisor_policy_idempotent_result_reuse`)**：验证相同输入载荷的工作流调度直接复用已验收的输出，避免重复计算。
-
-### 4.3 同步落盘与 Time Travel Fork 测试
-- **跨进程会话恢复与历史追踪 (`test_sqlite_checkpointer_durability_and_history`)**：通过 `open_checkpointer` 验证 SQLite 检查点每步同步写入，并由 `get_checkpoint_history` 完整还原快照时间线。
-- **状态注入与跨线程分叉 (`test_time_travel_fork_to_new_thread`)**：验证 `fork_checkpoint` 支持从指定 `checkpoint_id` 原地回放或分叉至 `--fork-thread-id`，并验证分叉后新旧线程状态彼此独立。
-
-## 5. MCP 服务适配与 Tool Annotations 测试 (`test_mcp.py`)
-
-在 [tests/test_mcp.py](../../tests/test_mcp.py) 中，全面覆盖了 MCP 连接配置、传输层适配、工具发现命名空间与 Tool Annotations 信任边界：
-
-### 5.1 配置校验与传输层测试
-- **Pydantic 校验与凭证保护**：测试 `MCPStdioServer`（本地子进程命令、不经过 shell、`env` 环境变量使用 `SecretStr` 脱敏）与 `MCPHttpServer`（Streamable HTTP URL、自定义请求头）。
-- **stdio 与 HTTP 真实生命周期 (`test_real_stdio_and_streamable_http`)**：基于 FastMCP 启动测试服务，验证 `aopen_mcp_tools` 自动建立连接并生成带服务名前缀的工具（如 `local_echo`、`remote_echo`）。
-
-### 5.2 Tool Annotations 顾问元数据与审批拦截
-- **注解安全读取 (`test_mcp_annotations_are_advisory_metadata`)**：验证通过 `ToolContribution.mcp_annotations` 从底层 `metadata["mcp"]["tool"]["annotations"]` 安全提取 `title`、`read_only_hint` 等 snake_case 顾问提示。
-- **不可信提示标注 (`untrusted hints`)**：在生成的 `to_interrupt_config()` 的 `description` 中明确包含服务端注解 JSON，并显著标注其为“不可信提示”（untrusted hints）。
-- **审批安全不降级**：验证服务端提供的 `read_only_hint=True` 不会破坏宿主声明的副作用策略，凡配置为 `effect="external"` 或 `"write"` 的 MCP 工具仍必须触发 `approve`/`reject` 审批。
-
-### 5.3 连接容错与异常清理
-- **部分失败时连接全量释放 (`test_partial_discovery_failure_closes_all_connections`)**：当配置多个 MCP 服务且其中一个连接失败时，断言 `AsyncExitStack` 确保其他已打开的连接与子进程被立即清理，避免僵尸进程遗留。
-
-## 6. 桌面前端测试套件 (`desktop/`)
-
-参考 [desktop/TESTING.md](../../desktop/TESTING.md)，桌面前端工程包含完整的端到端验证体系：
-
-- **TypeScript 类型核验与 Vitest 单测**：执行 `npm run typecheck` 与 `npm test` 验证渲染层状态机、协议序列化与组件逻辑。
-- **Electron 真实窗口冒烟测试**：执行 `npm run build && npm run test:smoke` 启动真实 Electron 窗口，利用预加载层与模拟后端验证应用启动生命周期。
-- **UI 渲染一致性校验**：通过 `node scripts/check-renderer-parity.mjs` 对比迁入组件与原版 UI 渲染树的一致性。
-- **真实模型集成测试**：通过设置 `$env:DESKTOP_LIVE_TEST='1'` 执行 `npx vitest run tests/live-runtime.test.ts`，验证 Python Bridge 与实际大模型调用链路。
+桌面端自动化检查（在 `desktop/` 目录下）：
+```powershell
+npm run typecheck
+npm test
+npm run build
+```
 
 ## 相关页面
 
-- [插件机制与贡献契约](../architecture/plugin-system.md)：了解插件在白名单与清单校验上的契约约束。
-- [状态隔离与分层存储](../architecture/state-and-storage.md)：了解 `SqliteStore`、`SqliteSaver` 与 Time Travel Fork。
-- [数字引用审计端到端流程](../workflows/citation-audit.md)：查看被测端到端流程。
-- [MedPeer 桌面前端工作台](../integrations/desktop-workbench.md)：了解桌面工作台运行时的架构与测试细节。
+- [Harness 系统架构与核心组装](../architecture/overview.md)：了解测试所保障的系统架构。
+- [快速入门指南](../quickstart.md)：了解本地环境配置与运行。
+- [桌面端集成与 JSON-RPC 通信](../integrations/desktop-workbench.md)：了解桌面端测试套件。

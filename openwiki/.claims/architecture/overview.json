@@ -1,66 +1,44 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:a0a4ce05739292c2f722fe3a447a2847c4eb424cadf3ab6643d1f77ed3a1ce98",
+  "pageVersion": "sha256:289060c6788538a0eb2c9d5509ebb9bfa8d4c37f47148268009e7c50a8c3ec3c",
   "claims": [
     {
-      "id": "claim_e82e23efb81e4d41afe603dc31f2cc26",
-      "statement": "AgentComposer._register_tool 在组装插件工具时，强制具有本地写操作 (WRITE) 或外部副作用 (EXTERNAL) 的工具必须直接暴露 (Exposure.EAGER)，并在 interrupts 中配置 approve/reject 审批拦截。",
-      "evidence": [
-        {
-          "resource": "repo://packages/agent-harness/src/vertical_harness/engine/compose.py#L397-L437",
-          "version": "repo-lines-v1:sha256:17499a84b8733993b63be1c776c515674191258cb4fdbefb6b091017b887bfe6:eyJzZWxlY3RlZExpbmVDb3VudCI6NDEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE1NGJjYzZjNGRhN2UxNGNmZDliMzNmNDVmMmJhZGQ0ZmQzMzBiZjQyMTYxNWZlNGJiYjliODhiNjllNTRlM2IiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJhOWY4YzJiYzdhMTQxYTAyMmFmM2ZlYjhhYjUwMDhlYzI1NzU3ZWYyNGFjZDA0OWY1MDg5YTc0YjdjOWFlODEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI0ZjIzMDAwNmFjYTNlNDU1NDg5NGMyMjcxNjMxM2I4MDFmZGNlOTg1NmU5NzBhNDY1MTc4YWQyYTgxMDgxZDEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFmZDBkN2YzN2UxOWQ2ZmNkOWIxNGZiZmIzZjUxZWQwN2MwMjVhMmJlMThmYmE0ZDUwYmI2NjZjYTNkZjhhNDQifQ"
-        },
-        {
-          "resource": "repo://packages/agent-harness/src/vertical_plugins/common/contracts.py#L240-L270",
-          "version": "repo-lines-v1:sha256:01ac082c704224b7e153cfcce1325c212ca33e48c1776151a10b24ae41aa347f:eyJzZWxlY3RlZExpbmVDb3VudCI6MzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMwZmQ4NjU2ZTQ5MjdkZjZmY2MzNmNiZDMxZThiNGY2NmY4MDRiYzM5MjlhZDRhNjdmMGE1MWM5NmIwNzk1NjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZmNmFmN2E2NWZlZGJlNTVhYTBiNmQ0NTdhNTY3MTQ3MDM2OTM0ZGUwNzc0YWY2MGE5ZmIzMDdjZWMwODExYTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA5YzM0Y2U2NGE5YTVlMTE1ODA2MmJiNDM1MmM1NjEwMTYwZjFhNmM1MGQxZGVkMmNhNDIxZGQ4NGE4YjcxYzgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJhNDgzMzNmOTg0NzhmZGNjNjhhMzA2ODYzYzY1MGQwNGY5ZWRjNzBlYjY2ZmE1ZGMyYzU1MTM3MjBiYmUyY2UifQ"
-        }
-      ]
-    },
-    {
-      "id": "claim_e18b1e74e2124527bf07cc0593c1603e",
-      "statement": "build_agent 通过 DEFAULT_FILESYSTEM_PERMISSIONS 常量与 FilesystemPermission 强制沙箱安全策略，禁止对 /skills/** 路径的写操作，以及对所有 .env 配置文件的读写操作。",
-      "evidence": [
-        {
-          "resource": "repo://packages/agent-harness/src/vertical_harness/engine/compose.py#L122-L131",
-          "version": "repo-lines-v1:sha256:28e5435036b7425a021f3efafd7afd379268b1800f7aee130c724d43902d5ff2:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhhYzAyYzg2MThlM2Y2ZGU4NWRmYjYwZWQxN2FjZmMwOWQ1ZGFmN2ZkMjRlNTY2NjZhN2MwYjBjMDdjNTQyNWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdlYjcwMjU3NTkzZGEwNmY2ODJhM2RkZGE1NGE5ZDI2MGQ0ZmM1MTRmNjQ1MjM3ZjVjYTc0YjA4ZjhkYTYxYTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY4NmMzYTdlNTU3ZWJmMWExNWUyZjgwNmYyNzAxZjgxM2NlYjJiYzljMTRhOWZiZTZiOThmZTQwYjQ1YWU2NDAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRjMmM5YzI5MTFjYTEzM2IxZWVlMGIxNmE3Nzc4MjZhY2I2ZjQ2MGY0MTA0MDIxNjAwYmJhMjIyMzNmNmUxODgifQ"
-        },
-        {
-          "resource": "repo://packages/agent-harness/src/vertical_harness/engine/compose.py#L680-L690",
-          "version": "repo-lines-v1:sha256:9832d28e87d7e37c61ff723c9fffe73c2ec27ce44fa25c4d94023ecf01478e32:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQyYWE1ZTY0YjBjMGI3MzhhZjU3YWM0NTA2N2RhZjlhZTA3OWNhNWZhZWQ5MTAzYzExOGZlYWRiYmM5ZDBkYzgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZhOWFiODBlODQ3ZjZkYWZmZDA3ZTIyZTRmYjA4OTc3ZWQ3MmM2MDU4ZjA5MDQwYTgzY2QwYzQ3MjMyMjFmMDIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY5MDVkZmZmZGNjNGUwYWNkMGQ4NWE0NWMxYjQ5ZmMzN2ZhMDdiMjAxNjM0ZjIyMDFlOWNhYWRkYWNiZGFlOWMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNjZmUzMWMxODQ4ZDk5MjE2YjUzNzA1YmRmZGViZjZkNDZlOThiNDExZTcyNmJiZGVjODA5ZmU0NWIzMDVmMmEifQ"
-        }
-      ]
-    },
-    {
-      "id": "claim_18171554a01e4e318fc532459ec1f1f6",
-      "statement": "AgentComposer._register_subagent 在处理插件子智能体时，禁止使用系统保留名称 general-purpose (RESERVED_SUBAGENT_NAMES) 或重复的子智能体名称，否则抛出 ValueError。",
-      "evidence": [
-        {
-          "resource": "repo://packages/agent-harness/src/vertical_harness/engine/compose.py#L439-L458",
-          "version": "repo-lines-v1:sha256:5201f5478bacc03449114b9f6ee049eb1a862d4d19630fa4c5d2942db3433fdc:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRiMjI1ZGFkZjhkODM5MzNiYzBjZGQyMmI0OGRjMmFiODcwZDk0NTllNzFiOTk2MjhiODNmYjk2MDE3MzA3MWYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdlYjcwMjU3NTkzZGEwNmY2ODJhM2RkZGE1NGE5ZDI2MGQ0ZmM1MTRmNjQ1MjM3ZjVjYTc0YjA4ZjhkYTYxYTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI0ZjIzMDAwNmFjYTNlNDU1NDg5NGMyMjcxNjMxM2I4MDFmZGNlOTg1NmU5NzBhNDY1MTc4YWQyYTgxMDgxZDEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImI1Y2UyOTlhNDkwOWUwYzAyNDQ0YWUyOWFiYzllNWE0Y2E5MWIwNmZmMzk4M2I5NTc1M2MwZGNkOWM5NzQ4NDgifQ"
-        },
-        {
-          "resource": "repo://packages/agent-harness/src/vertical_harness/engine/compose.py#L83-L85",
-          "version": "repo-lines-v1:sha256:e1413823063eacd24df3659a99422baaef7ba4f6b40219697ac2ea06db6eacbd:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNjAzZTdjYzUzMjU1YWY3MWZhMTlmNWVkN2ZjMzQ5NzgwYmUwYmFhMjNkNDkwMzllY2M1NTI4OGJmYmUyYTJhOSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNTYxZWZhNzljNTExMmZkY2NkODZlODBhMGJmOGI5ODkwYjFjYWIyMmQ5ZmUzODdjY2NlYzlmNjE1ZWQ1NmE2YyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMTc5NTUyMWU1ODc5Y2Q1MWRlMjFjZmRiNDIxYzQ3MzBlNjVkNGVkNGFlNzljNDdjM2U3NGI4ZjQ5MDI1M2IwYiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOTRiNDBlMDY5NjQxN2YzNjk2MTJiODA2NGRiZDcxMjRmZjFjMjQ5MThkNzA2NDdiZGJkMDNlM2JhZmEzNGE1OCJ9"
-        }
-      ]
-    },
-    {
       "id": "claim_50e74930d77e4364ba270a89f217e54d",
-      "statement": "vertical-agent-harness 划分为宿主核心包 vertical_harness 与领域插件包 vertical_plugins，其中 engine.compose.AgentComposer 负责聚合插件工作流、工具、子智能体、技能资产并编排中间件栈与监督策略。",
+      "statement": "vertical_harness 以 deepagents.create_deep_agent 为主智能体，core.compose.AgentComposer 负责装配工作区文件系统、网络检索、受控脚本执行工具与安全中间件栈，子任务原生继承权限与预算。",
       "evidence": [
         {
-          "resource": "repo://packages/agent-harness/src/vertical_harness/__init__.py#L1-L15",
-          "version": "repo-lines-v1:sha256:954e1bc5d2d89ab089b144fd97fe4fdda154ac8a7573d53be07f3f4bc2a6ba1d:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMzY2NiZDRhMWY5OThjNjcyZmU4YTYwYmQ0ZTcwYmFlYTA1ZWQ4NzJmYTI1OGI4Mjk5OWE0NGU2ZWRmYTkyODIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU3NjBhOGEyMWVkNTcxNmVlYTIwYjc4MTZhYzJhYjA0MDBhNDZlYWFiNDQ1MDI0ZmFiNWNjNTRhNDQwYzZlYTIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQ0OTkwMTBkMTJhYWE3YWY3ZGRjZTNlM2RhNTZhNWY3ZDYwNTdjZjI0OGNkMTY1MGE4Y2VjZDFlZmNhNmM2Y2EifQ"
+          "resource": "repo://packages/agent-harness/src/vertical_harness/__init__.py",
+          "version": "repo-file-v1:sha256:728a89e0dcfc1719e678ad866d80165f26f7f1f00ae31925f078485e5ef87df5"
         },
         {
-          "resource": "repo://packages/agent-harness/src/vertical_harness/engine/compose.py#L171-L570",
-          "version": "repo-lines-v1:sha256:31fc43aeb42ea90479a54903ceb2979caedadaa1f1ef3074790d79b45cf6ebf0:eyJzZWxlY3RlZExpbmVDb3VudCI6NDAwLCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiJjMWI2MWE3MDUwMTEwNjQxMTNhNmQxNzA4MjYxMGNlZDYyMTM5OGNhODljYzFlYWE1M2M3ZWM3MTA4MjhiNjE5IiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiIzMDQ3NWUzODkxZjdlZDY3MWFiOTdhM2Q1M2FiNzJlMzI4M2NiZjU5ZWUxMWEyZjI1ODQxZWVlZTNmMzA1ZjNjIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI0NDk1MDJjMmU1ZDg5MWYxMWY2OTkwMmRhYmI5OTZhYWRkZGI0NDRkMGU3NzI5NDA1NWU4YzU3ZWZmOGVkNDU2IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiI5MzQ5ZDUzZGMyYjlkMjc4NTBhM2U1NjM5OGZlZmEzYjVhZDJjOTAwNmZiMThhYzQ3NTQ1Yzg1MmMwMDQzNjZjIn0"
+          "resource": "repo://packages/agent-harness/src/vertical_harness/core/compose.py",
+          "version": "repo-file-v1:sha256:6681753faf038e989a19c133b9254c662d5d931cab23d295297b83761d2efd32"
+        }
+      ]
+    },
+    {
+      "id": "claim_32eb2480c1b64861897e431731af4b08",
+      "statement": "AgentComposer 在 core/compose.py 中装配 FilesystemMiddleware、SummarizationMiddleware、ContextLimitMiddleware、DesktopPermissionMiddleware、DesktopApprovalMiddleware 与 ModelRouterMiddleware。",
+      "evidence": [
+        {
+          "resource": "repo://packages/agent-harness/src/vertical_harness/core/compose.py",
+          "version": "repo-file-v1:sha256:6681753faf038e989a19c133b9254c662d5d931cab23d295297b83761d2efd32"
+        }
+      ]
+    },
+    {
+      "id": "claim_587b7ac2b49d4e5e8c692f0940ec9f41",
+      "statement": "文件系统沙箱通过 FilesystemPermission 强制拒绝读写 .env 配置文件、日志文件及 SQLite 数据库相关文件。",
+      "evidence": [
+        {
+          "resource": "repo://packages/agent-harness/src/vertical_harness/core/compose.py",
+          "version": "repo-file-v1:sha256:6681753faf038e989a19c133b9254c662d5d931cab23d295297b83761d2efd32"
         }
       ]
     }
   ],
   "verification": {
     "by": "openwiki/0.7.2",
-    "at": "2026-10-19T05:51:52.758Z"
+    "at": "2026-10-21T02:48:18.086Z"
   }
 }

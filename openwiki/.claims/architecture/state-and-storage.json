@@ -1,40 +1,40 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:f904435d53ae915299b411c03d000d3a1e8e5fa80d526d84f39a5ba2347136f5",
+  "pageVersion": "sha256:ad6551992860417eebce10b6d3cdeaf89319285b524200a8224dfa8ad62d8ea5",
   "claims": [
     {
-      "id": "claim_590959805efa4c048335b0617c31b385",
-      "statement": "tenant_memory_namespace 从运行时上下文提取租户 ID 与用户 ID，通过 _identity_segment 计算确定性 SHA-256 摘要构造 ('file_memory_v2', tenant_hash, user_hash, bucket_hash) 命名空间元组，杜绝字符碰撞与未授权回退。",
-      "evidence": [
-        {
-          "resource": "repo://packages/agent-harness/src/vertical_harness/storage/namespace.py#L18-L66",
-          "version": "repo-lines-v1:sha256:4a34eed36f0f7a1a664cbf43ee1d4908479b03fc9a15f7fc67790c7de0393668:eyJzZWxlY3RlZExpbmVDb3VudCI6NDksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIzMDkyNWMxMzQwMWU2ZmIxNTIwZmZmZDZjNzUyZmViODRiY2I3ZGFiMDFiNzA4MWM4N2NiOWUyMDFhYzNmZGYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdlYjcwMjU3NTkzZGEwNmY2ODJhM2RkZGE1NGE5ZDI2MGQ0ZmM1MTRmNjQ1MjM3ZjVjYTc0YjA4ZjhkYTYxYTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRmNTIxOGRkNWVjM2EwZmIyNjRhNzQ1MDYyMjc0YzhhYTE0M2NjYTVmNjFlMWU3ZDdkY2IyMTBiMzJiYTEzMjQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjI3MDkzOGEwZmFiNzRjN2QzODk0ODJkMmE0YWFmNWFiMTNlZDE2NTQwMzFiMzE3ODcxNTdkM2Q1Mzc5MzcxYmMifQ"
-        }
-      ]
-    },
-    {
-      "id": "claim_07b9d405dba9416c8c9b7d55129dfa45",
-      "statement": "compose_backend 组合 FilesystemBackend 与 StoreBackend，将默认路径映射至物理磁盘工作区，将 PurePosixPath 规范化后的 memory_route 路由（默认 /memories/）重定向至 BaseStore 持久化存储。",
-      "evidence": [
-        {
-          "resource": "repo://packages/agent-harness/src/vertical_harness/storage/backends.py#L263-L300",
-          "version": "repo-lines-v1:sha256:31fe985ee0ef17a0751fff8993672ae860a66a7be0a6a1d8182899b4ed166898:eyJzZWxlY3RlZExpbmVDb3VudCI6MzgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMzODY2YWQ0NmEzMDZhZTk2YzE2Yjk5MTNlNTYyOTY2ODNlNjU0NzQ3OGYzZDI4NjliMzcxZjc4YjE1MjFmYWMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM5MjIwNGM2NWY1MDJkYzE2NDU0YjYyNDA4NTZhOWFiN2FkZTAwM2E4ZTlmODYzMzNlYzBiN2M5ZTQwOTQ5MWQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImI2YWQyMzM1ZDM5NGEwMTE2NjAyYjcyMGNiNzJjNDdmN2NiNDk5YTM3MzM0MzMzMmEwNGU4OTRjMDE3MjkxMmIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQ5ODQ2YjQ1MDk2ZTA1YmE0YjRmMTMxZWYwZWRiNjNkZDU1ZTgxYTMxNmExYWNlNjMyNmE2ZDA0OGNkMjc0OTAifQ"
-        }
-      ]
-    },
-    {
       "id": "claim_610486418b9a41e698a8d58e18cbf03c",
-      "statement": "create_store、open_store 与 aopen_store 分别管理 InMemoryStore、SqliteStore 与 AsyncSqliteStore 的生命周期，并在创建或打开 SQLite 存储时自动调用 setup() 完成表结构初始化。",
+      "statement": "StoreFactory 管理 InMemoryStore、SqliteStore 与 AsyncSqliteStore 的生命周期，并在创建或打开 SQLite 存储时自动调用 setup() 完成表结构初始化。",
       "evidence": [
         {
-          "resource": "repo://packages/agent-harness/src/vertical_harness/storage/backends.py#L73-L170",
-          "version": "repo-lines-v1:sha256:baa54fc64cf3d408abddbe6e53852c050ff2f2c0b8b6115edd7c31229717c159:eyJzZWxlY3RlZExpbmVDb3VudCI6OTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhlYmM4ZjNmYjJlMDViMGQzY2JkZDVjZjAyMDM4YzZlYTAyOTgzZDk5NjUwZmRiM2ZkNTI1MzdiNTNkNDBmOTEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRhM2QxYTRiMzM5NzljNzRmZjFlMGNjMGJmNTdlMDY4YTM3NjFjODg1MzVkNThmNDI5Zjg4MDk0OTIwNTMwNDAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZlZmRiOGE3M2JiYzMyMzU4MTcyMGQ4ZmUxMjdkZmI0YTY0NDMxMDM3ODMwYWU0NjEyMjNkYWRhN2YyNzIxOWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjYzMDg4NDg5ZGQ2ZDgzZWRhYTA2MTcwMmMyN2Y2MTU2NDIwZjFlOGM3MTQ4MDI5MDIyZTUwMmJmYWM5MTgzYmIifQ"
+          "resource": "repo://packages/agent-harness/src/vertical_harness/storage/store.py",
+          "version": "repo-file-v1:sha256:e8b7f4e91bacb6df41f0f5eb0344e910acbb443f3e1008d43f5a1709ccf4f5e6"
+        }
+      ]
+    },
+    {
+      "id": "claim_6605010a7b234390abf062a9bffa74e8",
+      "statement": "CheckpointFactory 提供 create_checkpointer、open_checkpointer 与 aopen_checkpointer 方法，支持 InMemorySaver 与 SqliteSaver 检查点生命周期管理。",
+      "evidence": [
+        {
+          "resource": "repo://packages/agent-harness/src/vertical_harness/storage/checkpoint.py",
+          "version": "repo-file-v1:sha256:23affaa5aaf5d11726231f702e2b001689fa35caab65e4d34dcfb8090fa1a1e6"
+        }
+      ]
+    },
+    {
+      "id": "claim_5d1080560e334c879f4e36638c9ce385",
+      "statement": "DocumentFilesystemBackend 继承 DeepAgents FilesystemBackend，集成 MarkItDown 提供 Office 与 PDF 文档高保真 Markdown 读取与最近文档缓存。",
+      "evidence": [
+        {
+          "resource": "repo://packages/agent-harness/src/vertical_harness/storage/document_backend.py",
+          "version": "repo-file-v1:sha256:37ddc0d62787a4da611f2ee428d025dc9fc3782d9389ff8d0f7916f80a279348"
         }
       ]
     }
   ],
   "verification": {
     "by": "openwiki/0.7.2",
-    "at": "2026-10-19T05:51:52.758Z"
+    "at": "2026-10-21T02:48:18.086Z"
   }
 }
