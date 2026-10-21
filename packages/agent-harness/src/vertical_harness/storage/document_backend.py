@@ -18,11 +18,11 @@ from deepagents.backends.utils import slice_read_response
 
 from vertical_harness.bridge.attachments import AttachmentContent
 from vertical_harness.storage.file_mutation import FileMutation
-from vertical_harness.tools.opencode_edit import OpenCodeEdit
-from vertical_harness.tools.opencode_formatter import OpenCodeFormatter
-from vertical_harness.tools.opencode_patch import OpenCodePatch
-from vertical_harness.tools.opencode_read import OpenCodeRead
-from vertical_harness.tools.opencode_search import RipgrepSearch
+from vertical_harness.tools.code_formatter import CodeFormatter
+from vertical_harness.tools.file_reader import FileReader
+from vertical_harness.tools.patch_editor import PatchEditor
+from vertical_harness.tools.ripgrep_search import RipgrepSearch
+from vertical_harness.tools.text_editor import TextEditor
 
 
 class DocumentFilesystemBackend(FilesystemBackend):
@@ -40,7 +40,7 @@ class DocumentFilesystemBackend(FilesystemBackend):
         {".doc", ".ppt", ".pptm", ".docm", ".xls", ".xlsb", ".odt", ".ods", ".odp"}
     )
 
-    def __init__(self, *args: Any, formatter: OpenCodeFormatter | None = None, **kwargs: Any) -> None:
+    def __init__(self, *args: Any, formatter: CodeFormatter | None = None, **kwargs: Any) -> None:
         """初始化文档文件系统后端实例。
 
         :param args: 传递给父类 FilesystemBackend 的位置参数。
@@ -98,10 +98,10 @@ class DocumentFilesystemBackend(FilesystemBackend):
                     FileData(content=self._document_cache[1], encoding="utf-8"), offset, limit
                 )
             # 第四步：图片附件转交上层基类处理
-            if media := OpenCodeRead.read_supported_media(path):
+            if media := FileReader.read_supported_media(path):
                 return ReadResult(file_data=FileData(content=media[1], encoding="base64"))
             # 第五步：普通文本文件按行切片读取并做二进制安全校验
-            return OpenCodeRead.read_text_page(path, offset, limit)
+            return FileReader.read_text_page(path, offset, limit)
         except (OSError, ValueError) as exc:
             return ReadResult(error=f"Cannot read file ({type(exc).__name__}).")
 
@@ -219,7 +219,7 @@ class DocumentFilesystemBackend(FilesystemBackend):
                 legacy_cr = "\r" in source and "\n" not in source and "\r" not in old_string + new_string
                 if legacy_cr:
                     source = source.replace("\r", "\n")
-                text, occurrences = OpenCodeEdit.replace_text_with_count(
+                text, occurrences = TextEditor.replace_text_with_count(
                     source, old_string, new_string, replace_all
                 )
                 if legacy_cr:
@@ -291,7 +291,7 @@ class DocumentFilesystemBackend(FilesystemBackend):
     ) -> tuple[str, dict[str, Any]]:
         if not patch_text:
             raise ValueError("patchText is required")
-        hunks = OpenCodePatch.parse_patch(patch_text)
+        hunks = PatchEditor.parse_patch(patch_text)
         if not hunks:
             raise ValueError("patch rejected: empty patch")
         paths = [
@@ -320,7 +320,7 @@ class DocumentFilesystemBackend(FilesystemBackend):
                     before = updates.get(target) if hunk.type == "update" else None
                     if before is None:
                         before = target.read_bytes().decode("utf-8")
-                    after = "" if hunk.type == "delete" else OpenCodePatch.derive_update(
+                    after = "" if hunk.type == "delete" else PatchEditor.derive_update(
                         hunk.path, hunk.chunks, before
                     )
                     if hunk.type == "update" and not hunk.move_path:

@@ -15,7 +15,7 @@ class DesktopMessages:
 
     @staticmethod
     def attachment_message(
-            workspace_root: Path, text: str, attachments: list[dict[str, str]]
+        workspace_root: Path, text: str, attachments: list[dict[str, str]]
     ) -> str | list[dict[str, Any]]:
         """校验附件安全性（必须在工作区物理边界内）并生成多模态消息内容块。
 
@@ -31,11 +31,9 @@ class DesktopMessages:
         :author: tongliga
         :date: 2026-10-21
         """
-        # 第一步：解析工作区真实绝对路径
         root = workspace_root.expanduser().resolve()
-        validated = []
+        sources = []
 
-        # 第二步：逐一校验附件元数据结构及文件存在性
         for attachment in attachments:
             if not isinstance(attachment, dict) or set(attachment) != {"name", "path", "media_type"}:
                 raise ValueError("attachments must contain name, path, and media_type")
@@ -47,18 +45,15 @@ class DesktopMessages:
             source = source.resolve(strict=True)
             if not source.is_file():
                 raise ValueError("attachment path must refer to a file")
-            validated.append((attachment, source))
+            sources.append((attachment, source))
 
-        # 第三步：校验所有附件必须严格位于工作区目录之下
-        sources = []
-        for attachment, source in validated:
+        # 校验全部附件后再读取内容，避免部分读取后才发现越界附件。
+        for _, source in sources:
             try:
                 source.relative_to(root)
             except ValueError as exc:
                 raise ValueError("attachment must be inside the workspace") from exc
-            sources.append((attachment, source))
 
-        # 第四步：调用 content_blocks 生成标准多模态内容块
         from vertical_harness.bridge.attachments import AttachmentContent
 
         return AttachmentContent.content_blocks(sources, text, root)

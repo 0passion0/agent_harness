@@ -34,15 +34,26 @@
 - `middleware/`：安全拦截与控制中间件：
   - `approval.py` (`DesktopApprovalMiddleware`)：高风险工具调用人机协同审批拦截。
   - `context_limit.py` (`ContextLimitMiddleware`)：请求预算与 Token 上限熔断控制。
+  - `execution_limits.py` (`ExecutionLimitsMiddleware`)：步数硬上限与输出超限自动续跑控制。
+  - `filesystem.py` (`HarnessFilesystemMiddleware`)：工作区文件操作、多模态直读与原子补丁拦截。
+  - `model_retry.py` (`ModelRetryMiddleware`)：模型请求指数退避重试与流式中断接续。
   - `permission.py` (`DesktopPermissionMiddleware`)：工作区文件操作越界防御与敏感路径过滤。
+  - `project_instructions.py` (`ProjectInstructionsMiddleware`)：工作区 AGENTS.md 规范指令加载。
   - `routing.py` (`ModelRouterMiddleware`)：运行时模型动态调优与上下文适配。
 - `storage/`：持久化与文档处理后端：
   - `checkpoint.py` (`CheckpointFactory`)：SQLite 与 Memory 检查点生命周期管理。
   - `document_backend.py` (`DocumentFilesystemBackend`)：基于 MarkItDown 的 Office/PDF 文档解析与文件读写后端。
+  - `file_mutation.py` (`FileMutation`)：工作区文件并发写锁与协作取消。
   - `store.py` (`StoreFactory`)：状态键值持久化存储工厂。
 - `tools/`：运行时受控工具集：
+  - `code_formatter.py` (`CodeFormatter`)：工作区多语言代码格式化执行器。
+  - `file_reader.py` (`FileReader`)：工作区文件安全分页读取与多模态检测。
+  - `patch_editor.py` (`PatchEditor`)：多文件补丁解析与块级差异应用。
   - `python_execution.py` (`PythonExecution`)：受控保存脚本执行工具（以当前用户权限运行，非沙箱）。
+  - `ripgrep_search.py` (`RipgrepSearch`)：基于 Ripgrep 的高性能通配与正则检索。
   - `search.py` (`WebSearch`)：网络检索工具封装。
+  - `shell_execution.py` (`ShellExecution`)：受控工作区 Shell 命令执行与后台作业管理。
+  - `text_editor.py` (`TextEditor`)：高鲁棒性文本精准/模糊替换器。
   - `tool_details.py` (`ToolDetails`)：工具元数据解析与权限需求判定。
   - `user_interaction.py` (`UserInteraction`)：桌面端用户人机交互确认工具。
 - `utils/`：辅助工具函数：

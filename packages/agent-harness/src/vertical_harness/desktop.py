@@ -53,6 +53,15 @@ class AgentLoop:
     output_lock: asyncio.Lock = field(default_factory=asyncio.Lock, init=False)
     shell_execution: ShellExecution | None = field(default=None, init=False)
 
+    async def aclose(self) -> None:
+        """等待活跃运行完成取消清理，再关闭它们可能创建的后台命令。"""
+        tasks = [task for _, task in self.active.values()]
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        if self.shell_execution is not None:
+            await self.shell_execution.aclose()
+
     def _context_namespace(self, thread_id: str) -> tuple[str, ...]:
         """构建保存在 BaseStore 中的会话级命名空间元组。
 
@@ -149,12 +158,7 @@ class AgentLoop:
 
         # 第三步：优雅关闭 shutdown 方法
         if method == "shutdown":
-            tasks = [task for _, task in self.active.values()]
-            for task in tasks:
-                task.cancel()
-            await asyncio.gather(*tasks, return_exceptions=True)
-            if self.shell_execution is not None:
-                await self.shell_execution.aclose()
+            await self.aclose()
             return {}
 
         # 第四步：断言后端已被正确配置
@@ -537,12 +541,7 @@ class AgentLoop:
                     break
         finally:
             # 第四步：进程退出前安全取消所有活跃运行任务并等待清理完成
-            tasks = [task for _, task in self.active.values()]
-            for task in tasks:
-                task.cancel()
-            await asyncio.gather(*tasks, return_exceptions=True)
-            if self.shell_execution is not None:
-                await self.shell_execution.aclose()
+            await self.aclose()
 
 
 if __name__ == "__main__":

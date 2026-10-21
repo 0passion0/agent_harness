@@ -55,8 +55,4 @@ class DesktopPermissionMiddleware(AgentMiddleware):
         :author: tongliga
         :date: 2026-10-21
         """
-        # 第一步：校验只读模式下工具是否属于允许的白名单集
-        if self.mode == "read_only" and request.tool.name not in self._READ_ONLY_TOOLS:
-            raise PermissionError(f"Tool {request.tool.name} is disabled in read_only mode")
-        # 第二步：通过权限检查，放行至下游异步执行
-        return await handler(request)
+        return await self.wrap_tool_call(request, handler)

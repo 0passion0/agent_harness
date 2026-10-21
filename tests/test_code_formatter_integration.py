@@ -6,12 +6,12 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.checkpoint.memory import InMemorySaver
 from pydantic import ValidationError
 
-from test_opencode_harness_workflows import WorkflowModel, call
+from test_harness_workflows import WorkflowModel, call
 from vertical_harness.config import HarnessSettings
 from vertical_harness.core import compose
 from vertical_harness.core.context import RunContext
 from vertical_harness.storage.document_backend import DocumentFilesystemBackend
-from vertical_harness.tools.opencode_formatter import OpenCodeFormatter
+from vertical_harness.tools.code_formatter import CodeFormatter
 
 
 def formatter_config(exit_code=0):
@@ -31,7 +31,7 @@ def test_mutations_preserve_bom_only_after_successful_formatter(tmp_path, operat
     target.write_bytes(b"\xef\xbb\xbfold\n")
     backend = DocumentFilesystemBackend(
         root_dir=tmp_path, virtual_mode=True,
-        formatter=OpenCodeFormatter(tmp_path, formatter_config(exit_code)),
+        formatter=CodeFormatter(tmp_path, formatter_config(exit_code)),
     )
     if operation == "write":
         assert backend.write("/report.txt", "new\n").error is None
@@ -58,7 +58,7 @@ def test_patch_formats_unique_destinations_after_all_writes(tmp_path):
                     "p.with_suffix('.count').open('a').write('x')", "$FILE"],
     }}
     backend = DocumentFilesystemBackend(
-        root_dir=tmp_path, virtual_mode=True, formatter=OpenCodeFormatter(tmp_path, config),
+        root_dir=tmp_path, virtual_mode=True, formatter=CodeFormatter(tmp_path, config),
     )
     _, artifact = backend.apply_patch(
         "*** Begin Patch\n*** Update File: a.txt\n@@\n-first\n+middle\n*** Update File: a.txt\n@@\n-middle\n+second\n*** Add File: b.txt\n+other\n*** End Patch",
@@ -114,7 +114,7 @@ def test_successful_formatter_canonicalizes_all_leading_boms(tmp_path, bom):
                     "Path(sys.argv[1]).write_bytes(bytes.fromhex('efbbbfefbbbf')+b'new')", "$FILE"],
     }}
     backend = DocumentFilesystemBackend(
-        root_dir=tmp_path, virtual_mode=True, formatter=OpenCodeFormatter(tmp_path, config),
+        root_dir=tmp_path, virtual_mode=True, formatter=CodeFormatter(tmp_path, config),
     )
     assert backend.write("/report.txt", "new").error is None
     assert target.read_bytes() == (b"\xef\xbb\xbf" if bom else b"") + b"new"

@@ -19,14 +19,14 @@ from vertical_harness.core.routing import ModelRouting
 from vertical_harness.log.observability import TracingSession
 from vertical_harness.middleware.approval import DesktopApprovalMiddleware
 from vertical_harness.middleware.context_limit import ContextLimitMiddleware
-from vertical_harness.middleware.execution_limits import OpenCodeExecutionLimitsMiddleware
-from vertical_harness.middleware.filesystem import OpenCodeFilesystemMiddleware
-from vertical_harness.middleware.model_retry import OpenCodeModelRetryMiddleware
+from vertical_harness.middleware.execution_limits import ExecutionLimitsMiddleware
+from vertical_harness.middleware.filesystem import HarnessFilesystemMiddleware
+from vertical_harness.middleware.model_retry import ModelRetryMiddleware
 from vertical_harness.middleware.permission import DesktopPermissionMiddleware
 from vertical_harness.middleware.project_instructions import ProjectInstructionsMiddleware
 from vertical_harness.storage.checkpoint import CheckpointFactory
 from vertical_harness.storage.document_backend import DocumentFilesystemBackend
-from vertical_harness.tools.opencode_formatter import OpenCodeFormatter
+from vertical_harness.tools.code_formatter import CodeFormatter
 from vertical_harness.tools.python_execution import PythonExecution
 from vertical_harness.tools.search import WebSearch
 from vertical_harness.tools.shell_execution import ShellExecution
@@ -142,7 +142,7 @@ class AgentComposer:
         root = settings.resolved_workspace_root
         root.mkdir(parents=True, exist_ok=True)
         backend = DocumentFilesystemBackend(
-            root_dir=root, virtual_mode=True, formatter=OpenCodeFormatter(root, settings.formatter)
+            root_dir=root, virtual_mode=True, formatter=CodeFormatter(root, settings.formatter)
         )
         model = ModelRouting.init_configured_model(settings)
 
@@ -187,17 +187,17 @@ class AgentComposer:
         middleware.extend(
             [
                 ProjectInstructionsMiddleware(backend, permissions),
-                OpenCodeExecutionLimitsMiddleware(settings.max_steps),
+                ExecutionLimitsMiddleware(settings.max_steps),
                 cls._summarization_middleware(model, backend, maximum),
                 ContextLimitMiddleware(maximum),
-                OpenCodeModelRetryMiddleware(),
+                ModelRetryMiddleware(),
                 DesktopPermissionMiddleware(options.get("permission_mode", "full")),
             ]
         )
         if options.get("permission_mode") == "ask":
             middleware.append(DesktopApprovalMiddleware())
         middleware.append(
-            OpenCodeFilesystemMiddleware(
+            HarnessFilesystemMiddleware(
                 backend=backend,
                 tools=["ls", "read_file", "write_file", "edit_file", "delete", "glob", "grep"],
                 tool_token_limit_before_evict=3000,

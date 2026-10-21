@@ -11,7 +11,7 @@ from langchain_core.messages import HumanMessage
 
 from vertical_harness import HarnessSettings
 from vertical_harness.core import routing
-from vertical_harness.middleware.model_retry import OpenCodeModelRetryMiddleware
+from vertical_harness.middleware.model_retry import ModelRetryMiddleware
 
 
 @pytest.mark.parametrize("mode", ["invoke", "ainvoke", "stream", "astream"])
@@ -84,7 +84,7 @@ def test_model_retry_limit_backoff_and_permanent_errors(monkeypatch, mode, failu
                     )
                 )
                 assert model.max_retries == 0
-                agent = create_agent(model=model, middleware=[OpenCodeModelRetryMiddleware()])
+                agent = create_agent(model=model, middleware=[ModelRetryMiddleware()])
                 request = {"messages": [HumanMessage(content="hello")]}
                 if mode == "invoke":
                     return agent.invoke(request)["messages"][-1].content

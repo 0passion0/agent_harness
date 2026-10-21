@@ -3,9 +3,9 @@ import sys
 
 import pytest
 
-from vertical_harness.tools import opencode_search
-from vertical_harness.tools.opencode_grep_result import OpenCodeGrepResult
-from vertical_harness.tools.opencode_search import RipgrepSearch
+from vertical_harness.tools import ripgrep_search
+from vertical_harness.tools.ripgrep_search import RipgrepSearch
+from vertical_harness.tools.structured_grep_result import StructuredGrepResult
 
 
 @pytest.fixture
@@ -44,7 +44,7 @@ def test_grep_regex_literal_case_and_file_scope(search, tmp_path):
 def test_grep_preserves_source_byte_offsets_and_submatch_limit(search, tmp_path):
     (tmp_path / "unicode.txt").write_bytes("前行\n前😀后😀\n".encode())
     result = search.grep("😀", "/unicode.txt")
-    assert isinstance(result, OpenCodeGrepResult)
+    assert isinstance(result, StructuredGrepResult)
     assert result.source_matches == [
         {
             "entry": {"path": "/unicode.txt", "type": "file"},
@@ -102,7 +102,7 @@ def test_sync_search_inside_running_loop(search, tmp_path):
 
 def test_packaged_ripgrep_is_available_without_path(search, tmp_path, monkeypatch):
     (tmp_path / "file.txt").write_text("needle", encoding="utf-8")
-    monkeypatch.setattr(opencode_search, "_resolve_ripgrep_path", lambda: None)
+    monkeypatch.setattr(ripgrep_search, "_resolve_ripgrep_path", lambda: None)
     monkeypatch.setenv("PATH", "")
     assert search.grep("needle").matches[0]["path"] == "/file.txt"
 
@@ -126,7 +126,7 @@ def test_async_cancellation_and_timeout_reap_process(search, monkeypatch):
         with pytest.raises(asyncio.CancelledError):
             await task
         assert processes[0].returncode is not None
-        monkeypatch.setattr(opencode_search, "SEARCH_TIMEOUT", 0.05)
+        monkeypatch.setattr(ripgrep_search, "SEARCH_TIMEOUT", 0.05)
         result = await search.agrep("x")
         assert "timed out" in result.error
         assert processes[1].returncode is not None

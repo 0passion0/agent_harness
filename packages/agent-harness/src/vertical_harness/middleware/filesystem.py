@@ -1,4 +1,4 @@
-"""OpenCode file operations using the existing DeepAgents tool boundary."""
+"""工作区文件系统操作中间件，集成安全分页读取、多模态媒体嗅探、增强通配检索与原子补丁应用。"""
 
 from __future__ import annotations
 
@@ -23,16 +23,40 @@ from vertical_harness.middleware.file_glob_schema import FileGlobSchema
 from vertical_harness.middleware.native_read_schema import NativeReadSchema
 from vertical_harness.middleware.patch_schema import PatchSchema
 from vertical_harness.middleware.search_schema import SearchSchema
-from vertical_harness.tools.opencode_grep_result import OpenCodeGrepResult
-from vertical_harness.tools.opencode_read import OpenCodeRead
+from vertical_harness.tools.file_reader import FileReader
+from vertical_harness.tools.structured_grep_result import StructuredGrepResult
 
 
-class OpenCodeFilesystemMiddleware(FilesystemMiddleware):
+class HarnessFilesystemMiddleware(FilesystemMiddleware):
+    """强化型文件系统操作拦截中间件，提供多文件补丁、Ripgrep 结构化搜索与分页阅读。
+
+    :author: tongliga
+    :date: 2026-10-21
+    """
+
     def __init__(self, **kwargs: Any) -> None:
+        """初始化 HarnessFilesystemMiddleware，附加原子多文件补丁工具。
+
+        :param kwargs: 透传给父类 FilesystemMiddleware 的参数字典。
+        :type kwargs: typing.Any
+        :author: tongliga
+        :date: 2026-10-21
+        """
         super().__init__(**kwargs)
         self.tools.append(self._create_patch_tool())
 
     def _authorize(self, operation: Literal["read", "write"], path: str) -> str | None:
+        """校验当前路径与操作类型是否在工作区权限许可范围内。
+
+        :param operation: 操作类型（'read' 或 'write'）。
+        :type operation: typing.Literal["read", "write"]
+        :param path: 虚拟文件路径。
+        :type path: str
+        :return: 错误描述信息，若授权通过则返回 None。
+        :rtype: str | None
+        :author: tongliga
+        :date: 2026-10-21
+        """
         try:
             return _permission_error(
                 self._permissions, operation, self.backend, validate_path(path)
@@ -41,6 +65,15 @@ class OpenCodeFilesystemMiddleware(FilesystemMiddleware):
             return str(exc)
 
     def _read_path(self, file_path: str) -> tuple[str, str | None]:
+        """安全解析并校验读路径，支持 Unicode 规范化名称自动容错恢复。
+
+        :param file_path: 目标虚拟路径。
+        :type file_path: str
+        :return: (最终虚拟路径, 权限或不存在错误信息) 元组。
+        :rtype: tuple[str, str | None]
+        :author: tongliga
+        :date: 2026-10-21
+        """
         if error := self._authorize("read", file_path):
             return file_path, error
         validated = validate_path(file_path)
@@ -48,9 +81,9 @@ class OpenCodeFilesystemMiddleware(FilesystemMiddleware):
             path = self.backend._resolve_path(validated)
             if path.exists():
                 return validated, None
-            alternate = OpenCodeRead.recover_read_path(self.backend.cwd, path)
+            alternate = FileReader.recover_read_path(self.backend.cwd, path)
             if alternate is None:
-                return validated, OpenCodeRead.missing_read_message(
+                return validated, FileReader.missing_read_message(
                     validated, path, lambda candidate: self._authorize("read", candidate)
                 )
             recovered = self.backend._to_virtual_path(alternate)
@@ -61,11 +94,26 @@ class OpenCodeFilesystemMiddleware(FilesystemMiddleware):
     def _read_directory(
         self, file_path: str, offset: int, limit: int, runtime: ToolRuntime
     ) -> ToolMessage:
+        """安全分页读取目录下的直接子文件与子目录列表。
+
+        :param file_path: 虚拟目录路径。
+        :type file_path: str
+        :param offset: 分页起始偏移。
+        :type offset: int
+        :param limit: 分页读取数量上限。
+        :type limit: int
+        :param runtime: 工具运行时。
+        :type runtime: langchain.tools.ToolRuntime
+        :return: 封装好的 ToolMessage 消息。
+        :rtype: langchain_core.messages.ToolMessage
+        :author: tongliga
+        :date: 2026-10-21
+        """
         try:
             path = self.backend._resolve_path(file_path)
             entries = [
                 name + ("/" if is_dir else "")
-                for name, is_dir in OpenCodeRead.directory_entries(path)
+                for name, is_dir in FileReader.directory_entries(path)
                 if not self._authorize("read", file_path.rstrip("/") + "/" + name)
             ]
         except (OSError, ValueError) as exc:
@@ -92,8 +140,21 @@ class OpenCodeFilesystemMiddleware(FilesystemMiddleware):
     def _read_media(
         self, file_path: str, native_media: bool, runtime: ToolRuntime
     ) -> ToolMessage | None:
+        """检测并直接读取图片或 PDF 二进制媒体数据为 Base64 消息内容块。
+
+        :param file_path: 虚拟文件路径。
+        :type file_path: str
+        :param native_media: 是否启用 PDF 原生媒体投递。
+        :type native_media: bool
+        :param runtime: 工具运行时。
+        :type runtime: langchain.tools.ToolRuntime
+        :return: 包含多模态块的 ToolMessage 或 None（非媒体文件）。
+        :rtype: langchain_core.messages.ToolMessage | None
+        :author: tongliga
+        :date: 2026-10-21
+        """
         try:
-            value = OpenCodeRead.read_supported_media(
+            value = FileReader.read_supported_media(
                 self.backend._resolve_path(file_path), pdf=native_media
             )
         except (OSError, ValueError) as exc:
@@ -127,6 +188,23 @@ class OpenCodeFilesystemMiddleware(FilesystemMiddleware):
         limit: int = 2000,
         native_media: bool = False,
     ) -> ToolMessage:
+        """执行同步文件/目录/多模态读取操作。
+
+        :param file_path: 文件路径。
+        :type file_path: str
+        :param runtime: 工具运行时。
+        :type runtime: langchain.tools.ToolRuntime
+        :param offset: 起始行偏移。
+        :type offset: int
+        :param limit: 读取最大行数。
+        :type limit: int
+        :param native_media: 是否原生读取多模态媒体。
+        :type native_media: bool
+        :return: 读取结果 ToolMessage。
+        :rtype: langchain_core.messages.ToolMessage
+        :author: tongliga
+        :date: 2026-10-21
+        """
         if limit <= 0:
             return self._original_read_tool.func(file_path, runtime, offset, limit)
         file_path, error = self._read_path(file_path)
@@ -151,6 +229,23 @@ class OpenCodeFilesystemMiddleware(FilesystemMiddleware):
         limit: int = 2000,
         native_media: bool = False,
     ) -> ToolMessage:
+        """执行异步非阻塞文件/目录/多模态读取操作。
+
+        :param file_path: 文件路径。
+        :type file_path: str
+        :param runtime: 工具运行时。
+        :type runtime: langchain.tools.ToolRuntime
+        :param offset: 起始行偏移。
+        :type offset: int
+        :param limit: 读取最大行数。
+        :type limit: int
+        :param native_media: 是否原生多模态读取。
+        :type native_media: bool
+        :return: ToolMessage。
+        :rtype: langchain_core.messages.ToolMessage
+        :author: tongliga
+        :date: 2026-10-21
+        """
         if limit <= 0:
             return await self._original_read_tool.coroutine(file_path, runtime, offset, limit)
         file_path, error = await asyncio.to_thread(self._read_path, file_path)
@@ -170,8 +265,14 @@ class OpenCodeFilesystemMiddleware(FilesystemMiddleware):
         return message
 
     def _create_read_file_tool(self) -> StructuredTool:
-        self._original_read_tool = super()._create_read_file_tool()
+        """重写父类构建读文件工具方法，挂载增强型 NativeReadSchema。
 
+        :return: 增强的 read_file 工具。
+        :rtype: langchain_core.tools.StructuredTool
+        :author: tongliga
+        :date: 2026-10-21
+        """
+        self._original_read_tool = super()._create_read_file_tool()
         return StructuredTool.from_function(
             name="read_file",
             description=self._original_read_tool.description
@@ -182,12 +283,26 @@ class OpenCodeFilesystemMiddleware(FilesystemMiddleware):
         )
 
     def before_model(self, state: Any, runtime: Any) -> dict[str, Any] | None:
+        """在模型前置钩子中动态探查已读文件所在目录树中的 AGENTS.md 规范文件并注入提示词。
+
+        :param state: 图状态字典。
+        :type state: typing.Any
+        :param runtime: 中间件运行时。
+        :type runtime: typing.Any
+        :return: 包含动态指令的消息变更字典或 None。
+        :rtype: dict[str, typing.Any] | None
+        :author: tongliga
+        :date: 2026-10-21
+        """
         messages = state["messages"]
         loaded = {
             path
             for message in messages
             if isinstance(message, HumanMessage)
-            for path in message.additional_kwargs.get("opencode_instructions", [])
+            for path in (
+                message.additional_kwargs.get("harness_instructions", [])
+                or message.additional_kwargs.get("opencode_instructions", [])
+            )
         }
         candidates: dict[str, str] = {}
         for message in reversed(messages):
@@ -202,7 +317,6 @@ class OpenCodeFilesystemMiddleware(FilesystemMiddleware):
             file_path = message.additional_kwargs.get("read_file_path")
             if file_path is None:
                 continue
-            # Source instruction discovery is best effort and must never fail a successful read.
             try:
                 resolved = self.backend._resolve_path(file_path)
                 parent = resolved if resolved.is_dir() else resolved.parent
@@ -228,17 +342,46 @@ class OpenCodeFilesystemMiddleware(FilesystemMiddleware):
                         f"Instructions from: {path}\n{content}"
                         for path, content in candidates.items()
                     ),
-                    additional_kwargs={"opencode_instructions": list(candidates)},
+                    additional_kwargs={
+                        "harness_instructions": list(candidates),
+                        "opencode_instructions": list(candidates),
+                    },
                 )
             ]
         }
 
     async def abefore_model(self, state: Any, runtime: Any) -> dict[str, Any] | None:
+        """以异步线程方式执行前置模型规范指令注入。
+
+        :param state: 图状态。
+        :type state: typing.Any
+        :param runtime: 运行时。
+        :type runtime: typing.Any
+        :return: 变更字典或 None。
+        :rtype: dict[str, typing.Any] | None
+        :author: tongliga
+        :date: 2026-10-21
+        """
         return await asyncio.to_thread(self.before_model, state, runtime)
 
     def _grep_result(
         self, pattern: str, output_mode: str, value: GrepResult, runtime: ToolRuntime
     ) -> ToolMessage:
+        """过滤无权限的 Grep 匹配条目，组装包含结构化 artifact 的 ToolMessage。
+
+        :param pattern: 检索模式。
+        :type pattern: str
+        :param output_mode: 输出展示模式。
+        :type output_mode: str
+        :param value: 原始搜索结果模型。
+        :type value: deepagents.backends.protocol.GrepResult
+        :param runtime: 工具运行时。
+        :type runtime: langchain.tools.ToolRuntime
+        :return: 封装后的 ToolMessage。
+        :rtype: langchain_core.messages.ToolMessage
+        :author: tongliga
+        :date: 2026-10-21
+        """
         matches = value.matches or []
         filtered = _filter_grep_matches_by_permission(
             self._permissions, matches, operation="read", backend=self.backend
@@ -251,7 +394,7 @@ class OpenCodeFilesystemMiddleware(FilesystemMiddleware):
         )
         allowed = {match["path"] for match in filtered}
         artifact = None
-        if isinstance(value, OpenCodeGrepResult):
+        if isinstance(value, StructuredGrepResult):
             artifact = {
                 "matches": [
                     match for match in value.source_matches if match["entry"]["path"] in allowed
@@ -277,6 +420,29 @@ class OpenCodeFilesystemMiddleware(FilesystemMiddleware):
         literal: bool = True,
         case_sensitive: bool = True,
     ) -> ToolMessage:
+        """执行同步 grep 内容检索。
+
+        :param pattern: 搜索文本模式。
+        :type pattern: str
+        :param runtime: 工具运行时。
+        :type runtime: langchain.tools.ToolRuntime
+        :param path: 起始路径。
+        :type path: str | None
+        :param glob: 文件名过滤模式。
+        :type glob: str | None
+        :param output_mode: 输出格式模式。
+        :type output_mode: str
+        :param max_count: 最大匹配数。
+        :type max_count: int | None
+        :param literal: 是否为字面量搜索。
+        :type literal: bool
+        :param case_sensitive: 是否区分大小写。
+        :type case_sensitive: bool
+        :return: ToolMessage。
+        :rtype: langchain_core.messages.ToolMessage
+        :author: tongliga
+        :date: 2026-10-21
+        """
         error = self._authorize("read", path or "/")
         value = (
             GrepResult(error=error)
@@ -303,6 +469,29 @@ class OpenCodeFilesystemMiddleware(FilesystemMiddleware):
         literal: bool = True,
         case_sensitive: bool = True,
     ) -> ToolMessage:
+        """执行异步非阻塞 grep 内容检索。
+
+        :param pattern: 搜索文本模式。
+        :type pattern: str
+        :param runtime: 工具运行时。
+        :type runtime: langchain.tools.ToolRuntime
+        :param path: 起始路径。
+        :type path: str | None
+        :param glob: 文件名过滤模式。
+        :type glob: str | None
+        :param output_mode: 输出格式模式。
+        :type output_mode: str
+        :param max_count: 最大匹配数。
+        :type max_count: int | None
+        :param literal: 是否为字面量搜索。
+        :type literal: bool
+        :param case_sensitive: 是否区分大小写。
+        :type case_sensitive: bool
+        :return: ToolMessage。
+        :rtype: langchain_core.messages.ToolMessage
+        :author: tongliga
+        :date: 2026-10-21
+        """
         error = self._authorize("read", path or "/")
         value = (
             GrepResult(error=error)
@@ -319,7 +508,13 @@ class OpenCodeFilesystemMiddleware(FilesystemMiddleware):
         return self._grep_result(pattern, output_mode, value, runtime)
 
     def _create_grep_tool(self) -> StructuredTool:
+        """重写父类构建 grep 检索工具方法，挂载 SearchSchema。
 
+        :return: StructuredTool 工具。
+        :rtype: langchain_core.tools.StructuredTool
+        :author: tongliga
+        :date: 2026-10-21
+        """
         return StructuredTool.from_function(
             name="grep",
             description="Find literal text or ripgrep regular expressions. Use literal=false for regex; narrow with path/glob. Results are bounded and permission filtered.",
@@ -329,6 +524,17 @@ class OpenCodeFilesystemMiddleware(FilesystemMiddleware):
         )
 
     def _glob_result(self, value: GlobResult, runtime: ToolRuntime) -> ToolMessage:
+        """应用读权限过滤 glob 匹配路径并返回 ToolMessage。
+
+        :param value: 原始 GlobResult 结果。
+        :type value: deepagents.backends.protocol.GlobResult
+        :param runtime: 工具运行时。
+        :type runtime: langchain.tools.ToolRuntime
+        :return: ToolMessage。
+        :rtype: langchain_core.messages.ToolMessage
+        :author: tongliga
+        :date: 2026-10-21
+        """
         paths = _apply_permissions_to_glob_results(
             self._permissions, value.matches or [], backend=self.backend
         )
@@ -350,6 +556,23 @@ class OpenCodeFilesystemMiddleware(FilesystemMiddleware):
         hidden: bool = False,
         limit: int = 100,
     ) -> ToolMessage:
+        """执行同步 glob 通配文件查找。
+
+        :param pattern: 通配符表达式。
+        :type pattern: str
+        :param runtime: 工具运行时。
+        :type runtime: langchain.tools.ToolRuntime
+        :param path: 目录路径。
+        :type path: str | None
+        :param hidden: 是否包含隐藏文件。
+        :type hidden: bool
+        :param limit: 最大条目数。
+        :type limit: int
+        :return: ToolMessage。
+        :rtype: langchain_core.messages.ToolMessage
+        :author: tongliga
+        :date: 2026-10-21
+        """
         error = self._authorize("read", path or "/")
         value = (
             GlobResult(error=error)
@@ -366,6 +589,23 @@ class OpenCodeFilesystemMiddleware(FilesystemMiddleware):
         hidden: bool = False,
         limit: int = 100,
     ) -> ToolMessage:
+        """执行异步非阻塞 glob 通配文件查找。
+
+        :param pattern: 通配符表达式。
+        :type pattern: str
+        :param runtime: 工具运行时。
+        :type runtime: langchain.tools.ToolRuntime
+        :param path: 目录路径。
+        :type path: str | None
+        :param hidden: 是否包含隐藏文件。
+        :type hidden: bool
+        :param limit: 最大条目数。
+        :type limit: int
+        :return: ToolMessage。
+        :rtype: langchain_core.messages.ToolMessage
+        :author: tongliga
+        :date: 2026-10-21
+        """
         error = self._authorize("read", path or "/")
         value = (
             GlobResult(error=error)
@@ -375,7 +615,13 @@ class OpenCodeFilesystemMiddleware(FilesystemMiddleware):
         return self._glob_result(value, runtime)
 
     def _create_glob_tool(self) -> StructuredTool:
+        """重写父类构建 glob 工具方法，挂载 FileGlobSchema。
 
+        :return: StructuredTool。
+        :rtype: langchain_core.tools.StructuredTool
+        :author: tongliga
+        :date: 2026-10-21
+        """
         return StructuredTool.from_function(
             name="glob",
             description="Find files with ripgrep glob and ignore rules. Hidden files are optional; .git directories are excluded. Results are bounded and permission filtered.",
@@ -385,6 +631,17 @@ class OpenCodeFilesystemMiddleware(FilesystemMiddleware):
         )
 
     def _apply_patch(self, patch_text: str, runtime: ToolRuntime) -> ToolMessage:
+        """执行同步多文件补丁应用。
+
+        :param patch_text: 完整补丁文本。
+        :type patch_text: str
+        :param runtime: 工具运行时。
+        :type runtime: langchain.tools.ToolRuntime
+        :return: ToolMessage。
+        :rtype: langchain_core.messages.ToolMessage
+        :author: tongliga
+        :date: 2026-10-21
+        """
         try:
             content, artifact = self.backend.apply_patch(
                 patch_text, lambda path: self._authorize("write", path)
@@ -404,6 +661,17 @@ class OpenCodeFilesystemMiddleware(FilesystemMiddleware):
         )
 
     async def _aapply_patch(self, patch_text: str, runtime: ToolRuntime) -> ToolMessage:
+        """执行异步非阻塞多文件补丁应用。
+
+        :param patch_text: 完整补丁文本。
+        :type patch_text: str
+        :param runtime: 工具运行时。
+        :type runtime: langchain.tools.ToolRuntime
+        :return: ToolMessage。
+        :rtype: langchain_core.messages.ToolMessage
+        :author: tongliga
+        :date: 2026-10-21
+        """
         try:
             content, artifact = await self.backend.aapply_patch(
                 patch_text, lambda path: self._authorize("write", path)
@@ -423,7 +691,13 @@ class OpenCodeFilesystemMiddleware(FilesystemMiddleware):
         )
 
     def _create_patch_tool(self) -> StructuredTool:
+        """构建原生多文件补丁应用工具 apply_patch。
 
+        :return: StructuredTool。
+        :rtype: langchain_core.tools.StructuredTool
+        :author: tongliga
+        :date: 2026-10-21
+        """
         return StructuredTool.from_function(
             name="apply_patch",
             description="Apply a multi-file patch. Format: *** Begin Patch, then *** Add File: path with +lines, *** Delete File: path, or *** Update File: path with @@ hunks and optional *** Move to: path; finish with *** End Patch. All paths and hunks are checked before writing. Updates may use *** End of File. Earlier operations may remain if a later filesystem write fails.",

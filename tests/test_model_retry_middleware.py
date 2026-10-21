@@ -23,7 +23,7 @@ from langgraph.errors import GraphInterrupt
 from openai import APIStatusError, APITimeoutError
 
 from vertical_harness.middleware.model_output_guard import ModelOutputGuard
-from vertical_harness.middleware.model_retry import OpenCodeModelRetryMiddleware
+from vertical_harness.middleware.model_retry import ModelRetryMiddleware
 
 
 def model_request():
@@ -51,7 +51,7 @@ def test_model_retries_are_bounded_and_keep_request(monkeypatch, execution):
     error = status_error(503)
     handler = Mock(side_effect=error) if execution == "sync" else AsyncMock(side_effect=error)
     request = model_request()
-    middleware = OpenCodeModelRetryMiddleware()
+    middleware = ModelRetryMiddleware()
     with pytest.raises(APIStatusError) as raised:
         if execution == "sync":
             middleware.wrap_model_call(request, handler)
@@ -78,7 +78,7 @@ def test_only_three_timeout_retries(monkeypatch, error):
     monkeypatch.setattr("vertical_harness.middleware.model_retry.time.sleep", sleep)
     handler = Mock(side_effect=error)
     with pytest.raises(type(error)):
-        OpenCodeModelRetryMiddleware().wrap_model_call(model_request(), handler)
+        ModelRetryMiddleware().wrap_model_call(model_request(), handler)
     assert handler.call_count == 4
     assert sleep.call_count == 3
 
@@ -95,7 +95,7 @@ def test_only_three_timeout_retries(monkeypatch, error):
 def test_deterministic_errors_and_graph_interrupts_propagate(error):
     handler = Mock(side_effect=error)
     with pytest.raises(type(error)) as raised:
-        OpenCodeModelRetryMiddleware().wrap_model_call(model_request(), handler)
+        ModelRetryMiddleware().wrap_model_call(model_request(), handler)
     assert raised.value is error
     handler.assert_called_once()
 
@@ -109,7 +109,7 @@ def test_expected_transient_errors_recover(monkeypatch, error):
     monkeypatch.setattr("vertical_harness.middleware.model_retry.time.sleep", Mock())
     response = object()
     handler = Mock(side_effect=[error, response])
-    assert OpenCodeModelRetryMiddleware().wrap_model_call(model_request(), handler) is response
+    assert ModelRetryMiddleware().wrap_model_call(model_request(), handler) is response
     assert handler.call_count == 2
 
 
@@ -127,13 +127,13 @@ def test_expected_transient_errors_recover(monkeypatch, error):
 def test_retry_after_and_cap(monkeypatch, headers, expected):
     monkeypatch.setattr("vertical_harness.middleware.model_retry.random.uniform", lambda *_: 1)
     monkeypatch.setattr("vertical_harness.middleware.model_retry.time.time", lambda: 1792540800)
-    assert OpenCodeModelRetryMiddleware._delay(status_error(429, headers=headers), 0) == expected
+    assert ModelRetryMiddleware._delay(status_error(429, headers=headers), 0) == expected
 
 
 def test_async_cancellation_propagates_without_retry():
     handler = AsyncMock(side_effect=asyncio.CancelledError())
     with pytest.raises(asyncio.CancelledError):
-        asyncio.run(OpenCodeModelRetryMiddleware().awrap_model_call(model_request(), handler))
+        asyncio.run(ModelRetryMiddleware().awrap_model_call(model_request(), handler))
     handler.assert_awaited_once()
 
 
@@ -142,13 +142,13 @@ def test_retry_wait_is_cancellable(monkeypatch):
     sleep = AsyncMock(side_effect=asyncio.CancelledError())
     monkeypatch.setattr("vertical_harness.middleware.model_retry.asyncio.sleep", sleep)
     with pytest.raises(asyncio.CancelledError):
-        asyncio.run(OpenCodeModelRetryMiddleware().awrap_model_call(model_request(), handler))
+        asyncio.run(ModelRetryMiddleware().awrap_model_call(model_request(), handler))
     handler.assert_awaited_once()
 
 
 def test_timeout_budget_is_local_to_model_call(monkeypatch):
     monkeypatch.setattr("vertical_harness.middleware.model_retry.time.sleep", Mock())
-    middleware = OpenCodeModelRetryMiddleware()
+    middleware = ModelRetryMiddleware()
     for _ in range(2):
         handler = Mock(side_effect=[ModelTimeoutError("timeout"), "response"])
         assert middleware.wrap_model_call(model_request(), handler) == "response"
@@ -157,7 +157,7 @@ def test_timeout_budget_is_local_to_model_call(monkeypatch):
 @pytest.mark.parametrize("execution", ["sync", "async"])
 def test_delivered_output_prevents_replay(execution):
     handler = Mock(side_effect=emit_then_fail) if execution == "sync" else AsyncMock(side_effect=emit_then_fail)
-    middleware = OpenCodeModelRetryMiddleware()
+    middleware = ModelRetryMiddleware()
     with pytest.raises(APIStatusError):
         if execution == "sync":
             middleware.wrap_model_call(model_request(), handler)
@@ -224,7 +224,7 @@ async def consume_offline_stream(provider, chunks, callbacks):
             model="offline", api_key="offline", base_url="https://offline.test/v1",
             http_async_client=client, max_retries=0, callbacks=callbacks, metadata={"preserved": True},
         )
-        agent = create_agent(model, middleware=[OpenCodeModelRetryMiddleware()], checkpointer=InMemorySaver())
+        agent = create_agent(model, middleware=[ModelRetryMiddleware()], checkpointer=InMemorySaver())
         config = {"configurable": {"thread_id": "stream-recovery"}}
         async for chunk, _ in agent.astream({"messages": [("user", "hello")]}, config, stream_mode="messages"):
             chunks.append(chunk.content)
@@ -245,13 +245,13 @@ def test_sdk_stream_continues_from_checkpointed_partial_content(monkeypatch):
     assert recorder.tokens.count("partial") == 1
     assert chunks.count("recovered") == 1
     assert [message.content for message in messages] == [
-        "hello", "partial", OpenCodeModelRetryMiddleware._continuation, "recovered",
+        "hello", "partial", ModelRetryMiddleware._continuation, "recovered",
     ]
     assert messages[1].additional_kwargs["opencode_stream_retry"] == {"attempt": 1, "timeouts": 0}
     assert messages[2].additional_kwargs["opencode_synthetic"] == "interrupted-stream"
     sent = provider.bodies[1]["messages"]
     assert sent[-2] == {"role": "assistant", "content": "partial"}
-    assert sent[-1]["content"] == OpenCodeModelRetryMiddleware._continuation
+    assert sent[-1]["content"] == ModelRetryMiddleware._continuation
     sleep.assert_awaited_once()
 
 
@@ -264,7 +264,7 @@ def test_sync_sdk_stream_continues_without_replaying_partial_content(monkeypatch
             model="offline", api_key="offline", base_url="https://offline.test/v1",
             http_client=client, max_retries=0,
         )
-        agent = create_agent(model, middleware=[OpenCodeModelRetryMiddleware()], checkpointer=InMemorySaver())
+        agent = create_agent(model, middleware=[ModelRetryMiddleware()], checkpointer=InMemorySaver())
         config = {"configurable": {"thread_id": "sync-stream-recovery"}}
         chunks = [chunk.content for chunk, _ in agent.stream(
             {"messages": [("user", "hello")]}, config, stream_mode="messages",
@@ -273,7 +273,7 @@ def test_sync_sdk_stream_continues_without_replaying_partial_content(monkeypatch
     assert provider.requests == 2
     assert chunks.count("partial") == 1 and chunks.count("recovered") == 1
     assert [message.content for message in messages] == [
-        "hello", "partial", OpenCodeModelRetryMiddleware._continuation, "recovered",
+        "hello", "partial", ModelRetryMiddleware._continuation, "recovered",
     ]
     assert provider.bodies[1]["messages"][-2] == {"role": "assistant", "content": "partial"}
     sleep.assert_called_once()
@@ -296,8 +296,8 @@ def test_new_user_input_resets_stream_retry_budget():
     })
     continuation = HumanMessage(content="continue", additional_kwargs={"opencode_synthetic": "interrupted-stream"})
     request = model_request().override(messages=[partial, continuation])
-    assert OpenCodeModelRetryMiddleware._retry_state(request) == (10, 3)
-    assert OpenCodeModelRetryMiddleware._retry_state(
+    assert ModelRetryMiddleware._retry_state(request) == (10, 3)
+    assert ModelRetryMiddleware._retry_state(
         request.override(messages=[partial, continuation, HumanMessage(content="new task")])
     ) == (0, 0)
 
@@ -308,7 +308,7 @@ def test_incomplete_streamed_tool_calls_are_not_executed_or_replayed():
             content="text", tool_call_chunks=[{"name": "write_file", "args": '{"path":', "id": "call-1", "index": 0}],
         )))
         assert guard.delivered
-        assert OpenCodeModelRetryMiddleware._partial(guard, httpx.ReadError("broken"), 1, 0) is None
+        assert ModelRetryMiddleware._partial(guard, httpx.ReadError("broken"), 1, 0) is None
 
 
 def test_sdk_stream_retries_failure_before_content(monkeypatch):
@@ -351,7 +351,7 @@ def test_guard_preserves_existing_callbacks_and_metadata(managed):
 
 def test_stateful_model_keeps_advancing_between_graph_turns():
     model = FakeListChatModel(responses=["first", "second", "third"])
-    agent = create_agent(model, middleware=[OpenCodeModelRetryMiddleware()])
+    agent = create_agent(model, middleware=[ModelRetryMiddleware()])
     first = agent.invoke({"messages": [("user", "first question")]})
     second = agent.invoke({"messages": [("user", "second question")]})
     assert first["messages"][-1].content == "first"
@@ -388,7 +388,7 @@ async def run_concurrent_calls():
     output.model_settings["identity"] = "output"
     quiet = ModelRequest(model=output.model, messages=[], model_settings={"identity": "quiet"})
     assert output.model is quiet.model
-    middleware = OpenCodeModelRetryMiddleware()
+    middleware = ModelRetryMiddleware()
     results = await asyncio.gather(
         middleware.awrap_model_call(output, handler),
         middleware.awrap_model_call(quiet, handler),

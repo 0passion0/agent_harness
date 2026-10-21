@@ -41,7 +41,7 @@
 .settings-toolbar { display: flex; align-items: end; justify-content: space-between; gap: 12px; margin-bottom: 15px; flex-wrap: wrap; }
 .settings-toolbar label { min-width: 135px; }
 .source-badge, .plugin-status { color: var(--muted); background: var(--soft); border-radius: 99px; padding: 5px 9px; font-size: 10px; white-space: nowrap; }
-.settings-page .config-editor { min-height: 275px; resize: vertical; padding: 15px; background: var(--sidebar); font: 12px/1.65 ui-monospace, "SFMono-Regular", Consolas, monospace; }
+.settings-page .config-editor { min-height: 275px; resize: vertical; padding: 15px; background: var(--sidebar); font: 12px/1.65 var(--font-mono, 'JetBrains Mono', 'Cascadia Code', 'Fira Code', ui-monospace, Consolas, monospace); }
 .skill-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 15px 0; border-top: 1px solid var(--line); font-size: 11px; }
 .skill-row > div { display: grid; gap: 5px; min-width: 0; }
 .skill-row small { color: var(--muted); overflow-wrap: anywhere; }
@@ -108,7 +108,7 @@
 .message-content ul, .message-content ol { padding-left: 21px; margin: 10px 0; }
 .message-content li { padding-left: 2px; margin: 5px 0; }
 .message-content pre { overflow: auto; max-width: 100%; background: var(--sidebar); border: 1px solid var(--line); padding: 15px; border-radius: 10px; line-height: 1.6; }
-.message-content code { font-family: ui-monospace, "SFMono-Regular", "Cascadia Code", Consolas, "Liberation Mono", monospace; font-size: .9em; }
+.message-content code { font-family: var(--font-mono, 'JetBrains Mono', 'Cascadia Code', 'Fira Code', ui-monospace, Consolas, monospace); font-size: .9em; }
 .message-content :not(pre) > code { color: var(--accent); background: var(--soft); padding: 2px 5px; border-radius: 5px; }
 .message-content table { display: block; overflow: auto; border-collapse: collapse; max-width: 100%; font-size: 11px; margin: 13px 0; }
 .message-content th, .message-content td { border: 1px solid var(--line-strong); text-align: left; padding: 8px 10px; }

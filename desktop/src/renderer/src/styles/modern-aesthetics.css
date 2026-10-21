@@ -115,13 +115,14 @@
 
 /* 行内普通代码与自定义渲染 */
 .product-v3 .modern-inline-code {
-  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  font-family: var(--font-mono, 'JetBrains Mono', 'Cascadia Code', 'Fira Code', ui-monospace, Consolas, monospace);
   font-size: 0.88em;
-  padding: 2px 4px;
-  border-radius: 4px;
-  background: var(--sidebar);
-  color: var(--heading);
-  border: 1px solid var(--line);
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--accent) 8%, var(--panel));
+  color: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 18%, transparent);
+  font-weight: 500;
   box-decoration-break: clone;
 }
 
@@ -246,26 +247,43 @@
 }
 
 /* ==========================================================================
-   3. 极简现代代码块 (Modern Code Block)
+   3. 极简现代代码块 (Modern Code Block & Prism Syntax)
    ========================================================================== */
 
 .product-v3 .modern-code-block {
-  margin: 14px 0;
-  border-radius: 11px;
+  margin: 16px 0;
+  border-radius: 14px;
   border: 1px solid var(--line);
-  background: var(--sidebar);
+  background: color-mix(in srgb, var(--sidebar) 70%, var(--panel));
   overflow: hidden;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.025);
+  box-shadow: 0 4px 18px -4px rgba(41, 41, 91, 0.05);
 }
 
 .product-v3 .modern-code-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 7px 12px;
-  background: color-mix(in srgb, var(--heading) 3%, var(--panel));
+  padding: 8px 14px;
+  background: color-mix(in srgb, var(--heading) 4%, var(--panel));
   border-bottom: 1px solid var(--line);
 }
+
+.product-v3 .modern-code-meta {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.product-v3 .code-dot {
+  width: 7.5px;
+  height: 7.5px;
+  border-radius: 50%;
+  display: inline-block;
+  opacity: 0.75;
+}
+.product-v3 .code-dot.red { background: #ff5f56; }
+.product-v3 .code-dot.yellow { background: #ffbd2e; }
+.product-v3 .code-dot.green { background: #27c93f; }
 
 .product-v3 .modern-code-lang {
   font-size: 10px;
@@ -273,6 +291,7 @@
   letter-spacing: 0.08em;
   color: var(--muted);
   text-transform: uppercase;
+  margin-left: 4px;
 }
 
 .product-v3 .modern-code-copy {
@@ -282,7 +301,7 @@
   padding: 3px 8px;
   font-size: 10px;
   font-weight: 500;
-  border-radius: 5px;
+  border-radius: 6px;
   border: 1px solid var(--line);
   background: var(--panel);
   color: var(--muted);
@@ -304,17 +323,113 @@
 
 .product-v3 .modern-code-pre {
   margin: 0;
-  padding: 14px 16px;
+  padding: 15px 18px;
   overflow-x: auto;
   font-size: 12.5px;
-  line-height: 1.68;
-  font-family: ui-monospace, "SFMono-Regular", "Cascadia Code", Consolas, monospace;
+  line-height: 1.7;
+  font-family: var(--font-mono, 'JetBrains Mono', 'Cascadia Code', 'Fira Code', ui-monospace, Consolas, monospace);
   scrollbar-width: thin;
 }
 
 .product-v3 .modern-code-pre code {
   font-family: inherit;
   color: inherit;
+}
+
+/* Prism 语法高亮体系 - 浅色模式 (Light Mode) */
+.product-v3 .token.comment,
+.product-v3 .token.prolog,
+.product-v3 .token.doctype,
+.product-v3 .token.cdata {
+  color: #8c8ea8;
+  font-style: italic;
+}
+.product-v3 .token.punctuation {
+  color: #6a6c86;
+}
+.product-v3 .token.property,
+.product-v3 .token.tag,
+.product-v3 .token.boolean,
+.product-v3 .token.number,
+.product-v3 .token.constant,
+.product-v3 .token.symbol {
+  color: #c9510c;
+}
+.product-v3 .token.selector,
+.product-v3 .token.attr-name,
+.product-v3 .token.string,
+.product-v3 .token.char,
+.product-v3 .token.builtin {
+  color: #0e804a;
+}
+.product-v3 .token.operator,
+.product-v3 .token.entity,
+.product-v3 .token.url {
+  color: #7b4ebf;
+}
+.product-v3 .token.atrule,
+.product-v3 .token.attr-value,
+.product-v3 .token.keyword {
+  color: #5d4cdb;
+  font-weight: 600;
+}
+.product-v3 .token.function,
+.product-v3 .token.class-name {
+  color: #0b69a3;
+  font-weight: 600;
+}
+.product-v3 .token.regex,
+.product-v3 .token.important,
+.product-v3 .token.variable {
+  color: #b33973;
+}
+
+/* Prism 语法高亮体系 - 深色模式 (Dark Mode) */
+.product-v3.dark .token.comment,
+.product-v3.dark .token.prolog,
+.product-v3.dark .token.doctype,
+.product-v3.dark .token.cdata {
+  color: #7a7c9c;
+  font-style: italic;
+}
+.product-v3.dark .token.punctuation {
+  color: #9294b4;
+}
+.product-v3.dark .token.property,
+.product-v3.dark .token.tag,
+.product-v3.dark .token.boolean,
+.product-v3.dark .token.number,
+.product-v3.dark .token.constant,
+.product-v3.dark .token.symbol {
+  color: #fca068;
+}
+.product-v3.dark .token.selector,
+.product-v3.dark .token.attr-name,
+.product-v3.dark .token.string,
+.product-v3.dark .token.char,
+.product-v3.dark .token.builtin {
+  color: #7ee787;
+}
+.product-v3.dark .token.operator,
+.product-v3.dark .token.entity,
+.product-v3.dark .token.url {
+  color: #d2a8ff;
+}
+.product-v3.dark .token.atrule,
+.product-v3.dark .token.attr-value,
+.product-v3.dark .token.keyword {
+  color: #aea5ff;
+  font-weight: 600;
+}
+.product-v3.dark .token.function,
+.product-v3.dark .token.class-name {
+  color: #79c0ff;
+  font-weight: 600;
+}
+.product-v3.dark .token.regex,
+.product-v3.dark .token.important,
+.product-v3.dark .token.variable {
+  color: #ff7b72;
 }
 
 /* ==========================================================================
@@ -392,8 +507,27 @@
 .product-v3 .message-content p { margin: 0 0 14px; }
 .product-v3 .message-content li { margin: 6px 0; }
 .product-v3 .message { margin-bottom: 24px; min-width: 0; }
-.product-v3 .message.ai { padding-left: 34px; }
-.product-v3 .message-avatar { top: 3px; }
+.product-v3 .message.ai { padding-left: 42px; position: relative; }
+.product-v3 .message-avatar {
+  position: absolute;
+  left: 0;
+  top: 2px;
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
+  box-shadow: 0 2px 8px rgba(97, 88, 219, 0.16);
+  border: 1px solid color-mix(in srgb, var(--accent) 18%, transparent);
+  transition: transform .2s ease;
+}
+.product-v3 .message-avatar:hover { transform: scale(1.05); }
+.product-v3 .message-content blockquote {
+  margin: 16px 0;
+  padding: 10px 18px;
+  border-left: 3px solid var(--accent);
+  background: color-mix(in srgb, var(--soft) 55%, transparent);
+  border-radius: 0 12px 12px 0;
+  color: var(--text);
+}
 .product-v3 .message-actions-bar .copy-label { display: none; }
 .product-v3 .msg-copy-btn.is-copied .copy-label { display: inline; }
 .product-v3 .message:last-of-type .message-actions-bar { opacity: 1; }
@@ -401,8 +535,9 @@
   max-width: 100%;
   overflow-x: auto;
   margin: 18px 0;
-  border: 1px solid var(--line-strong);
-  border-radius: 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 2px 10px -2px rgba(41, 41, 91, 0.04);
   scrollbar-width: thin;
 }
 .product-v3 .message-content table {
@@ -422,9 +557,9 @@
   border-bottom: 1px solid var(--line);
   vertical-align: top;
 }
-.product-v3 .message-content th { background: var(--sidebar); font-weight: 600; color: var(--heading); }
+.product-v3 .message-content th { background: var(--soft); font-weight: 600; color: var(--heading); }
 .product-v3 .message-content tbody tr:last-child td { border-bottom: 0; }
-.product-v3 .message-content tbody tr:hover { background: var(--sidebar); }
+.product-v3 .message-content tbody tr:hover { background: color-mix(in srgb, var(--accent) 4%, transparent); }
 .product-v3 .file-link-chip.is-block { display: flex; width: fit-content; }
 .product-v3 .file-chip-main:focus-visible,
 .product-v3 .file-chip-btn:focus-visible,
@@ -438,13 +573,19 @@
 }
 
 /* Compact execution summaries; details stay available after the run ends. */
-.product-v3 .saved-run-activity { margin: -12px 0 24px 34px; }
+.product-v3 .saved-run-activity { margin: -12px 0 24px 42px; }
 .product-v3 .inline-activity-card {
-  margin: 12px 0;
+  margin: 14px 0;
   border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--sidebar);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--panel) 90%, var(--soft) 10%);
+  box-shadow: 0 2px 10px -2px rgba(41, 41, 91, 0.04);
   overflow: hidden;
+  transition: all .2s cubic-bezier(.16,1,.3,1);
+}
+.product-v3 .inline-activity-card.is-active {
+  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+  box-shadow: 0 4px 18px -4px rgba(97, 88, 219, 0.14);
 }
 .product-v3 .inline-activity-bar,
 .product-v3 .act-item-header {
@@ -511,7 +652,7 @@
 .product-v3 .act-file-chips-label { color: var(--muted); font-size: 11px; }
 .product-v3 .act-payload-content { position: relative; }
 .product-v3 .act-copy-btn { position: absolute; top: 0; right: 0; display: inline-flex; align-items: center; gap: 4px; padding: 3px 6px; border: 0; border-radius: 4px; background: var(--panel); color: var(--muted); font-size: 11px; }
-.product-v3 .act-json-pre { margin: 0; padding-top: 28px; max-height: 200px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.6 ui-monospace, Consolas, monospace; }
+.product-v3 .act-json-pre { margin: 0; padding-top: 28px; max-height: 200px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.6 var(--font-mono, 'JetBrains Mono', 'Cascadia Code', ui-monospace, Consolas, monospace); }
 .product-v3 .act-empty-loading { display: flex; align-items: center; gap: 8px; padding: 10px 2px; font-size: 12px; color: var(--muted); }
 @media (prefers-reduced-motion: reduce) { .product-v3 .act-spinner { animation: none; } }
 
@@ -794,7 +935,7 @@
   background: var(--sidebar);
   color: var(--text);
   padding: 14px 16px;
-  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  font-family: var(--font-mono, 'JetBrains Mono', 'Cascadia Code', 'Fira Code', ui-monospace, Consolas, monospace);
   font-size: 12px;
   line-height: 1.65;
   min-height: 190px;
@@ -1081,4 +1222,129 @@
 
 .subtle-button-sm:hover {
   background: var(--hover);
+}
+
+/* ==========================================================================
+   7. Mermaid 图表与交互式 HTML 实时预览卡片 (Mermaid & HTML Live Preview)
+   ========================================================================== */
+
+.product-v3 .modern-mermaid-block,
+.product-v3 .modern-html-block {
+  margin: 18px 0;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--sidebar) 70%, var(--panel));
+  overflow: hidden;
+  box-shadow: 0 4px 18px -4px rgba(41, 41, 91, 0.05);
+}
+
+.product-v3 .modern-mermaid-header,
+.product-v3 .modern-html-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  background: color-mix(in srgb, var(--heading) 4%, var(--panel));
+  border-bottom: 1px solid var(--line);
+}
+
+.product-v3 .mermaid-badge,
+.product-v3 .html-badge {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--accent);
+  text-transform: uppercase;
+  margin-left: 4px;
+}
+
+.product-v3 .mermaid-actions,
+.product-v3 .html-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.product-v3 .mermaid-zoom-actions { display: flex; align-items: center; justify-content: flex-end; gap: 4px; padding: 6px 12px 0; color: var(--muted); font-size: 10px; }
+.product-v3 .mermaid-action-btn { display: inline-flex; align-items: center; justify-content: center; gap: 4px; padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--muted); cursor: pointer; }
+.product-v3 .mermaid-action-btn:hover { color: var(--accent); border-color: var(--accent); }
+.product-v3 .mermaid-action-btn:disabled { opacity: .45; cursor: not-allowed; }
+
+.product-v3 .preview-toggle-group {
+  display: inline-flex;
+  align-items: center;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 2px;
+  gap: 2px;
+}
+
+.product-v3 .preview-toggle-btn {
+  padding: 2px 8px;
+  font-size: 10px;
+  font-weight: 550;
+  border-radius: 5px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.product-v3 .preview-toggle-btn:hover {
+  color: var(--heading);
+}
+
+.product-v3 .preview-toggle-btn.is-active {
+  background: var(--soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.product-v3 .mermaid-svg-container {
+  position: relative;
+  display: grid;
+  place-items: center;
+  padding: 22px 18px;
+  overflow: hidden;
+  background: var(--panel);
+  min-height: 100px;
+  cursor: default;
+  touch-action: none;
+}
+
+.product-v3 .svg-diagram-shell { width: 100%; }
+.product-v3 .svg-diagram-shell:fullscreen { display: flex; flex-direction: column; width: 100vw; height: 100vh; background: var(--panel); }
+.product-v3 .svg-diagram-shell:fullscreen .mermaid-svg-container { flex: 1; min-height: 0; cursor: grab; }
+.product-v3 .svg-diagram-shell:fullscreen .mermaid-svg-container:active { cursor: grabbing; }
+.product-v3 .svg-diagram-shell:fullscreen .mermaid-svg-content { height: 100%; }
+.product-v3 .mermaid-svg-content { display: flex; width: 100%; height: min(60vh, 480px); justify-content: center; transform-origin: center; }
+.product-v3 .svg-preview-frame { width: 100%; height: 100%; border: 0; background: transparent; pointer-events: none; }
+.product-v3 .mermaid-pan-hint { position: absolute; right: 8px; bottom: 6px; color: var(--muted); font-size: 9px; opacity: .7; pointer-events: none; }
+.product-v3 .mermaid-export-error { position: absolute; left: 8px; bottom: 6px; color: #c15a5a; font-size: 10px; }
+
+.product-v3 .mermaid-svg-container svg {
+  max-width: 100%;
+  height: auto;
+}
+
+.product-v3 .mermaid-error {
+  padding: 14px 16px;
+  color: #c15a5a;
+  background: rgba(193, 90, 90, 0.08);
+  font-size: 12px;
+}
+
+.product-v3 .html-preview-frame {
+  width: 100%;
+  min-height: 280px;
+  max-height: 520px;
+  border: 0;
+  background: #ffffff;
+  display: block;
+}
+
+.product-v3.dark .html-preview-frame {
+  background: #0f1020;
 }

@@ -14,9 +14,9 @@ import tracemalloc
 from dataclasses import asdict
 from pathlib import Path
 
-from vertical_harness.tools.opencode_edit import OpenCodeEdit
-from vertical_harness.tools.opencode_patch import OpenCodePatch
-from vertical_harness.tools.opencode_update_chunk import UpdateChunk
+from vertical_harness.tools.patch_editor import PatchEditor
+from vertical_harness.tools.text_editor import TextEditor
+from vertical_harness.tools.update_chunk import UpdateChunk
 
 SOURCE_COMMIT = "7d3752c14ce8dd03cfaac03ee4062a877808a69c"
 
@@ -125,11 +125,11 @@ def main() -> None:
         if case["operation"] == "edit":
 
             def run(case=case):
-                return OpenCodeEdit.replace_text(case["content"], case["old"], case["new"])
+                return TextEditor.replace_text(case["content"], case["old"], case["new"])
         else:
 
             def run(case=case):
-                return OpenCodePatch.derive_update("file", (chunk,), case["content"])
+                return PatchEditor.derive_update("file", (chunk,), case["content"])
 
         case["expected"] = run()
         started = time.perf_counter()

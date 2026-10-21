@@ -1,4 +1,5 @@
 import asyncio
+from unittest.mock import Mock
 
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
@@ -7,6 +8,7 @@ from langgraph.graph import END, START, MessagesState, StateGraph
 from langgraph.types import Command, interrupt
 
 from vertical_harness import HarnessSettings, RunContext
+from vertical_harness.bridge.attachments import AttachmentContent
 from vertical_harness.bridge.messages import DesktopMessages
 from vertical_harness.bridge.runtime import DesktopRuntime
 from vertical_harness.config.checkpoint_config import CheckpointConfig
@@ -154,6 +156,42 @@ def test_attachments_inside_workspace_are_referenced_in_place(tmp_path):
     )
     assert message[0]["text"] == "Analyze this"
     assert "Path: /report.csv" in message[1]["text"]
+
+
+@pytest.mark.parametrize(
+    "case,error,message",
+    [
+        ("not_dict", ValueError, "must contain"),
+        ("extra_field", ValueError, "must contain"),
+        ("non_string", ValueError, "must be strings"),
+        ("relative", ValueError, "must be absolute"),
+        ("missing", FileNotFoundError, None),
+        ("directory", ValueError, "must refer to a file"),
+        ("outside", ValueError, "must be inside the workspace"),
+    ],
+)
+def test_all_attachments_are_validated_before_content_conversion(tmp_path, monkeypatch, case, error, message):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    image = workspace / "image.png"
+    image.write_bytes(b"image")
+    outside = tmp_path / "outside.png"
+    outside.write_bytes(b"outside")
+    ref = {"name": image.name, "path": str(image), "media_type": "image/png"}
+    invalid = {
+        "not_dict": None,
+        "extra_field": {**ref, "extra": "value"},
+        "non_string": {**ref, "name": 1},
+        "relative": {**ref, "path": image.name},
+        "missing": {**ref, "path": str(workspace / "missing.png")},
+        "directory": {**ref, "path": str(workspace)},
+        "outside": {**ref, "path": str(outside)},
+    }[case]
+    convert = Mock()
+    monkeypatch.setattr(AttachmentContent, "content_blocks", convert)
+    with pytest.raises(error, match=message):
+        DesktopMessages.attachment_message(workspace, "Analyze", [ref, invalid])
+    convert.assert_not_called()
 
 
 def test_snapshot_keeps_multimodal_content_and_marks_usage_estimate():

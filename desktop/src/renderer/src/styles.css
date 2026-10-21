@@ -1,5 +1,15 @@
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('./assets/fonts/jetbrains-mono-latin-400-normal.woff2') format('woff2');
+  font-weight: 400 700;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
-  font-family: -apple-system, BlinkMacSystemFont, "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text", "Segoe UI", "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+  --font-mono: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', ui-monospace, 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+  font-family: var(--font-sans);
   font-size: 14px;
   line-height: 1.6;
   font-synthesis: none;
@@ -123,7 +133,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .heading-actions .header-icon { border: 0; background: transparent; display: grid; place-items: center; color: var(--muted); padding: 8px; }
 .heading-actions .header-icon.is-active, .heading-actions .header-icon:hover { color: var(--accent); background: var(--soft); border-color: transparent; }
 .conversation-wrap { position: relative; flex: 1; min-height: 0; }
-.conversation { height: 100%; overflow-y: auto; overflow-x: hidden; padding: 32px max(28px, calc((100% - 760px) / 2)) 22px; scrollbar-width: thin; }
+.conversation { height: 100%; overflow-y: auto; overflow-x: hidden; padding: 32px max(28px, calc((100% - 760px) / 2)) 22px; scrollbar-width: thin; overflow-anchor: auto; }
 .message { position: relative; margin: 0 0 30px; padding: 0; }
 .message.ai { padding-left: 36px; }
 .message-avatar { position: absolute; left: 0; top: 1px; width: 24px; height: 24px; object-fit: contain; }

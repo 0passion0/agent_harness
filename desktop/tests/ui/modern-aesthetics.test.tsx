@@ -149,3 +149,66 @@ test('Conversation renders copy buttons, file chips and code block headers in ma
   // Streaming cursor
   expect(html).toContain('streaming-cursor')
 })
+
+test('Conversation renders Mermaid diagram blocks and HTML live preview switchers', () => {
+  const html = renderToStaticMarkup(<Conversation
+    openArtifact={() => {}}
+    state={{
+      ...initialState,
+      snapshot: {
+        session_id: 's', thread_id: 't', thread_ids: ['t'], attachments: [], artifacts: [], runs: [], totals: {}, unsettled_history: false,
+        messages: [
+          {
+            type: 'ai',
+            data: {
+              content: [
+                '下面是系统流程图：',
+                '```mermaid',
+                'graph TD',
+                '  A[开始] --> B[处理]',
+                '  B --> C[完成]',
+                '```',
+                '下面是交互小部件：',
+                '```html',
+                '<button onclick="alert(1)">点击测试</button>',
+                '```'
+              ].join('\n')
+            }
+          }
+        ]
+      }
+    }}
+  />)
+
+  // Mermaid block verification
+  expect(html).toContain('modern-mermaid-block')
+  expect(html).toContain('MERMAID 图表')
+  expect(html).toContain('preview-toggle-group')
+  expect(html).toContain('图表')
+  expect(html).toContain('源码')
+
+  // HTML block live preview verification
+  expect(html).toContain('modern-code-block is-html')
+  expect(html).toContain('HTML')
+  expect(html).toContain('实时预览')
+  expect(html).toContain('html-preview-frame')
+})
+
+test('Conversation previews SVG fences with fullscreen controls and downloads', () => {
+  const html = renderToStaticMarkup(<Conversation
+    openArtifact={() => {}}
+    state={{
+      ...initialState,
+      snapshot: {
+        session_id: 's', thread_id: 't', thread_ids: ['t'], attachments: [], artifacts: [], runs: [], totals: {}, unsettled_history: false,
+        messages: [{ type: 'ai', data: { content: '```xml\n<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4" /></svg>\n```' } }]
+      }
+    }}
+  />)
+
+  expect(html).toContain('svg-preview-frame')
+  expect(html).toContain('全屏查看图表')
+  expect(html).toContain('disabled="" title="放大" aria-label="放大图表"')
+  expect(html).toContain('下载图表为 PNG')
+  expect(html).toContain('下载 SVG')
+})

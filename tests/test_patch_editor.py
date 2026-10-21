@@ -7,12 +7,12 @@ from pathlib import Path
 
 import pytest
 
-from vertical_harness.tools.opencode_patch import OpenCodePatch
-from vertical_harness.tools.opencode_update_chunk import UpdateChunk
+from vertical_harness.tools.patch_editor import PatchEditor
+from vertical_harness.tools.update_chunk import UpdateChunk
 
 
 def test_parse_operations_and_move():
-    hunks = OpenCodePatch.parse_patch(
+    hunks = PatchEditor.parse_patch(
         "*** Begin Patch\n*** Environment ID: x\n*** Add File: a\n+new\n*** Update File: b\n*** Move to: c\n@@ section\n-old\n+new\n*** End of File\n*** Delete File: d\n*** End Patch"
     )
     assert [(hunk.type, hunk.path) for hunk in hunks] == [
@@ -29,7 +29,7 @@ def test_parse_operations_and_move():
     "wrapper", ["<<EOF\n{}\nEOF", "cat <<'PATCH'\n{}\nPATCH", '<<"PATCH"\n{}\nPATCH']
 )
 def test_heredoc(wrapper):
-    assert OpenCodePatch.parse_patch(wrapper.format("*** Begin Patch\n*** End Patch")) == []
+    assert PatchEditor.parse_patch(wrapper.format("*** Begin Patch\n*** End Patch")) == []
 
 
 @pytest.mark.parametrize(
@@ -45,7 +45,7 @@ def test_heredoc(wrapper):
 )
 def test_invalid_patch(body):
     with pytest.raises(ValueError):
-        OpenCodePatch.parse_patch(f"*** Begin Patch\n{body}\n*** End Patch")
+        PatchEditor.parse_patch(f"*** Begin Patch\n{body}\n*** End Patch")
 
 
 @pytest.mark.parametrize(
@@ -61,12 +61,12 @@ def test_invalid_patch(body):
     ],
 )
 def test_derive(original, chunks, expected):
-    assert OpenCodePatch.derive_update("file", chunks, original) == expected
+    assert PatchEditor.derive_update("file", chunks, original) == expected
 
 
 def test_eof_does_not_fallback():
     with pytest.raises(ValueError, match="Failed to find expected"):
-        OpenCodePatch.derive_update(
+        PatchEditor.derive_update(
             "file", (UpdateChunk(("first",), ("new",), end_of_file=True),), "first\nlast\n"
         )
 
@@ -132,9 +132,9 @@ def test_source_patch_differential(tmp_path):
     for case, expected in zip(cases, json.loads(result.stdout), strict=True):
         if "error" in expected:
             with pytest.raises(ValueError):
-                OpenCodePatch.parse_patch(case["patch"])
+                PatchEditor.parse_patch(case["patch"])
             continue
-        hunks = OpenCodePatch.parse_patch(case["patch"])
+        hunks = PatchEditor.parse_patch(case["patch"])
         encoded = []
         for hunk in hunks:
             item = {"type": hunk.type, "path": hunk.path}
@@ -161,13 +161,13 @@ def test_source_patch_differential(tmp_path):
         if expected.get("deriveError"):
             with pytest.raises(ValueError):
                 [
-                    OpenCodePatch.derive_update(hunk.path, hunk.chunks, case["original"])
+                    PatchEditor.derive_update(hunk.path, hunk.chunks, case["original"])
                     for hunk in hunks
                     if hunk.type == "update"
                 ]
         else:
             assert [
-                OpenCodePatch.derive_update(hunk.path, hunk.chunks, case["original"])
+                PatchEditor.derive_update(hunk.path, hunk.chunks, case["original"])
                 for hunk in hunks
                 if hunk.type == "update"
             ] == expected["results"], case
@@ -206,4 +206,4 @@ def test_source_seek_randomized(tmp_path):
     )
     for case, expected in zip(cases, json.loads(result.stdout), strict=True):
         lines, pattern, start, eof = case
-        assert OpenCodePatch._seek(lines, tuple(pattern), start, eof) == expected, case
+        assert PatchEditor._seek(lines, tuple(pattern), start, eof) == expected, case

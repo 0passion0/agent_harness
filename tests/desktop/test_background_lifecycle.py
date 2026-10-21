@@ -67,7 +67,8 @@ def test_delete_session_reconfigure_and_shutdown_own_background_lifetime(tmp_pat
     asyncio.run(run())
 
 
-def test_session_delete_waits_for_active_run_cleanup_before_closing_jobs(tmp_path, monkeypatch):
+@pytest.mark.parametrize("method", ["session.delete", "shutdown", "eof"])
+def test_cleanup_waits_for_active_run_before_closing_jobs(tmp_path, monkeypatch, method):
     monkeypatch.setenv("VA_MODEL", "test:fake")
     loop = bridge.AgentLoop()
 
@@ -88,7 +89,11 @@ def test_session_delete_waits_for_active_run_cleanup_before_closing_jobs(tmp_pat
         loop.active[str(uuid4())] = (thread_id, task)
         try:
             await ready.wait()
-            await loop.dispatch("session.delete", {"thread_id": thread_id})
+            if method == "eof":
+                monkeypatch.setattr(bridge.sys, "stdin", StringIO(""))
+                await loop.main()
+            else:
+                await loop.dispatch(method, {"thread_id": thread_id})
             assert task.cancelled()
             assert loop.shell_execution.status(started[0]["shell_id"], runtime(loop, thread_id))["status"] == "cancelled"
         finally:

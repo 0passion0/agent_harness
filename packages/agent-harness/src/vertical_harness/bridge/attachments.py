@@ -25,15 +25,13 @@ class AttachmentContent:
         :author: tongliga
         :date: 2026-10-21
         """
-        # 第一步：按需延迟导入 markitdown 提取器
         from markitdown import MarkItDown
 
-        # 第二步：执行文档转换并返回文本正文
         return MarkItDown(enable_plugins=False).convert_local(str(path)).text_content or "无可提取文字"
 
     @staticmethod
     def content_blocks(
-            sources: list[tuple[dict[str, str], Path]], text: str, workspace_root: Path
+        sources: list[tuple[dict[str, str], Path]], text: str, workspace_root: Path
     ) -> str | list[dict[str, Any]]:
         """将附件列表转换为注入给大模型的多模态或文本指导消息块。
 
@@ -48,16 +46,14 @@ class AttachmentContent:
         :author: tongliga
         :date: 2026-10-21
         """
-        # 第一步：若无附件，直接短路返回原始文本
         if not sources:
             return text
 
-        # 第二步：构建首个包含用户提示词的文本块
         blocks: list[dict[str, Any]] = [{"type": "text", "text": text}]
 
-        # 第三步：逐一判断附件类型，图片转为 base64 image_url 块，表格和文档转为指导文本块
         for ref, path in sources:
-            if path.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp", ".gif"}:
+            suffix = path.suffix.lower()
+            if suffix in {".png", ".jpg", ".jpeg", ".webp", ".gif"}:
                 data = base64.b64encode(path.read_bytes()).decode("ascii")
                 blocks.append(
                     {
@@ -68,18 +64,16 @@ class AttachmentContent:
                 continue
 
             path_in_workspace = f"/{path.relative_to(workspace_root).as_posix()}"
+            instruction = (
+                "Write a local table-summary .py script and run it with execute_python_file; do not print the full table. "
+                "Otherwise start with read_file(offset=0, limit=40)."
+                if suffix in {".csv", ".parquet", ".xlsx"}
+                else "Start with read_file(offset=0, limit=40); if more is needed, continue with later offsets."
+            )
             blocks.append(
                 {
                     "type": "text",
-                    "text": (
-                            f"Attachment: {ref['name']}\nPath: {path_in_workspace}\n"
-                            + (
-                                "Write a local table-summary .py script and run it with execute_python_file; do not print the full table. "
-                                "Otherwise start with read_file(offset=0, limit=40)."
-                                if path.suffix.lower() in {".csv", ".parquet", ".xlsx"}
-                                else "Start with read_file(offset=0, limit=40); if more is needed, continue with later offsets."
-                            )
-                    ),
+                    "text": f"Attachment: {ref['name']}\nPath: {path_in_workspace}\n{instruction}",
                 }
             )
         return blocks

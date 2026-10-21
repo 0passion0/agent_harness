@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from vertical_harness.tools.opencode_edit import OpenCodeEdit
+from vertical_harness.tools.text_editor import TextEditor
 
 
 @pytest.mark.parametrize(
@@ -26,7 +26,7 @@ from vertical_harness.tools.opencode_edit import OpenCodeEdit
     ],
 )
 def test_replacement(content, old, new, all_matches, expected):
-    assert OpenCodeEdit.replace_text(content, old, new, all_matches) == expected
+    assert TextEditor.replace_text(content, old, new, all_matches) == expected
 
 
 @pytest.mark.parametrize(
@@ -42,11 +42,11 @@ def test_replacement(content, old, new, all_matches, expected):
 )
 def test_replacement_errors(content, old, new, error):
     with pytest.raises(ValueError, match=error):
-        OpenCodeEdit.replace_text(content, old, new)
+        TextEditor.replace_text(content, old, new)
 
 
 def test_replacement_count():
-    assert OpenCodeEdit.replace_text_with_count("a a a", "a", "b", True) == ("b b b", 3)
+    assert TextEditor.replace_text_with_count("a a a", "a", "b", True) == ("b b b", 3)
 
 
 def test_source_edit_differential(tmp_path):
@@ -109,10 +109,10 @@ def test_source_edit_differential(tmp_path):
     for case, expected in zip(cases, json.loads(result.stdout), strict=True):
         if "error" in expected:
             with pytest.raises(ValueError):
-                OpenCodeEdit.replace_text(case["content"], case["old"], case["new"], case["all"])
+                TextEditor.replace_text(case["content"], case["old"], case["new"], case["all"])
         else:
             assert (
-                OpenCodeEdit.replace_text(case["content"], case["old"], case["new"], case["all"])
+                TextEditor.replace_text(case["content"], case["old"], case["new"], case["all"])
                 == expected["value"]
             ), case
 
@@ -164,12 +164,12 @@ def test_source_line_alignment_differential(tmp_path):
         check=True,
     )
     for (before, after), (expected, endings) in zip(cases, json.loads(result.stdout), strict=True):
-        assert OpenCodeEdit._align_lines(before, after) == expected, (before, after)
+        assert TextEditor._align_lines(before, after) == expected, (before, after)
         region = "".join(
             line + ("\n" if index % 2 else "\r\n") if index < len(before) - 1 else line
             for index, line in enumerate(before)
         )
-        assert OpenCodeEdit._region_endings(region, "\n".join(after), "\r\n") == endings, (
+        assert TextEditor._region_endings(region, "\n".join(after), "\r\n") == endings, (
             before,
             after,
         )
