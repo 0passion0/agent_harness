@@ -1,3 +1,5 @@
+"""异步捕获并收集工具与模型调用的入参、耗时及实际 Token 请求的观察处理器模块。"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -7,7 +9,7 @@ from uuid import UUID
 
 from langchain_core.callbacks import AsyncCallbackHandler
 
-from vertical_harness.usage import UsageEstimator
+from vertical_harness.utils.usage import UsageEstimator
 
 
 @dataclass(eq=False)
@@ -27,7 +29,14 @@ class ToolDetails(AsyncCallbackHandler):
     context_reports: dict[str, dict[str, Any]] = field(default_factory=dict, init=False)
 
     async def on_chat_model_start(
-        self, serialized: dict[str, Any], messages: list[Any], *, run_id: UUID, metadata: dict[str, Any] | None = None, invocation_params: dict[str, Any] | None = None, **kwargs: Any
+        self,
+        serialized: dict[str, Any],
+        messages: list[Any],
+        *,
+        run_id: UUID,
+        metadata: dict[str, Any] | None = None,
+        invocation_params: dict[str, Any] | None = None,
+        **kwargs: Any,
     ) -> None:
         """记录模型发起调用时的第一层输入消息与工具列表。
 
@@ -48,7 +57,9 @@ class ToolDetails(AsyncCallbackHandler):
         :author: tongliga
         :date: 2026-10-21
         """
+        # 第一步：校验当前调用是否来自主智能体且包含输入消息
         if (metadata or {}).get("lc_agent_name") == "vertical-agent" and messages:
+            # 第二步：将首条请求消息与绑定的工具描述存入 context_requests
             self.context_requests[str(run_id)] = (
                 messages[0],
                 (invocation_params or {}).get("tools", []),
@@ -68,12 +79,17 @@ class ToolDetails(AsyncCallbackHandler):
         :author: tongliga
         :date: 2026-10-21
         """
+        # 第一步：检索该 run_id 在起始阶段保存的请求参数
         request = self.context_requests.pop(str(run_id), None)
         if request is None:
             return
         messages, tools = request
+
+        # 第二步：从模型生成响应中提取首条消息与用量元数据
         message = response.generations[0][0].message
         usage = message.usage_metadata
+
+        # 第三步：调用用量估算器计算完整分区报告并持久化到内存缓存
         self.context_reports[str(run_id)] = UsageEstimator.usage_estimate(
             [],
             "",
@@ -97,9 +113,18 @@ class ToolDetails(AsyncCallbackHandler):
         :author: tongliga
         :date: 2026-10-21
         """
+        # 第一步：异常时安全弹出并清理请求缓存
         self.context_requests.pop(str(run_id), None)
 
-    async def on_tool_start(self, serialized: dict[str, Any], input_str: str, *, run_id: UUID, inputs: dict[str, Any] | None = None, **kwargs: Any) -> None:
+    async def on_tool_start(
+        self,
+        serialized: dict[str, Any],
+        input_str: str,
+        *,
+        run_id: UUID,
+        inputs: dict[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> None:
         """记录工具开始执行的高精度时间与输入参数。
 
         :param serialized: 序列化工具元数据。
@@ -117,6 +142,7 @@ class ToolDetails(AsyncCallbackHandler):
         :author: tongliga
         :date: 2026-10-21
         """
+        # 第一步：记录起始高精度时间戳与输入参数
         key = str(run_id)
         self.started[key] = perf_counter()
         self.records[key] = {"arguments": inputs}
@@ -135,6 +161,7 @@ class ToolDetails(AsyncCallbackHandler):
         :author: tongliga
         :date: 2026-10-21
         """
+        # 第一步：计算耗时并记录输出正文
         key = str(run_id)
         self.records[key].update(
             {
@@ -157,6 +184,7 @@ class ToolDetails(AsyncCallbackHandler):
         :author: tongliga
         :date: 2026-10-21
         """
+        # 第一步：计算耗时并记录异常类型
         key = str(run_id)
         self.records[key].update(
             {
@@ -164,3 +192,6 @@ class ToolDetails(AsyncCallbackHandler):
                 "elapsed": perf_counter() - self.started[key],
             }
         )
+
+
+__all__ = ["ToolDetails"]

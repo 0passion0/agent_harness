@@ -1,3 +1,5 @@
+"""桌面端运行时配置解析、环境探测与中间件编排模块。"""
+
 from __future__ import annotations
 
 import os
@@ -9,17 +11,23 @@ from typing import Any
 
 from dotenv import dotenv_values
 
-from vertical_harness.config import HarnessSettings
-from vertical_harness.desktop_messages import DesktopMessages
-from vertical_harness.middleware.context_limit import ContextLimitMiddleware
-from vertical_harness.middleware.desktop_approval import DesktopApprovalMiddleware
-from vertical_harness.middleware.desktop_permission import DesktopPermissionMiddleware
-from vertical_harness.search import WebSearch
-from vertical_harness.usage import UsageEstimator
-from vertical_harness.user_interaction import UserInteraction
+from vertical_harness.bridge.messages import DesktopMessages
+from vertical_harness.config.settings import HarnessSettings
+from vertical_harness.middleware.approval.middleware import DesktopApprovalMiddleware
+from vertical_harness.middleware.context_limit.middleware import ContextLimitMiddleware
+from vertical_harness.middleware.permission.middleware import DesktopPermissionMiddleware
+from vertical_harness.tools.search import WebSearch
+from vertical_harness.tools.user_interaction import UserInteraction
+from vertical_harness.utils.usage import UsageEstimator
 
 
 class DesktopRuntime:
+    """桌面端运行时配置工厂与执行环境探测器。
+
+    :author: tongliga
+    :date: 2026-10-21
+    """
+
     @staticmethod
     def configured_settings(params: dict[str, Any]) -> tuple[HarnessSettings, dict[str, Any]]:
         """根据桌面端通过 JSON-RPC 传入的初始化参数构造并校验 HarnessSettings 与运行选项。
@@ -75,7 +83,7 @@ class DesktopRuntime:
 
         # 第二步：解析运行数据目录与默认环境变量
         runtime_dir = Path(params["runtime_data_dir"]).expanduser().resolve()
-        values = dotenv_values(Path(__file__).parents[4] / "desktop" / ".env")
+        values = dotenv_values(Path(__file__).parents[5] / "desktop" / ".env")
         base = HarnessSettings.model_validate(
             {
                 "model": os.environ.get("VA_MODEL")
@@ -115,7 +123,7 @@ class DesktopRuntime:
         :date: 2026-10-21
         """
         # 第一步：读取 desktop/.env 中的默认配置
-        values = dotenv_values(Path(__file__).parents[4] / "desktop" / ".env")
+        values = dotenv_values(Path(__file__).parents[5] / "desktop" / ".env")
         model = os.environ.get("VA_MODEL") or values.get("VA_MODEL") or HarnessSettings().model
 
         # 第二步：检查 Exa 搜索密钥配置状态并返回

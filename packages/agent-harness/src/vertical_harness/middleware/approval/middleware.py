@@ -1,3 +1,5 @@
+"""桌面人机协作审批中断中间件模块。"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -108,3 +110,6 @@ class DesktopApprovalMiddleware(AgentMiddleware):
         if rejected is not None:
             return rejected
         return await handler(request)
+
+
+__all__ = ["DesktopApprovalMiddleware"]

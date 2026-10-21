@@ -1,4 +1,4 @@
-"""Desktop attachment conversion and multimodal message content blocks."""
+"""桌面端附件转换、文本提取与多模态消息内容块构建模块。"""
 
 from __future__ import annotations
 
@@ -8,20 +8,54 @@ from typing import Any
 
 
 class AttachmentContent:
+    """附件内容处理器，支持基于 MarkItDown 的多格式文档提取与多模态数据块封装。
+
+    :author: tongliga
+    :date: 2026-10-21
+    """
+
     @staticmethod
     def extract_text(path: Path) -> str:
+        """从指定文件路径提取 Markdown 或纯文本内容。
+
+        :param path: 本地文件 Path 对象。
+        :type path: pathlib.Path
+        :return: 提取出的 Markdown 文本内容，提取失败或为空时返回默认提示。
+        :rtype: str
+        :author: tongliga
+        :date: 2026-10-21
+        """
+        # 第一步：按需延迟导入 markitdown 提取器
         from markitdown import MarkItDown
 
+        # 第二步：执行文档转换并返回文本正文
         return MarkItDown(enable_plugins=False).convert_local(str(path)).text_content or "无可提取文字"
 
     @staticmethod
     def content_blocks(
         sources: list[tuple[dict[str, str], Path]], text: str, workspace_root: Path
     ) -> str | list[dict[str, Any]]:
+        """将附件列表转换为注入给大模型的多模态或文本指导消息块。
+
+        :param sources: 附件元数据与本地物理路径的元组列表。
+        :type sources: list[tuple[dict[str, str], pathlib.Path]]
+        :param text: 用户输入的原始提示词。
+        :type text: str
+        :param workspace_root: 工作区物理根目录。
+        :type workspace_root: pathlib.Path
+        :return: 若无附件则直接返回纯文本，若有附件则返回结构化消息块列表。
+        :rtype: str | list[dict[str, typing.Any]]
+        :author: tongliga
+        :date: 2026-10-21
+        """
+        # 第一步：若无附件，直接短路返回原始文本
         if not sources:
             return text
 
+        # 第二步：构建首个包含用户提示词的文本块
         blocks: list[dict[str, Any]] = [{"type": "text", "text": text}]
+
+        # 第三步：逐一判断附件类型，图片转为 base64 image_url 块，表格和文档转为指导文本块
         for ref, path in sources:
             if path.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp", ".gif"}:
                 data = base64.b64encode(path.read_bytes()).decode("ascii")
@@ -53,3 +87,5 @@ class AttachmentContent:
 
 extract_text = AttachmentContent.extract_text
 content_blocks = AttachmentContent.content_blocks
+
+__all__ = ["AttachmentContent", "content_blocks", "extract_text"]

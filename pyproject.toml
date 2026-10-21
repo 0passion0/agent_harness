@@ -22,7 +22,7 @@ ignore = ["E501", "RUF001", "RUF002", "RUF003"]
 [tool.mypy]
 python_version = "3.12"
 files = [
-  "packages/agent-harness/src/vertical_harness/context.py",
+  "packages/agent-harness/src/vertical_harness/core/context.py",
   "packages/agent-harness/src/vertical_harness/config",
 ]
 follow_imports = "silent"

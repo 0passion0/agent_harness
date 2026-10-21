@@ -1,6 +1,6 @@
 import base64
 
-from vertical_harness.desktop_attachments import content_blocks, extract_text
+from vertical_harness.bridge.attachments import content_blocks, extract_text
 
 
 def test_table_attachments_request_local_summary_without_loading_rows(tmp_path):

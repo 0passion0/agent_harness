@@ -14,7 +14,7 @@ from vertical_harness import (
     build_agent,
     make_checkpoint_config,
 )
-from vertical_harness.desktop_runtime import (
+from vertical_harness.bridge.runtime import (
     ContextLimitMiddleware,
     ask_user,
     attachment_message,

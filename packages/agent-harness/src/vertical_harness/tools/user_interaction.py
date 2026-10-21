@@ -1,3 +1,5 @@
+"""向桌面端用户发起人机提问与选择决策的交互工具模块。"""
+
 from __future__ import annotations
 
 from langchain_core.tools import tool
@@ -5,6 +7,12 @@ from langgraph.types import interrupt
 
 
 class UserInteraction:
+    """人机交互工具类，通过 LangGraph interrupt 挂起当前流程等待桌面端用户决策。
+
+    :author: tongliga
+    :date: 2026-10-21
+    """
+
     @staticmethod
     @tool
     def ask_user(question: str, options: list[str] | None = None) -> str:
@@ -35,3 +43,8 @@ class UserInteraction:
         if not isinstance(answer, str) or not answer.strip():
             raise ValueError("User answer must be non-empty text")
         return answer
+
+
+ask_user = UserInteraction.ask_user
+
+__all__ = ["UserInteraction", "ask_user"]

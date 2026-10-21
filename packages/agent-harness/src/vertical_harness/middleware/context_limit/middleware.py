@@ -1,3 +1,5 @@
+"""上下文预算硬限制中间件，拦截并拒绝估算超出上限的模型请求。"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -75,3 +77,6 @@ class ContextLimitMiddleware(AgentMiddleware):
         """
         self._check(request)
         return await handler(request)
+
+
+__all__ = ["ContextLimitMiddleware"]

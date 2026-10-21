@@ -9,7 +9,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.types import Command
 
 from vertical_harness import HarnessSettings, build_agent
-from vertical_harness.python_execution import python_file_tool
+from vertical_harness.tools.python_execution import python_file_tool
 
 
 def test_python_uses_workspace_and_configured_interpreter_without_agent_secrets(
@@ -32,7 +32,7 @@ def test_python_uses_workspace_and_configured_interpreter_without_agent_secrets(
 
 
 def test_python_exposes_script_failure_and_output_truncation(tmp_path, monkeypatch):
-    from vertical_harness import python_execution
+    from vertical_harness.tools import python_execution
 
     spawn = asyncio.create_subprocess_exec
 
@@ -73,7 +73,7 @@ def test_script_path_validation_precedes_execution(tmp_path):
 
 
 def test_cancelling_python_waits_for_process_exit(tmp_path, monkeypatch):
-    from vertical_harness import python_execution
+    from vertical_harness.tools import python_execution
 
     spawn = asyncio.create_subprocess_exec
     processes = []
@@ -102,7 +102,7 @@ def test_cancelling_python_waits_for_process_exit(tmp_path, monkeypatch):
 
 
 def test_python_timeout_returns_failure_with_partial_output(tmp_path, monkeypatch):
-    from vertical_harness import python_execution
+    from vertical_harness.tools import python_execution
 
     wait_for = asyncio.wait_for
 

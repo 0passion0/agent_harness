@@ -18,21 +18,19 @@ from uuid import UUID
 from langchain_core.messages import HumanMessage
 from langgraph.types import Command
 
-from vertical_harness import (
-    AgentStreaming,
-    CheckpointConfig,
-    CheckpointFactory,
-    HarnessSettings,
-    LangSmithSettings,
-    ModelRouting,
-    RunContext,
-    StoreFactory,
-)
-from vertical_harness.desktop_messages import DesktopMessages
-from vertical_harness.desktop_runtime import DesktopRuntime
-from vertical_harness.engine.compose import AgentComposer
-from vertical_harness.tool_details import ToolDetails
-from vertical_harness.usage import UsageEstimator
+from vertical_harness.bridge.messages import DesktopMessages
+from vertical_harness.bridge.runtime import DesktopRuntime
+from vertical_harness.config.checkpoint_config import CheckpointConfig
+from vertical_harness.config.langsmith_settings import LangSmithSettings
+from vertical_harness.config.settings import HarnessSettings
+from vertical_harness.core.compose import AgentComposer
+from vertical_harness.core.context import RunContext
+from vertical_harness.core.routing import ModelRouting
+from vertical_harness.langchain.streaming import AgentStreaming
+from vertical_harness.storage.checkpoint import CheckpointFactory
+from vertical_harness.storage.store import StoreFactory
+from vertical_harness.tools.tool_details import ToolDetails
+from vertical_harness.utils.usage import UsageEstimator
 
 logger = logging.getLogger(__name__)
 

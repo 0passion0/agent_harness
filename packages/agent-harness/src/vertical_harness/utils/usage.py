@@ -1,3 +1,5 @@
+"""模型上下文 Token 估算、按区块拆分统计与用量报告生成模块。"""
+
 from __future__ import annotations
 
 from typing import Any
@@ -6,6 +8,12 @@ from langchain_core.messages.utils import count_tokens_approximately
 
 
 class UsageEstimator:
+    """Token 上下文用量估算器，支持系统提示词、工具定义与历史消息的多维度拆分。
+
+    :author: tongliga
+    :date: 2026-10-21
+    """
+
     @staticmethod
     def usage_estimate(
         messages: list[Any],
@@ -111,3 +119,6 @@ class UsageEstimator:
             "sections": sections,
             "summary_text": summary,
         }
+
+
+__all__ = ["UsageEstimator"]

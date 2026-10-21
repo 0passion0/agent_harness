@@ -1,4 +1,4 @@
-"""Configuration for LangSmith tracing connections."""
+"""LangSmith 追踪连接配置与客户端生成模块。"""
 
 import logging
 
@@ -10,7 +10,11 @@ logger = logging.getLogger(__name__)
 
 
 class LangSmithSettings(BaseSettings):
-    """Explicitly load .env so tracing configuration is not limited to process env."""
+    """LangSmith 专用设置项，显式从 .env 文件加载 LANGSMITH_* 配置。
+
+    :author: tongliga
+    :date: 2026-10-21
+    """
 
     model_config = SettingsConfigDict(env_prefix="LANGSMITH_", env_file=".env", extra="ignore")
 
@@ -20,7 +24,16 @@ class LangSmithSettings(BaseSettings):
     project: str = "vertical-research-agent"
 
     def create_client(self, *, auto_batch_tracing: bool = True) -> Client:
-        """Build a LangSmith client from the loaded credentials and endpoint."""
+        """根据配置的凭据和服务端点构建 LangSmith 客户端。
+
+        :param auto_batch_tracing: 是否启用自动批处理追踪事件上报，默认为 True。
+        :type auto_batch_tracing: bool
+        :return: 实例化完成的 LangSmith Client 客户端对象。
+        :rtype: langsmith.Client
+        :author: tongliga
+        :date: 2026-10-21
+        """
+        # 第一步：记录客户端创建调试日志
         logger.debug(
             "langsmith_client_creating",
             extra={
@@ -31,6 +44,7 @@ class LangSmithSettings(BaseSettings):
                 }
             },
         )
+        # 第二步：提取密钥明文并实例化 Client 对象
         client = Client(
             api_key=self.api_key.get_secret_value() if self.api_key else None,
             api_url=self.endpoint,

@@ -4,7 +4,7 @@ import ast
 from pathlib import Path
 
 from vertical_harness.desktop import AgentLoop
-from vertical_harness.tool_details import ToolDetails
+from vertical_harness.tools.tool_details import ToolDetails
 
 
 def test_backend_logic_is_in_methods_with_one_class_per_module():

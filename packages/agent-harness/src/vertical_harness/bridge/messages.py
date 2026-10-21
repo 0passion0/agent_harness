@@ -1,3 +1,5 @@
+"""桌面端多模态消息转换与消息序列化模块。"""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -5,6 +7,12 @@ from typing import Any
 
 
 class DesktopMessages:
+    """桌面端消息解析与格式化工具类。
+
+    :author: tongliga
+    :date: 2026-10-21
+    """
+
     @staticmethod
     def attachment_message(
         workspace_root: Path, text: str, attachments: list[dict[str, str]]
@@ -51,7 +59,7 @@ class DesktopMessages:
             sources.append((attachment, source))
 
         # 第四步：调用 content_blocks 生成标准多模态内容块
-        from vertical_harness.desktop_attachments import AttachmentContent
+        from vertical_harness.bridge.attachments import AttachmentContent
 
         return AttachmentContent.content_blocks(sources, text, root)
 
@@ -67,3 +75,6 @@ class DesktopMessages:
         :date: 2026-10-21
         """
         return message.model_dump(mode="json", exclude_none=True)
+
+
+__all__ = ["DesktopMessages"]

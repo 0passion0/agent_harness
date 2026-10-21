@@ -14,7 +14,7 @@ from deepagents.backends import FilesystemBackend
 from deepagents.backends.protocol import EditResult, FileData, ReadResult, WriteResult
 from deepagents.backends.utils import slice_read_response
 
-from vertical_harness.desktop_attachments import AttachmentContent
+from vertical_harness.bridge.attachments import AttachmentContent
 
 
 class DocumentFilesystemBackend(FilesystemBackend):

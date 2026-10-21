@@ -15,6 +15,12 @@ from langchain_core.tools import tool
 
 @dataclass(eq=False)
 class PythonExecution:
+    """受控 Python 脚本执行器，在隔离的环境变量和指定工作区内异步执行 Python 文件。
+
+    :author: tongliga
+    :date: 2026-10-21
+    """
+
     workspace: Path
     interpreter: str
 
@@ -125,7 +131,6 @@ class PythonExecution:
             "stderr_truncated": len(errors) > 12000,
         }
 
-
     @staticmethod
     def python_file_tool(workspace: Path, interpreter: str) -> Callable[..., Any]:
         """构建绑定了目标工作区根路径与特定 Python 解释器的脚本执行工具。
@@ -139,7 +144,10 @@ class PythonExecution:
         :author: tongliga
         :date: 2026-10-21
         """
+        # 第一步：实例化 PythonExecution 实体并通过 LangChain tool 装饰绑定
         return tool(PythonExecution(workspace, interpreter).execute_python_file)
 
 
 python_file_tool = PythonExecution.python_file_tool
+
+__all__ = ["PythonExecution", "python_file_tool"]
