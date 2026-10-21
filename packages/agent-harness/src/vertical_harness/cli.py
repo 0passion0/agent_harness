@@ -1,4 +1,4 @@
-"""Run one search/file/script agent from the command line."""
+"""通过命令行终端启动搜索、工作区文件与受控脚本智能体的 CLI 入口模块。"""
 
 import argparse
 import asyncio
@@ -33,7 +33,7 @@ def _image_content(value: str) -> dict[str, str]:
     :rtype: dict[str, str]
     :raises argparse.ArgumentTypeError: 当文件不存在、格式不受支持或大小超出 20 MiB 时抛出。
     :author: tongliga
-    :date: 2026-10-19
+    :date: 2026-10-21
     """
     logger.debug("parsing_image_argument")
     # 第一步：解析文件路径并检测 MIME 类型
@@ -65,8 +65,17 @@ def _image_content(value: str) -> dict[str, str]:
 
 
 def main(argv: list[str] | None = None) -> None:
-    """Run or continue a conversation using native checkpoints."""
-    parser = argparse.ArgumentParser()
+    """命令行运行或续接基于原生检查点的智能体对话会话入口。
+
+    :param argv: 命令行入参列表，为 None 时从 sys.argv 读取。
+    :type argv: list[str] | None
+    :return: 无返回值。
+    :rtype: None
+    :author: tongliga
+    :date: 2026-10-21
+    """
+    # 第一步：配置并解析命令行选项参数
+    parser = argparse.ArgumentParser(description="运行智能体对话命令")
     parser.add_argument("prompt", nargs="?", default="")
     parser.add_argument("--image", action="append", type=_image_content, default=[])
     parser.add_argument("--thread-id", default=str(uuid4()))
@@ -75,14 +84,18 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
     if not args.prompt.strip() and not args.image:
         parser.error("Provide a prompt or --image")
+
+    # 第二步：加载应用全局配置与初始化受控日志
     try:
         settings = HarnessSettings()
     except ValidationError:
         parser.error("Invalid harness configuration")
     configure_logging(settings)
+
+    # 第三步：组装多模态消息体并在异步上下文中运行智能体输出结果
     content = [{"type": "text", "text": args.prompt}, *args.image] if args.image else args.prompt
 
-    async def run():
+    async def run() -> None:
         async with aopen_agent(settings) as agent:
             result = await ainvoke_agent(
                 agent,

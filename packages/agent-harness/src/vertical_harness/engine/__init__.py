@@ -1,3 +1,5 @@
+"""智能体引擎组装、模型路由分发与流式事件投影导出包。"""
+
 from vertical_harness.engine.compose import BASE_PROMPT, aopen_agent, build_agent, open_agent
 from vertical_harness.engine.routing import init_configured_model, make_router
 from vertical_harness.engine.streaming import StreamEvent, ainvoke_agent, astream_agent

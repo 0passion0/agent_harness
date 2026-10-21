@@ -1,8 +1,9 @@
-"""Build one agent with filesystem, search and saved Python scripts."""
+"""组装具备工作区文件系统、网络检索与受控 Python 脚本执行能力的单一智能体模块。"""
 
 from __future__ import annotations
 
 import logging
+from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager, contextmanager
 from typing import Any
 
@@ -45,20 +46,35 @@ BASE_PROMPT = (
 def _summarization_middleware(
     model: Any, backend: BackendProtocol, max_context_tokens: int = 475_000
 ) -> SummarizationMiddleware:
-    """使用原生摘要在上下文预算的 90% 压缩历史，并遵守模型容量。"""
+    """构建自动上下文摘要压缩中间件。
 
+    在达到上下文预算 90% 阈值时触发历史对话修剪与摘要生成，严格遵循底层大模型的输入容量限制。
+
+    :param model: 绑定的聊天模型实例，用于提供 profile 容量元数据及执行摘要生成。
+    :type model: typing.Any
+    :param backend: 用于持久化或读取上下文的底层文件后端协议实现。
+    :type backend: deepagents.backends.protocol.BackendProtocol
+    :param max_context_tokens: 允许的最大上下文 Token 上限阈值，默认为 475,000。
+    :type max_context_tokens: int
+    :return: 配置完成的 DeepAgents 原生 SummarizationMiddleware 中间件实例。
+    :rtype: deepagents.middleware.summarization.SummarizationMiddleware
+    :author: tongliga
+    :date: 2026-10-21
+    """
+    # 第一步：读取模型 profile 中声明的最大输入 Token 上限
     max_input_tokens = (model.profile or {}).get("max_input_tokens")
 
+    # 第二步：计算上下文硬上限（取配置上限与模型容量上限较小值）
     context_limit = (
         min(max_input_tokens, max_context_tokens) if max_input_tokens else max_context_tokens
     )
 
+    # 第三步：设定触发摘要的 90% 阈值与保留的 10% 核心上下文
     token_trigger = max(1, int(context_limit * 0.90))
-
     keep_tokens = max(1, int(context_limit * 0.10))
-
     arg_trigger = min(8_000, token_trigger)
 
+    # 第四步：实例化并返回摘要中间件
     return SummarizationMiddleware(
         model=model,
         backend=backend,
@@ -75,8 +91,23 @@ def _summarization_middleware(
 
 def build_agent(
     settings: HarnessSettings, *, checkpointer: Any = None, options: dict[str, Any] | None = None
-):
-    """Create the native graph without plugin registries or custom workflows."""
+) -> Any:
+    """构建组装挂载了文件系统、网页检索与受控 Python 脚本工具的原生 LangGraph 智能体状态图。
+
+    无外部插件注册机制或自研工作流，直接组装文件权限、上下文限制、交互审批及动态模型路由中间件。
+
+    :param settings: 经校验的宿主配置对象。
+    :type settings: vertical_harness.config.settings.HarnessSettings
+    :param checkpointer: 可选的 LangGraph 检查点保存器实例，未提供时默认使用 InMemorySaver。
+    :type checkpointer: typing.Any
+    :param options: 可选的桌面与运行参数字典（如 max_context_tokens、permission_mode、agent_content 等）。
+    :type options: dict[str, typing.Any] | None
+    :return: 编译完成的原生 CompiledStateGraph 智能体对象。
+    :rtype: typing.Any
+    :author: tongliga
+    :date: 2026-10-21
+    """
+    # 第一步：延迟导入运行时专用中间件与 ask_user 工具
     from vertical_harness.desktop_runtime import (
         ContextLimitMiddleware,
         DesktopApprovalMiddleware,
@@ -84,11 +115,14 @@ def build_agent(
         ask_user,
     )
 
+    # 第二步：解析并创建工作区物理根路径，挂载虚拟文件系统后端
     options = options or {}
     root = settings.resolved_workspace_root
     root.mkdir(parents=True, exist_ok=True)
     backend = DocumentFilesystemBackend(root_dir=root, virtual_mode=True)
     model = init_configured_model(settings)
+
+    # 第三步：配置敏感文件防访问安全沙箱规则（严格拒绝访问 .env 与数据库文件）
     permissions = [
         FilesystemPermission(
             operations=["read", "write"], paths=["/**/.env", "/**/.env.*"], mode="deny"
@@ -118,6 +152,8 @@ def build_agent(
                 mode="deny",
             )
         )
+
+    # 第四步：按序装配中间件栈（修复、规划、路由、摘要、上下文硬限制、桌面权限与审批、文件工具中间件）
     maximum = options.get("max_context_tokens", 475_000)
     middleware = [PatchToolCallsMiddleware(), UnsupportedContentMiddleware()]
     if settings.enable_planning:
@@ -142,6 +178,8 @@ def build_agent(
             _permissions=permissions,
         )
     )
+
+    # 第五步：调用 LangChain 原生 create_agent 创建智能体图并注入配置元数据
     agent = create_agent(
         name="vertical-agent",
         model=model,
@@ -164,15 +202,41 @@ def build_agent(
 
 
 @contextmanager
-def open_agent(settings: HarnessSettings, *, options: dict[str, Any] | None = None):
-    """Keep the synchronous checkpointer alive for the agent lifetime."""
+def open_agent(
+    settings: HarnessSettings, *, options: dict[str, Any] | None = None
+) -> Iterator[Any]:
+    """通过同步上下文管理器保持检查点生命周期并创建可用智能体实例。
+
+    :param settings: 经校验的宿主配置对象。
+    :type settings: vertical_harness.config.settings.HarnessSettings
+    :param options: 可选的桌面端运行控制参数字典。
+    :type options: dict[str, typing.Any] | None
+    :return: 产生已挂载同步检查点的 CompiledStateGraph 智能体实例迭代器。
+    :rtype: collections.abc.Iterator[typing.Any]
+    :author: tongliga
+    :date: 2026-10-21
+    """
+    # 第一步：打开链路追踪会话与同步检查点管理器并构建智能体
     with tracing_session(), open_checkpointer(settings) as checkpointer:
         yield build_agent(settings, checkpointer=checkpointer, options=options)
 
 
 @asynccontextmanager
-async def aopen_agent(settings: HarnessSettings, *, options: dict[str, Any] | None = None):
-    """Keep the asynchronous checkpointer alive for the agent lifetime."""
+async def aopen_agent(
+    settings: HarnessSettings, *, options: dict[str, Any] | None = None
+) -> AsyncIterator[Any]:
+    """通过异步上下文管理器保持检查点生命周期并创建可用智能体实例。
+
+    :param settings: 经校验的宿主配置对象。
+    :type settings: vertical_harness.config.settings.HarnessSettings
+    :param options: 可选的桌面端运行控制参数字典。
+    :type options: dict[str, typing.Any] | None
+    :return: 产生已挂载异步检查点的 CompiledStateGraph 智能体实例异步迭代器。
+    :rtype: collections.abc.AsyncIterator[typing.Any]
+    :author: tongliga
+    :date: 2026-10-21
+    """
+    # 第一步：打开链路追踪会话与异步检查点管理器并构建智能体
     with tracing_session():
         async with aopen_checkpointer(settings) as checkpointer:
             yield build_agent(settings, checkpointer=checkpointer, options=options)
