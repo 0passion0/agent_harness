@@ -37,9 +37,11 @@ class DesktopApprovalMiddleware(AgentMiddleware):
         if name not in {
             "write_file",
             "edit_file",
+            "apply_patch",
             "delete",
             "execute",
             "execute_python_file",
+            "shell",
             "write_todos",
         }:
             return None

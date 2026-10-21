@@ -39,8 +39,8 @@ class ModelRouting:
         # 第一步：解析目标模型名称并记录启动日志
         model_name = model or settings.model
         logger.debug("model_initialization_started", extra={"event_fields": {"model": model_name}})
-        # 第二步：调用 init_chat_model 初始化模型，设置 5 次退避重试并注入连接参数
-        configured_model = init_chat_model(model_name, max_retries=5, **settings.model_init_kwargs)
+        # 模型重试由 AgentMiddleware 统一控制，避免 SDK 与图层叠加重试预算。
+        configured_model = init_chat_model(model_name, max_retries=0, **settings.model_init_kwargs)
         if isinstance(configured_model, ChatDeepSeek):
             # 适配器 JSON 序列化工具内容列表（含二进制载荷）
             configured_model.profile = {

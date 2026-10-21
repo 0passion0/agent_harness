@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 from deepagents import create_deep_agent
 from deepagents.backends import FilesystemBackend
+from langchain_core.exceptions import ContextOverflowError
 from langchain_core.language_models.fake_chat_models import FakeListChatModel
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.checkpoint.memory import InMemorySaver
@@ -20,6 +21,50 @@ class ToolBindableFakeModel(FakeListChatModel):
     def _generate(self, messages, stop=None, run_manager=None, **kwargs):
         self.seen_messages.append(messages)
         return super()._generate(messages, stop=stop, run_manager=run_manager, **kwargs)
+
+
+class OverflowOnceModel(ToolBindableFakeModel):
+    rejected: bool = False
+
+    def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+        if not self.rejected:
+            self.rejected = True
+            self.seen_messages.append(messages)
+            raise ContextOverflowError("Provider rejected the context window")
+        return super()._generate(messages, stop=stop, run_manager=run_manager, **kwargs)
+
+
+@pytest.mark.parametrize("asynchronous", [False, True])
+def test_native_overflow_compacts_a_smaller_request_and_keeps_raw_history(tmp_path, asynchronous):
+    import asyncio
+
+    model = OverflowOnceModel(
+        responses=["Summary of the document comparison and pending decisions.", "Done."],
+        profile={"max_input_tokens": 100_000},
+    )
+    backend = FilesystemBackend(root_dir=tmp_path)
+    agent = create_deep_agent(
+        model=model, backend=backend,
+        middleware=[AgentComposer._summarization_middleware(model, backend)],
+        checkpointer=InMemorySaver(),
+    )
+    config = {"configurable": {"thread_id": "provider-overflow"}}
+    history = [
+        HumanMessage(content=f"Document comparison {index}: " + "x" * 12_000)
+        for index in range(6)
+    ]
+    payload = {"messages": history}
+    result = asyncio.run(agent.ainvoke(payload, config)) if asynchronous else agent.invoke(payload, config)
+
+    assert result["messages"][-1].content == "Done."
+    assert len(model.seen_messages) == 3
+    assert "Document comparison 0:" in repr(model.seen_messages[0])
+    assert "Document comparison 0:" not in repr(model.seen_messages[-1])
+    assert "Summary of the document comparison" in repr(model.seen_messages[-1])
+    snapshot = agent.get_state(config).values
+    assert snapshot["messages"][0].content == history[0].content
+    archive = backend.read(snapshot["_summarization_event"]["file_path"], limit=20_000)
+    assert "Document comparison 0:" in archive.file_data["content"]
 
 
 @pytest.mark.parametrize("history_messages,expected_calls", [(80, 1), (88, 2)])

@@ -165,10 +165,11 @@ class ToolDetails(AsyncCallbackHandler):
         # 第一步：计算耗时并记录输出正文
         key = str(run_id)
         message = output.update["messages"][-1] if isinstance(output, Command) else output
+        out = getattr(message, "content", message)
         self.records[key].update(
             {
-                "output": message.content,
-                "elapsed": perf_counter() - self.started[key],
+                "output": out if isinstance(out, (str, int, float, bool, list, dict, type(None))) else str(out),
+                "elapsed": perf_counter() - self.started.get(key, perf_counter()),
             }
         )
 
@@ -191,6 +192,6 @@ class ToolDetails(AsyncCallbackHandler):
         self.records[key].update(
             {
                 "output": {"error_type": type(error).__name__},
-                "elapsed": perf_counter() - self.started[key],
+                "elapsed": perf_counter() - self.started.get(key, perf_counter()),
             }
         )

@@ -81,7 +81,7 @@ class AgentStreaming:
         if kind == "on_tool_end":
             output = data["output"]
             message = output.update["messages"][-1] if isinstance(output, Command) else output
-            failed = message.status == "error"
+            failed = getattr(message, "status", None) == "error"
             return "tool.failed" if failed else "tool.completed", {}
 
         # 第三步：针对执行链生命周期与根调用状态进行投影

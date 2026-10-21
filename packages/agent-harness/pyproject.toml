@@ -18,6 +18,7 @@ dependencies = [
   "pydantic-settings>=2.6,<3",
   "langsmith>=0.14.11,<0.15",
   "markitdown[docx,pdf,pptx,xlsx]>=0.1.4,<0.2",
+  "ripgrep-bin>=15.2,<16",
 ]
 
 [project.optional-dependencies]
@@ -30,7 +31,6 @@ desktop = [
     "pypdf>=5,<7",
     "python-docx>=1.1,<2",
     "python-pptx>=1,<2",
-    "ripgrep-bin>=15.2,<16",
     "scikit-learn>=1.6,<2",
     "scipy>=1.14,<2",
     "statsmodels>=0.14,<0.15",
@@ -45,4 +45,5 @@ packages = ["src/vertical_harness"]
 include = [
   "src/vertical_harness/**/*.py",
   "src/vertical_harness/py.typed",
+  "src/vertical_harness/THIRD_PARTY_NOTICES.txt",
 ]

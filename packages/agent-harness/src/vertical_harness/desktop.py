@@ -29,6 +29,7 @@ from vertical_harness.core.routing import ModelRouting
 from vertical_harness.langchain.streaming import AgentStreaming
 from vertical_harness.storage.checkpoint import CheckpointFactory
 from vertical_harness.storage.store import StoreFactory
+from vertical_harness.tools.shell_execution import ShellExecution
 from vertical_harness.tools.tool_details import ToolDetails
 from vertical_harness.utils.usage import UsageEstimator
 
@@ -50,6 +51,7 @@ class AgentLoop:
     desktop_options: dict[str, Any] | None = field(default=None, init=False)
     active: dict[str, tuple[str, asyncio.Task[None]]] = field(default_factory=dict, init=False)
     output_lock: asyncio.Lock = field(default_factory=asyncio.Lock, init=False)
+    shell_execution: ShellExecution | None = field(default=None, init=False)
 
     def _context_namespace(self, thread_id: str) -> tuple[str, ...]:
         """构建保存在 BaseStore 中的会话级命名空间元组。
@@ -135,6 +137,9 @@ class AgentLoop:
                 raise ValueError("Identity and paths must be strings")
             settings, options = DesktopRuntime.configured_settings(params)
             identity = RunContext(tenant_id=params["tenant_id"], user_id=params["user_id"])
+            if self.shell_execution is not None:
+                await self.shell_execution.aclose()
+            self.shell_execution = ShellExecution(settings.resolved_workspace_root)
             self.settings, self.desktop_options, self.identity = settings, options, identity
             return {"model": settings.model, "environment": DesktopRuntime.runtime_environment(options)}
 
@@ -148,6 +153,8 @@ class AgentLoop:
             for task in tasks:
                 task.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
+            if self.shell_execution is not None:
+                await self.shell_execution.aclose()
             return {}
 
         # 第四步：断言后端已被正确配置
@@ -165,6 +172,12 @@ class AgentLoop:
 
         # 第七步：会话删除 session.delete 方法
         if method == "session.delete":
+            tasks = [task for active_thread, task in self.active.values() if active_thread == thread_id]
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            if self.shell_execution is not None:
+                await self.shell_execution.aclose_session(self.identity.tenant_id, self.identity.user_id, thread_id)
             async with CheckpointFactory.aopen_checkpointer(self.settings) as saver:
                 await saver.adelete_thread(thread_id)
             async with StoreFactory.aopen_store(self.settings) as store:
@@ -407,7 +420,9 @@ class AgentLoop:
         :author: tongliga
         :date: 2026-10-21
         """
-        async with AgentComposer.aopen_agent(self.settings, options=self.desktop_options) as agent:
+        async with AgentComposer.aopen_agent(
+            self.settings, options=self.desktop_options, shell_execution=self.shell_execution,
+        ) as agent:
             yield agent
 
     @staticmethod
@@ -421,7 +436,7 @@ class AgentLoop:
         :author: tongliga
         :date: 2026-10-21
         """
-        print(json.dumps(frame, ensure_ascii=False), flush=True)
+        print(json.dumps(frame, ensure_ascii=False, default=str), flush=True)
 
     async def notify(self, method: str, params: dict[str, Any]) -> None:
         """在并发输出锁保护下向桌面端推送异步 JSON-RPC 通知消息。
@@ -504,27 +519,30 @@ class AgentLoop:
             os.environ["LANGSMITH_REVISION_ID"] = revision_id
 
         # 第二步：按行异步监听标准输入中的 JSON-RPC 消息
-        while line := await asyncio.to_thread(sys.stdin.readline):
-            request = json.loads(line)
-            request_id = request.get("id")
-            try:
-                # 第三步：分发执行指令并返回结果
-                result = await self.dispatch(request["method"], request.get("params", {}))
-            except Exception as exc:
-                logger.exception("JSON-RPC request failed")
-                self.emit(
-                    {"jsonrpc": "2.0", "id": request_id, "error": {"code": -32000, "message": str(exc)}}
-                )
-            else:
-                self.emit({"jsonrpc": "2.0", "id": request_id, "result": result})
-            if request.get("method") == "shutdown":
-                break
-
-        # 第四步：进程退出前安全取消所有活跃运行任务并等待清理完成
-        tasks = [task for _, task in self.active.values()]
-        for task in tasks:
-            task.cancel()
-        await asyncio.gather(*tasks, return_exceptions=True)
+        try:
+            while line := await asyncio.to_thread(sys.stdin.readline):
+                request = json.loads(line)
+                request_id = request.get("id")
+                try:
+                    # 第三步：分发执行指令并返回结果
+                    result = await self.dispatch(request["method"], request.get("params", {}))
+                except Exception as exc:
+                    logger.exception("JSON-RPC request failed")
+                    self.emit(
+                        {"jsonrpc": "2.0", "id": request_id, "error": {"code": -32000, "message": str(exc)}}
+                    )
+                else:
+                    self.emit({"jsonrpc": "2.0", "id": request_id, "result": result})
+                if request.get("method") == "shutdown":
+                    break
+        finally:
+            # 第四步：进程退出前安全取消所有活跃运行任务并等待清理完成
+            tasks = [task for _, task in self.active.values()]
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            if self.shell_execution is not None:
+                await self.shell_execution.aclose()
 
 
 if __name__ == "__main__":

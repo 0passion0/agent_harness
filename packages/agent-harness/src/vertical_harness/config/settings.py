@@ -11,6 +11,7 @@ from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from vertical_harness.config.store_backend import StoreBackendType
+from vertical_harness.tools.opencode_formatter_entry import OpenCodeFormatterEntry
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +52,8 @@ class HarnessSettings(BaseSettings):
     # LangGraph 检查点持久化同步级别：默认强制开启 'sync' 以保证每步检查点同步落盘
     durability: Literal["sync", "async", "exit"] = "sync"
     enable_planning: bool = True
+    max_steps: Annotated[int, Field(ge=1)] | None = None
+    formatter: bool | dict[str, OpenCodeFormatterEntry] | None = None
     run_timeout_seconds: Annotated[float, Field(gt=0, allow_inf_nan=False)] = 900
     # 应用日志等级、输出格式与可选滚动文件；stdout 专用于业务结果
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"

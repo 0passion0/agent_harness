@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
-import re
 import shutil
 import tempfile
-from itertools import islice
+import threading
+from collections.abc import Callable
+from difflib import unified_diff
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +17,12 @@ from deepagents.backends.protocol import EditResult, FileData, ReadResult, Write
 from deepagents.backends.utils import slice_read_response
 
 from vertical_harness.bridge.attachments import AttachmentContent
+from vertical_harness.storage.file_mutation import FileMutation
+from vertical_harness.tools.opencode_edit import OpenCodeEdit
+from vertical_harness.tools.opencode_formatter import OpenCodeFormatter
+from vertical_harness.tools.opencode_patch import OpenCodePatch
+from vertical_harness.tools.opencode_read import OpenCodeRead
+from vertical_harness.tools.opencode_search import RipgrepSearch
 
 
 class DocumentFilesystemBackend(FilesystemBackend):
@@ -32,7 +40,7 @@ class DocumentFilesystemBackend(FilesystemBackend):
         {".doc", ".ppt", ".pptm", ".docm", ".xls", ".xlsb", ".odt", ".ods", ".odp"}
     )
 
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
+    def __init__(self, *args: Any, formatter: OpenCodeFormatter | None = None, **kwargs: Any) -> None:
         """初始化文档文件系统后端实例。
 
         :param args: 传递给父类 FilesystemBackend 的位置参数。
@@ -46,6 +54,8 @@ class DocumentFilesystemBackend(FilesystemBackend):
         """
         super().__init__(*args, **kwargs)
         self._document_cache: tuple[tuple[Any, ...], str] | None = None
+        self.search = RipgrepSearch(self.cwd, self._resolve_path)
+        self.formatter = formatter
 
     def read(self, file_path: str, offset: int = 0, limit: int = 2000) -> ReadResult:
         """从工作区指定文件中分页读取 UTF-8 文本或提取 Office/PDF 文档内容。
@@ -88,25 +98,10 @@ class DocumentFilesystemBackend(FilesystemBackend):
                     FileData(content=self._document_cache[1], encoding="utf-8"), offset, limit
                 )
             # 第四步：图片附件转交上层基类处理
-            if suffix in {".png", ".jpg", ".jpeg", ".webp", ".gif"}:
-                return super().read(file_path, offset, limit)
+            if media := OpenCodeRead.read_supported_media(path):
+                return ReadResult(file_data=FileData(content=media[1], encoding="base64"))
             # 第五步：普通文本文件按行切片读取并做二进制安全校验
-            with path.open(encoding="utf-8-sig") as stream:
-                window = list(islice(stream, offset, offset + limit + 1))
-            if not window and offset:
-                return ReadResult(error=f"Line offset {offset} exceeds file length")
-            more = len(window) > limit
-            content = "".join(window[:limit])
-            if "\0" in content:
-                return ReadResult(error="Binary file: use a suitable Python library.")
-            end = offset + min(limit, len(window))
-            return ReadResult(
-                file_data=FileData(content=content, encoding="utf-8"),
-                start_line=offset + 1 if window else None,
-                end_line=end if window else None,
-                next_offset=end if more else None,
-                total_lines=None if more else end,
-            )
+            return OpenCodeRead.read_text_page(path, offset, limit)
         except (OSError, ValueError) as exc:
             return ReadResult(error=f"Cannot read file ({type(exc).__name__}).")
 
@@ -148,6 +143,7 @@ class DocumentFilesystemBackend(FilesystemBackend):
         :date: 2026-10-21
         """
         # 第一步：确保父目录存在
+        FileMutation.check_cancelled()
         path.parent.mkdir(parents=True, exist_ok=True)
         temporary = None
         try:
@@ -160,6 +156,7 @@ class DocumentFilesystemBackend(FilesystemBackend):
             # 第三步：继承原有文件的文件权限属性并执行原子性替换
             if path.exists():
                 shutil.copymode(path, temporary)
+            FileMutation.check_cancelled()
             os.replace(temporary, path)
         finally:
             # 第四步：若替换未成功发生，安全清理残留临时文件
@@ -180,9 +177,15 @@ class DocumentFilesystemBackend(FilesystemBackend):
         """
         try:
             # 第一步：校验文件路径合法性与纯文本兼容性
-            path = self._text_path(file_path)
-            # 第二步：以 UTF-8 编码原子落盘写入文件
-            self._atomic_write(path, content.encode("utf-8"))
+            path = self._resolve_path(file_path)
+            with FileMutation.acquire([path]):
+                self._text_path(file_path)
+                bom = path.exists() and path.read_bytes().startswith(b"\xef\xbb\xbf")
+                text = content.lstrip("\ufeff")
+                data = (b"\xef\xbb\xbf" if bom or content.startswith("\ufeff") else b"")
+                self._atomic_write(path, data + text.encode("utf-8"))
+                if self.formatter is not None and self.formatter.file(path):
+                    self._sync_text_bom(path, bool(data))
             return WriteResult(path=file_path)
         except (OSError, ValueError) as exc:
             # 第三步：捕获异常并返回错误结果
@@ -207,48 +210,166 @@ class DocumentFilesystemBackend(FilesystemBackend):
         :date: 2026-10-21
         """
         try:
-            # 第一步：校验路径并读取原始文件字节流与 BOM
-            path = self._text_path(file_path)
-            original = path.read_bytes()
-            text = original.decode("utf-8-sig")
-
-            # 第二步：统一换行符归一化匹配，保持未变更行的原生换行符不受破坏
-            normalized = text.replace("\r\n", "\n").replace("\r", "\n")
-            old_string = old_string.replace("\r\n", "\n").replace("\r", "\n")
-            new_string = new_string.replace("\r\n", "\n").replace("\r", "\n")
-            if not old_string:
-                return EditResult(error="old_string must not be empty")
-            occurrences = normalized.count(old_string)
-            if not occurrences:
-                return EditResult(
-                    error="String not found; read the current file and use an exact match."
+            path = self._resolve_path(file_path)
+            with FileMutation.acquire([path]):
+                self._text_path(file_path)
+                original = path.read_bytes()
+                source = original.decode("utf-8")
+                # Preserve the existing backend's CR-only text editing contract.
+                legacy_cr = "\r" in source and "\n" not in source and "\r" not in old_string + new_string
+                if legacy_cr:
+                    source = source.replace("\r", "\n")
+                text, occurrences = OpenCodeEdit.replace_text_with_count(
+                    source, old_string, new_string, replace_all
                 )
-            if occurrences > 1 and not replace_all:
-                return EditResult(
-                    error=f"String appears {occurrences} times; provide unique surrounding context or replace_all=True."
-                )
-
-            # 第三步：构建字符偏移映射表以精准映射回原始换行格式
-            positions = [0]
-            i = 0
-            while i < len(text):
-                i += 2 if text[i: i + 2] == "\r\n" else 1
-                positions.append(i)
-            newline = "\r\n" if "\r\n" in text else "\r" if "\r" in text else "\n"
-            replacement = new_string.replace("\n", newline)
-
-            # 第四步：倒序执行文本局部替换，避免前序替换破坏后续位置偏移
-            matches = list(re.finditer(re.escape(old_string), normalized))
-            for match in reversed(matches):
-                text = (
-                        text[: positions[match.start()]] + replacement + text[positions[match.end()]:]
-                )
-            data = (b"\xef\xbb\xbf" if original.startswith(b"\xef\xbb\xbf") else b"") + text.encode(
-                "utf-8"
-            )
-
-            # 第五步：原子写入更新后的文件数据并返回编辑结果
-            self._atomic_write(path, data)
+                if legacy_cr:
+                    text = text.replace("\n", "\r")
+                self._atomic_write(path, text.encode("utf-8"))
+                if self.formatter is not None:
+                    if self.formatter.file(path):
+                        self._sync_text_bom(path, text.startswith("\ufeff"))
+                    else:
+                        path.read_bytes().decode("utf-8-sig")
             return EditResult(path=file_path, occurrences=occurrences)
         except (OSError, ValueError) as exc:
             return EditResult(error=f"Edit failed: {exc}")
+
+    def glob(self, pattern: str, path: str | None = None):
+        return self.search.glob(pattern, path)
+
+    def _sync_text_bom(self, path: Path, bom: bool) -> str:
+        data = path.read_bytes()
+        text = data.decode("utf-8").lstrip("\ufeff")
+        normalized = (b"\xef\xbb\xbf" if bom else b"") + text.encode("utf-8")
+        if normalized != data:
+            self._atomic_write(path, normalized)
+        return text
+
+    async def aglob(self, pattern: str, path: str | None = None):
+        return await self.search.aglob(pattern, path)
+
+    @staticmethod
+    def _run_mutation(operation: Callable[..., Any], args: tuple[Any, ...], cancelled: threading.Event) -> Any:
+        token = FileMutation.cancelled.set(cancelled)
+        try:
+            return operation(*args)
+        finally:
+            FileMutation.cancelled.reset(token)
+
+    async def _amutate(self, operation: Callable[..., Any], *args: Any) -> Any:
+        cancelled = threading.Event()
+
+        worker = asyncio.create_task(asyncio.to_thread(self._run_mutation, operation, args, cancelled))
+        try:
+            return await asyncio.shield(worker)
+        except asyncio.CancelledError:
+            cancelled.set()
+            # A cancelled tool must not leave a worker writing after it returns.
+            completion = asyncio.gather(worker, return_exceptions=True)
+            while not completion.done():
+                try:
+                    await asyncio.shield(completion)
+                except asyncio.CancelledError:
+                    continue
+            raise
+
+    async def awrite(self, file_path: str, content: str) -> WriteResult:
+        return await self._amutate(self.write, file_path, content)
+
+    async def aedit(
+        self, file_path: str, old_string: str, new_string: str, replace_all: bool = False
+    ) -> EditResult:
+        return await self._amutate(self.edit, file_path, old_string, new_string, replace_all)
+
+    async def aapply_patch(
+        self, patch_text: str, authorize: Callable[[str], str | None]
+    ) -> tuple[str, dict[str, Any]]:
+        return await self._amutate(self.apply_patch, patch_text, authorize)
+
+    def apply_patch(
+        self, patch_text: str, authorize: Callable[[str], str | None]
+    ) -> tuple[str, dict[str, Any]]:
+        if not patch_text:
+            raise ValueError("patchText is required")
+        hunks = OpenCodePatch.parse_patch(patch_text)
+        if not hunks:
+            raise ValueError("patch rejected: empty patch")
+        paths = [
+            self._resolve_path(value)
+            for hunk in hunks
+            for value in (hunk.path, hunk.move_path)
+            if value is not None
+        ]
+        applied: list[dict[str, str]] = []
+        files: list[dict[str, Any]] = []
+        with FileMutation.acquire(paths):
+            prepared = []
+            updates: dict[Path, str] = {}
+            for hunk in hunks:
+                FileMutation.check_cancelled()
+                for value in (hunk.path, hunk.move_path):
+                    if value is not None and (error := authorize(value)):
+                        raise ValueError(error)
+                target = self._text_path(hunk.path)
+                destination = self._text_path(hunk.move_path) if hunk.move_path else target
+                if hunk.type == "add":
+                    before, after = "", hunk.contents
+                    if after and not after.endswith("\n"):
+                        after += "\n"
+                else:
+                    before = updates.get(target) if hunk.type == "update" else None
+                    if before is None:
+                        before = target.read_bytes().decode("utf-8")
+                    after = "" if hunk.type == "delete" else OpenCodePatch.derive_update(
+                        hunk.path, hunk.chunks, before
+                    )
+                    if hunk.type == "update" and not hunk.move_path:
+                        updates[target] = after
+                prepared.append((hunk, target, destination, before, after.encode("utf-8")))
+            for hunk, target, destination, _before, data in prepared:
+                FileMutation.check_cancelled()
+                try:
+                    if hunk.type == "delete":
+                        target.unlink()
+                    else:
+                        self._atomic_write(destination, data)
+                        if hunk.move_path:
+                            target.unlink()
+                except OSError as exc:
+                    completed = ", ".join(item["resource"] for item in applied)
+                    detail = f". Completed before failure: {completed}" if completed else ""
+                    if hunk.move_path and destination.exists():
+                        detail += f". Move destination may have been written: {hunk.move_path}"
+                    raise OSError(f"Failed to {hunk.type} {hunk.path}: {exc}{detail}") from exc
+                applied.append({
+                    "type": hunk.type,
+                    "resource": hunk.move_path or hunk.path,
+                    "target": str(destination),
+                })
+            final_contents: dict[Path, str] = {}
+            for hunk, _target, destination, _before, _data in prepared:
+                if hunk.type != "delete" and destination not in final_contents:
+                    try:
+                        current = destination.read_bytes().decode("utf-8")
+                        final_contents[destination] = (
+                            self._sync_text_bom(destination, current.startswith("\ufeff"))
+                            if self.formatter is not None and self.formatter.file(destination)
+                            else current
+                        )
+                    except OSError as exc:
+                        completed = ", ".join(item["resource"] for item in applied)
+                        raise OSError(f"Failed to read {destination}: {exc}. Completed before failure: {completed}") from exc
+            for hunk, _target, destination, before, _data in prepared:
+                after = "" if hunk.type == "delete" else final_contents[destination]
+                old_lines, new_lines = before.lstrip("\ufeff").splitlines(True), after.lstrip("\ufeff").splitlines(True)
+                diff = list(unified_diff(old_lines, new_lines, fromfile=hunk.path, tofile=hunk.move_path or hunk.path))
+                files.append({
+                    "file": hunk.move_path or hunk.path,
+                    "patch": "".join(line if line.endswith("\n") else line + "\n\\ No newline at end of file\n" for line in diff),
+                    "status": {"add": "added", "update": "modified", "delete": "deleted"}[hunk.type],
+                    "additions": sum(line.startswith("+") for line in diff[2:]),
+                    "deletions": sum(line.startswith("-") for line in diff[2:]),
+                })
+        lines = ["Success. Updated the following files:"]
+        lines.extend(f"{ {'add': 'A', 'update': 'M', 'delete': 'D'}[item['type']]} {item['resource']}" for item in applied)
+        return "\n".join(lines), {"applied": applied, "files": files}

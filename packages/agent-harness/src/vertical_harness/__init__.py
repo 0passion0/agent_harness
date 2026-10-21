@@ -9,7 +9,6 @@ from vertical_harness.config import (
     TaskTier,
 )
 from vertical_harness.core import AgentComposer, ModelRouting, RunContext
-from vertical_harness.desktop import AgentLoop
 from vertical_harness.langchain import AgentStreaming, StreamEvent, WorkflowLoggingHandler
 from vertical_harness.log import HarnessLogging, TracingSession
 from vertical_harness.middleware import (
@@ -21,6 +20,14 @@ from vertical_harness.middleware import (
 from vertical_harness.storage import CheckpointFactory, DocumentFilesystemBackend, StoreFactory
 from vertical_harness.tools import PythonExecution, ToolDetails, UserInteraction, WebSearch
 from vertical_harness.utils import StructuredFormatter, UsageEstimator
+
+
+def __getattr__(name: str):
+    if name == "AgentLoop":
+        from vertical_harness.desktop import AgentLoop
+
+        return AgentLoop
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 __all__ = [
     "AgentComposer",

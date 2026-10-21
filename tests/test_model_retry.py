@@ -2,16 +2,16 @@
 
 import asyncio
 import json
-import time
-from types import SimpleNamespace
 
 import httpx
 import openai
-import openai._base_client as sdk
 import pytest
+from langchain.agents import create_agent
+from langchain_core.messages import HumanMessage
 
 from vertical_harness import HarnessSettings
 from vertical_harness.core import routing
+from vertical_harness.middleware.model_retry import OpenCodeModelRetryMiddleware
 
 
 @pytest.mark.parametrize("mode", ["invoke", "ainvoke", "stream", "astream"])
@@ -24,7 +24,7 @@ def test_model_retry_limit_backoff_and_permanent_errors(monkeypatch, mode, failu
         requests.append(request)
         if failure == "timeout":
             raise httpx.ReadTimeout("network timeout", request=request)
-        if failure == "401" or len(requests) <= 5:
+        if failure == "401" or len(requests) <= 10:
             if failure == "connection":
                 raise httpx.ConnectError("network unavailable", request=request)
             return httpx.Response(
@@ -60,9 +60,9 @@ def test_model_retry_limit_backoff_and_permanent_errors(monkeypatch, mode, failu
     async def sleep(delay):
         delays.append(delay)
 
-    monkeypatch.setattr(sdk, "time", SimpleNamespace(sleep=delays.append, time=time.time))
-    monkeypatch.setattr(sdk, "anyio", SimpleNamespace(sleep=sleep))
-    monkeypatch.setattr(sdk, "random", lambda: 0)
+    monkeypatch.setattr("vertical_harness.middleware.model_retry.time.sleep", delays.append)
+    monkeypatch.setattr("vertical_harness.middleware.model_retry.asyncio.sleep", sleep)
+    monkeypatch.setattr("vertical_harness.middleware.model_retry.random.uniform", lambda *_: 1)
     original_init = routing.init_chat_model
 
     async def run():
@@ -83,13 +83,18 @@ def test_model_retry_limit_backoff_and_permanent_errors(monkeypatch, mode, failu
                         base_url="https://model.test",
                     )
                 )
+                assert model.max_retries == 0
+                agent = create_agent(model=model, middleware=[OpenCodeModelRetryMiddleware()])
+                request = {"messages": [HumanMessage(content="hello")]}
                 if mode == "invoke":
-                    return model.invoke("hello").content
+                    return agent.invoke(request)["messages"][-1].content
                 if mode == "ainvoke":
-                    return (await model.ainvoke("hello")).content
+                    return (await agent.ainvoke(request))["messages"][-1].content
                 if mode == "stream":
-                    return "".join(chunk.content for chunk in model.stream("hello"))
-                return "".join([chunk.content async for chunk in model.astream("hello")])
+                    values = list(agent.stream(request, stream_mode="values"))
+                else:
+                    values = [value async for value in agent.astream(request, stream_mode="values")]
+                return values[-1]["messages"][-1].content
 
     error = {"timeout": openai.APITimeoutError, "401": openai.AuthenticationError}.get(failure)
     if error:
@@ -97,5 +102,6 @@ def test_model_retry_limit_backoff_and_permanent_errors(monkeypatch, mode, failu
             asyncio.run(run())
     else:
         assert asyncio.run(run()) == "recovered"
-    assert len(requests) == (1 if failure == "401" else 6)
-    assert delays == ([] if failure == "401" else [0.5, 1, 2, 4, 8])
+    count = {"401": 1, "timeout": 4}.get(failure, 11)
+    assert len(requests) == count
+    assert delays == [2, 4, 8, *([10] * 7)][:count - 1]
