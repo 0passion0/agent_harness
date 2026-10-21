@@ -8,6 +8,7 @@ from typing import Any
 from uuid import UUID
 
 from langchain_core.callbacks import AsyncCallbackHandler
+from langgraph.types import Command
 
 from vertical_harness.utils.usage import UsageEstimator
 
@@ -29,14 +30,14 @@ class ToolDetails(AsyncCallbackHandler):
     context_reports: dict[str, dict[str, Any]] = field(default_factory=dict, init=False)
 
     async def on_chat_model_start(
-        self,
-        serialized: dict[str, Any],
-        messages: list[Any],
-        *,
-        run_id: UUID,
-        metadata: dict[str, Any] | None = None,
-        invocation_params: dict[str, Any] | None = None,
-        **kwargs: Any,
+            self,
+            serialized: dict[str, Any],
+            messages: list[Any],
+            *,
+            run_id: UUID,
+            metadata: dict[str, Any] | None = None,
+            invocation_params: dict[str, Any] | None = None,
+            **kwargs: Any,
     ) -> None:
         """记录模型发起调用时的第一层输入消息与工具列表。
 
@@ -117,13 +118,13 @@ class ToolDetails(AsyncCallbackHandler):
         self.context_requests.pop(str(run_id), None)
 
     async def on_tool_start(
-        self,
-        serialized: dict[str, Any],
-        input_str: str,
-        *,
-        run_id: UUID,
-        inputs: dict[str, Any] | None = None,
-        **kwargs: Any,
+            self,
+            serialized: dict[str, Any],
+            input_str: str,
+            *,
+            run_id: UUID,
+            inputs: dict[str, Any] | None = None,
+            **kwargs: Any,
     ) -> None:
         """记录工具开始执行的高精度时间与输入参数。
 
@@ -163,9 +164,10 @@ class ToolDetails(AsyncCallbackHandler):
         """
         # 第一步：计算耗时并记录输出正文
         key = str(run_id)
+        message = output.update["messages"][-1] if isinstance(output, Command) else output
         self.records[key].update(
             {
-                "output": output.content,
+                "output": message.content,
                 "elapsed": perf_counter() - self.started[key],
             }
         )
@@ -192,6 +194,3 @@ class ToolDetails(AsyncCallbackHandler):
                 "elapsed": perf_counter() - self.started[key],
             }
         )
-
-
-__all__ = ["ToolDetails"]

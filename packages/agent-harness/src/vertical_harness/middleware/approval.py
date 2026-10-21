@@ -61,9 +61,9 @@ class DesktopApprovalMiddleware(AgentMiddleware):
         if not isinstance(decision, dict) or not isinstance(decision.get("decisions"), list):
             raise ValueError("Approval response must contain decisions")
         if (
-            len(decision["decisions"]) != 1
-            or not isinstance(decision["decisions"][0], dict)
-            or decision["decisions"][0].get("type") not in {"approve", "reject"}
+                len(decision["decisions"]) != 1
+                or not isinstance(decision["decisions"][0], dict)
+                or decision["decisions"][0].get("type") not in {"approve", "reject"}
         ):
             raise ValueError("Expected exactly one approve or reject decision")
 
@@ -110,6 +110,3 @@ class DesktopApprovalMiddleware(AgentMiddleware):
         if rejected is not None:
             return rejected
         return await handler(request)
-
-
-__all__ = ["DesktopApprovalMiddleware"]

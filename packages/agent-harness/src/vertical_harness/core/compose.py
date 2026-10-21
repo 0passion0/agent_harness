@@ -7,13 +7,10 @@ from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager, contextmanager
 from typing import Any
 
-from deepagents import FilesystemPermission
+from deepagents import FilesystemPermission, create_deep_agent
 from deepagents.backends.protocol import BackendProtocol
 from deepagents.middleware import FilesystemMiddleware
-from deepagents.middleware.patch_tool_calls import PatchToolCallsMiddleware
 from deepagents.middleware.summarization import SummarizationMiddleware
-from deepagents.middleware.unsupported_content import UnsupportedContentMiddleware
-from langchain.agents import create_agent
 from langchain.agents.middleware import TodoListMiddleware
 from langgraph.checkpoint.memory import InMemorySaver
 
@@ -21,11 +18,11 @@ from vertical_harness.config.settings import HarnessSettings
 from vertical_harness.core.context import RunContext
 from vertical_harness.core.routing import ModelRouting
 from vertical_harness.log.observability import TracingSession
-from vertical_harness.middleware.approval.middleware import DesktopApprovalMiddleware
-from vertical_harness.middleware.context_limit.middleware import ContextLimitMiddleware
-from vertical_harness.middleware.permission.middleware import DesktopPermissionMiddleware
-from vertical_harness.storage.backends import DocumentFilesystemBackend
+from vertical_harness.middleware.approval import DesktopApprovalMiddleware
+from vertical_harness.middleware.context_limit import ContextLimitMiddleware
+from vertical_harness.middleware.permission import DesktopPermissionMiddleware
 from vertical_harness.storage.checkpoint import CheckpointFactory
+from vertical_harness.storage.document_backend import DocumentFilesystemBackend
 from vertical_harness.tools.python_execution import PythonExecution
 from vertical_harness.tools.search import WebSearch
 from vertical_harness.tools.user_interaction import UserInteraction
@@ -53,7 +50,7 @@ class AgentComposer:
 
     @staticmethod
     def _summarization_middleware(
-        model: Any, backend: BackendProtocol, max_context_tokens: int = 475_000
+            model: Any, backend: BackendProtocol, max_context_tokens: int = 475_000
     ) -> SummarizationMiddleware:
         """构建自动上下文摘要压缩中间件。
 
@@ -99,11 +96,11 @@ class AgentComposer:
 
     @classmethod
     def build_agent(
-        cls,
-        settings: HarnessSettings,
-        *,
-        checkpointer: Any = None,
-        options: dict[str, Any] | None = None,
+            cls,
+            settings: HarnessSettings,
+            *,
+            checkpointer: Any = None,
+            options: dict[str, Any] | None = None,
     ) -> Any:
         """构建组装挂载了文件系统、网页检索与受控 Python 脚本工具的原生 LangGraph 智能体状态图。
 
@@ -134,9 +131,9 @@ class AgentComposer:
             )
         ]
         for target in (
-            settings.resolved_store_target,
-            settings.resolved_checkpoint_target,
-            settings.log_file,
+                settings.resolved_store_target,
+                settings.resolved_checkpoint_target,
+                settings.log_file,
         ):
             if target is None or str(target) == ":memory:":
                 continue
@@ -158,9 +155,9 @@ class AgentComposer:
                 )
             )
 
-        # 第三步：按序装配中间件栈（修复、规划、路由、摘要、上下文硬限制、桌面权限与审批、文件工具中间件）
+        # 第三步：配置原生中间件及宿主的路由、预算、权限与审批。
         maximum = options.get("max_context_tokens", 475_000)
-        middleware = [PatchToolCallsMiddleware(), UnsupportedContentMiddleware()]
+        middleware = []
         if settings.enable_planning:
             middleware.append(TodoListMiddleware())
         if router := ModelRouting.make_router(settings):
@@ -184,8 +181,9 @@ class AgentComposer:
             )
         )
 
-        # 第四步：调用 LangChain 原生 create_agent 创建智能体图并注入配置元数据
-        agent = create_agent(
+        # 子智能体复用同一组权限、审批与预算限制，避免委派绕过宿主约束。
+        system_prompt = BASE_PROMPT + "\n" + options.get("agent_content", "")
+        agent = create_deep_agent(
             name="vertical-agent",
             model=model,
             tools=[
@@ -193,8 +191,18 @@ class AgentComposer:
                 PythonExecution.python_file_tool(root, settings.python_executable),
                 UserInteraction.ask_user,
             ],
-            system_prompt=BASE_PROMPT + "\n" + options.get("agent_content", ""),
+            system_prompt=system_prompt,
+            backend=backend,
+            permissions=permissions,
             middleware=middleware,
+            subagents=[
+                {
+                    "name": "general-purpose",
+                    "description": "Delegate a scoped task to an agent with the same workspace and permissions.",
+                    "system_prompt": system_prompt,
+                    "middleware": middleware,
+                }
+            ],
             context_schema=RunContext,
             checkpointer=checkpointer if checkpointer is not None else InMemorySaver(),
         )
@@ -202,6 +210,7 @@ class AgentComposer:
             **(agent.config or {}),
             "recursion_limit": 9999,
             "metadata": {
+                **agent.config["metadata"],
                 "harness_run_timeout_seconds": settings.run_timeout_seconds,
                 "lc_agent_name": "vertical-agent",
             },
@@ -212,7 +221,7 @@ class AgentComposer:
     @classmethod
     @contextmanager
     def open_agent(
-        cls, settings: HarnessSettings, *, options: dict[str, Any] | None = None
+            cls, settings: HarnessSettings, *, options: dict[str, Any] | None = None
     ) -> Iterator[Any]:
         """通过同步上下文管理器保持检查点生命周期并创建可用智能体实例。
 
@@ -232,7 +241,7 @@ class AgentComposer:
     @classmethod
     @asynccontextmanager
     async def aopen_agent(
-        cls, settings: HarnessSettings, *, options: dict[str, Any] | None = None
+            cls, settings: HarnessSettings, *, options: dict[str, Any] | None = None
     ) -> AsyncIterator[Any]:
         """通过异步上下文管理器保持检查点生命周期并创建可用智能体实例。
 
@@ -249,11 +258,3 @@ class AgentComposer:
         with TracingSession.tracing_session():
             async with CheckpointFactory.aopen_checkpointer(settings) as checkpointer:
                 yield cls.build_agent(settings, checkpointer=checkpointer, options=options)
-
-
-_summarization_middleware = AgentComposer._summarization_middleware
-build_agent = AgentComposer.build_agent
-open_agent = AgentComposer.open_agent
-aopen_agent = AgentComposer.aopen_agent
-
-__all__ = ["BASE_PROMPT", "AgentComposer", "_summarization_middleware", "aopen_agent", "build_agent", "open_agent"]

@@ -1,8 +1,9 @@
 from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
-from vertical_harness import HarnessSettings, build_agent
-from vertical_harness.engine import compose
+from vertical_harness import HarnessSettings
+from vertical_harness.core import compose
+from vertical_harness.core.compose import AgentComposer
 
 
 class ToolModel(FakeMessagesListChatModel):
@@ -51,7 +52,7 @@ def test_partial_read_and_exact_edit_preserve_unrelated_content(tmp_path, monkey
         store_backend="memory",
         enable_memory=False,
     )
-    agent = build_agent(settings, checkpointer=False)
+    agent = AgentComposer.build_agent(settings, checkpointer=False)
     result = agent.invoke({"messages": [HumanMessage(content="Update one value")]})
     messages = {m.tool_call_id: m for m in result["messages"] if isinstance(m, ToolMessage)}
     assert messages["edit"].status == "success"
@@ -119,7 +120,7 @@ def test_search_is_bounded_and_ambiguous_or_private_edits_do_not_write(tmp_path,
         store_backend="memory",
         enable_memory=False,
     )
-    result = build_agent(settings, checkpointer=False).invoke(
+    result = AgentComposer.build_agent(settings, checkpointer=False).invoke(
         {"messages": [HumanMessage(content="Find and edit text")]}
     )
     messages = {m.tool_call_id: m for m in result["messages"] if isinstance(m, ToolMessage)}

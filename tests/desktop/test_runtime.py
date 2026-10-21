@@ -6,22 +6,15 @@ from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, MessagesState, StateGraph
 from langgraph.types import Command, interrupt
 
-from vertical_harness import (
-    HarnessSettings,
-    RunContext,
-    aopen_agent,
-    astream_agent,
-    build_agent,
-    make_checkpoint_config,
-)
-from vertical_harness.bridge.runtime import (
-    ContextLimitMiddleware,
-    ask_user,
-    attachment_message,
-    configured_settings,
-    raw_message,
-    usage_estimate,
-)
+from vertical_harness import HarnessSettings, RunContext
+from vertical_harness.bridge.messages import DesktopMessages
+from vertical_harness.bridge.runtime import DesktopRuntime
+from vertical_harness.config.checkpoint_config import CheckpointConfig
+from vertical_harness.core.compose import AgentComposer
+from vertical_harness.langchain.streaming import AgentStreaming
+from vertical_harness.middleware.context_limit import ContextLimitMiddleware
+from vertical_harness.tools.user_interaction import UserInteraction
+from vertical_harness.utils.usage import UsageEstimator
 
 
 def options():
@@ -41,7 +34,7 @@ def options():
 def test_ask_user_interrupts_and_resumes_with_choice_or_custom_text(choices, answer):
 
     def step(_state):
-        result = ask_user.invoke({"question": "需要什么报告？", "options": choices})
+        result = UserInteraction.ask_user.invoke({"question": "需要什么报告？", "options": choices})
         return {"messages": [AIMessage(content=result)]}
 
     graph = StateGraph(MessagesState)
@@ -64,7 +57,7 @@ def test_ask_user_interrupts_and_resumes_with_choice_or_custom_text(choices, ans
 def test_ask_user_rejects_blank_questions_and_options():
     for params in ({"question": " "}, {"question": "format?", "options": [" "]}):
         with pytest.raises(ValueError, match="must not be blank"):
-            ask_user.invoke(params)
+            UserInteraction.ask_user.invoke(params)
 
 
 @pytest.mark.parametrize("mode", ["read_only", "ask", "full"])
@@ -73,7 +66,7 @@ def test_composed_desktop_agent_can_ask_questions_in_every_permission_mode(
 ):
     from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
 
-    from vertical_harness.engine import compose
+    from vertical_harness.core import compose
 
     class Model(FakeMessagesListChatModel):
         def bind_tools(self, tools, **kwargs):
@@ -107,7 +100,7 @@ def test_composed_desktop_agent_can_ask_questions_in_every_permission_mode(
         store_backend="memory",
         enable_memory=False,
     )
-    app = build_agent(settings, checkpointer=InMemorySaver(), options=selected)
+    app = AgentComposer.build_agent(settings, checkpointer=InMemorySaver(), options=selected)
 
     async def run():
         config = {"configurable": {"thread_id": "questions"}}
@@ -125,7 +118,7 @@ def test_composed_desktop_agent_can_ask_questions_in_every_permission_mode(
 
 def test_configured_settings_preserve_provider_model_and_runtime_paths(monkeypatch, tmp_path):
     monkeypatch.setenv("VA_MODEL", "deepseek:configured")
-    settings, desktop = configured_settings(
+    settings, desktop = DesktopRuntime.configured_settings(
         {
             "workspace_root": str(tmp_path / "workspace"),
             "runtime_data_dir": str(tmp_path / "runtime"),
@@ -140,7 +133,7 @@ def test_configured_settings_preserve_provider_model_and_runtime_paths(monkeypat
 @pytest.mark.parametrize("maximum", [0, 475001])
 def test_configured_settings_rejects_context_outside_475k_budget(tmp_path, maximum):
     with pytest.raises(ValueError, match="between 1 and 475000"):
-        configured_settings(
+        DesktopRuntime.configured_settings(
             {
                 "workspace_root": str(tmp_path / "workspace"),
                 "runtime_data_dir": str(tmp_path / "runtime"),
@@ -154,7 +147,7 @@ def test_attachments_inside_workspace_are_referenced_in_place(tmp_path):
     original = workspace / "report.csv"
     original.parent.mkdir()
     original.write_text("a,b\n1,2\n", encoding="utf-8")
-    message = attachment_message(
+    message = DesktopMessages.attachment_message(
         workspace,
         "Analyze this",
         [{"name": "report.csv", "path": str(original), "media_type": "text/csv"}],
@@ -168,10 +161,10 @@ def test_snapshot_keeps_multimodal_content_and_marks_usage_estimate():
         content=[{"type": "text", "text": "done"}],
         usage_metadata={"input_tokens": 8, "output_tokens": 3, "total_tokens": 11},
     )
-    dumped = raw_message(message)
+    dumped = DesktopMessages.raw_message(message)
     assert dumped["content"] == [{"type": "text", "text": "done"}]
     assert dumped["usage_metadata"]["total_tokens"] == 11
-    assert usage_estimate([message], "deepseek:deepseek-chat")["used_tokens"] > 0
+    assert UsageEstimator.usage_estimate([message], "deepseek:deepseek-chat")["used_tokens"] > 0
 
 
 def test_context_usage_counts_actual_request_and_normalizes_reported_usage():
@@ -193,7 +186,7 @@ def test_context_usage_counts_actual_request_and_normalizes_reported_usage():
         ToolMessage(content="Loaded skill instructions", tool_call_id="read"),
         AIMessage(content="Done"),
     ]
-    report = usage_estimate(
+    report = UsageEstimator.usage_estimate(
         [],
         "test:model",
         100,
@@ -207,14 +200,14 @@ def test_context_usage_counts_actual_request_and_normalizes_reported_usage():
     assert sum(section["ratio_of_used"] for section in sections) == pytest.approx(1)
     assert report["used_ratio"] == 1.5
     assert report["remaining_tokens"] == report["remaining_ratio"] == 0
-    pending = usage_estimate([], "test:model", options=options())
+    pending = UsageEstimator.usage_estimate([], "test:model", options=options())
     assert pending["used_tokens"] == 0
     assert pending["sections"]["tools"]["tokens"] is None
 
 
 def test_attachment_rejects_relative_path(tmp_path):
     with pytest.raises(ValueError, match="absolute"):
-        attachment_message(
+        DesktopMessages.attachment_message(
             tmp_path, "text", [{"name": "file", "path": "relative.txt", "media_type": "text/plain"}]
         )
 
@@ -284,7 +277,7 @@ def test_desktop_context_limit_checks_compacted_model_request(
     from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
     from pydantic import Field
 
-    from vertical_harness.engine import compose
+    from vertical_harness.core import compose
 
     class TrackingModel(FakeMessagesListChatModel):
         seen_messages: list = Field(default_factory=list)
@@ -327,7 +320,7 @@ def test_desktop_context_limit_checks_compacted_model_request(
     config = {"configurable": {"thread_id": f"context-limit-{use_async}"}}
 
     async def scenario():
-        async with aopen_agent(settings, options=selected) as app:
+        async with AgentComposer.aopen_agent(settings, options=selected) as app:
             if use_async:
                 result = await app.ainvoke({"messages": history}, config)
                 snapshot = await app.aget_state(config)
@@ -354,7 +347,7 @@ def test_desktop_context_limit_checks_compacted_model_request(
 def test_read_only_real_graph_blocks_builtin_write_file(tmp_path, monkeypatch):
     from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
 
-    from vertical_harness.engine import compose
+    from vertical_harness.core import compose
 
     class ToolCallingFakeModel(FakeMessagesListChatModel):
         def bind_tools(self, tools, **kwargs):
@@ -390,7 +383,7 @@ def test_read_only_real_graph_blocks_builtin_write_file(tmp_path, monkeypatch):
     )
 
     async def invoke():
-        async with aopen_agent(settings, options=selected) as app:
+        async with AgentComposer.aopen_agent(settings, options=selected) as app:
             assert app.config["recursion_limit"] == 9999
             await app.ainvoke(
                 {"messages": [HumanMessage(content="write blocked.txt")]},
@@ -405,7 +398,7 @@ def test_read_only_real_graph_blocks_builtin_write_file(tmp_path, monkeypatch):
 def test_ask_rejection_returns_tool_error_and_allows_model_to_continue(tmp_path, monkeypatch):
     from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
 
-    from vertical_harness.engine import compose
+    from vertical_harness.core import compose
 
     class ToolCallingFakeModel(FakeMessagesListChatModel):
         def bind_tools(self, tools, **kwargs):
@@ -442,7 +435,7 @@ def test_ask_rejection_returns_tool_error_and_allows_model_to_continue(tmp_path,
     )
 
     async def scenario():
-        async with aopen_agent(settings, options=selected) as app:
+        async with AgentComposer.aopen_agent(settings, options=selected) as app:
             config = {"configurable": {"thread_id": "ask-reject-check"}}
             await app.ainvoke({"messages": [HumanMessage(content="write rejected.txt")]}, config)
             paused = await app.aget_state(config)
@@ -461,7 +454,7 @@ def test_ask_rejection_returns_tool_error_and_allows_model_to_continue(tmp_path,
 def test_streaming_six_tool_calls_keeps_agent_recursion_limit(tmp_path, monkeypatch):
     from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
 
-    from vertical_harness.engine import compose
+    from vertical_harness.core import compose
 
     class ToolCallingFakeModel(FakeMessagesListChatModel):
         def bind_tools(self, tools, **kwargs):
@@ -493,16 +486,16 @@ def test_streaming_six_tool_calls_keeps_agent_recursion_limit(tmp_path, monkeypa
     )
 
     async def scenario():
-        async with aopen_agent(settings, options=selected) as app:
+        async with AgentComposer.aopen_agent(settings, options=selected) as app:
             assert app.config["recursion_limit"] == 9999
             config = {
-                **make_checkpoint_config("six-tool-call-check"),
+                **CheckpointConfig.make_checkpoint_config("six-tool-call-check"),
                 "run_id": "six-tool-run",
                 "recursion_limit": app.config["recursion_limit"],
             }
             events = [
                 event
-                async for event in astream_agent(
+                async for event in AgentStreaming.astream_agent(
                     app,
                     {
                         "messages": [

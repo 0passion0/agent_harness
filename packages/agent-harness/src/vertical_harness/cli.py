@@ -125,9 +125,3 @@ class Cli:
                 context=RunContext(tenant_id=args.tenant_id, user_id=args.user_id),
             )
             print(result["messages"][-1].text)
-
-
-_image_content = Cli.image_content
-main = Cli.main
-
-__all__ = ["Cli", "_image_content", "main"]

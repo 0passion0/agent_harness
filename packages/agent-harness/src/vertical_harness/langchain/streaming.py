@@ -79,7 +79,9 @@ class AgentStreaming:
         if kind == "on_tool_error":
             return "tool.failed", {"error_type": type(data.get("error")).__name__}
         if kind == "on_tool_end":
-            failed = data["output"].status == "error"
+            output = data["output"]
+            message = output.update["messages"][-1] if isinstance(output, Command) else output
+            failed = message.status == "error"
             return "tool.failed" if failed else "tool.completed", {}
 
         # 第三步：针对执行链生命周期与根调用状态进行投影
@@ -158,7 +160,7 @@ class AgentStreaming:
         :param config: 调用方传入的检查点与回调配置。
         :type config: langchain_core.runnables.RunnableConfig
         :param context: 可信身份与租户上下文。
-        :type context: vertical_harness.context.RunContext | None
+        :type context: vertical_harness.core.context.RunContext | None
         :param durability: 检查点持久化同步级别。
         :type durability: typing.Literal['sync', 'async', 'exit']
         :param timeout_seconds: 覆盖默认调用超时的秒数。
@@ -205,13 +207,13 @@ class AgentStreaming:
         :param config: 必须包含 thread_id 的 RunnableConfig 字典。
         :type config: langchain_core.runnables.RunnableConfig
         :param context: 可信运行时身份。
-        :type context: vertical_harness.context.RunContext | None
+        :type context: vertical_harness.core.context.RunContext | None
         :param durability: 检查点持久化同步级别。
         :type durability: typing.Literal['sync', 'async', 'exit']
         :param timeout_seconds: 执行超时秒数。
         :type timeout_seconds: float | None
         :return: 投影后的 StreamEvent 异步事件流迭代器。
-        :rtype: collections.abc.AsyncIterator[vertical_harness.engine.streaming.StreamEvent]
+        :rtype: collections.abc.AsyncIterator[vertical_harness.langchain.stream_event.StreamEvent]
         :raises ValueError: 当缺少 thread_id 时抛出。
         :author: tongliga
         :date: 2026-10-19
@@ -295,18 +297,3 @@ class AgentStreaming:
                 data={"error_type": type(exc).__name__},
             )
             raise
-
-
-_project = AgentStreaming._project
-_run_timeout = AgentStreaming._run_timeout
-ainvoke_agent = AgentStreaming.ainvoke_agent
-astream_agent = AgentStreaming.astream_agent
-
-__all__ = [
-    "AgentStreaming",
-    "StreamEvent",
-    "_project",
-    "_run_timeout",
-    "ainvoke_agent",
-    "astream_agent",
-]

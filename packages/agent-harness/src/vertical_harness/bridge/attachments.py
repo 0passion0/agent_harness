@@ -33,7 +33,7 @@ class AttachmentContent:
 
     @staticmethod
     def content_blocks(
-        sources: list[tuple[dict[str, str], Path]], text: str, workspace_root: Path
+            sources: list[tuple[dict[str, str], Path]], text: str, workspace_root: Path
     ) -> str | list[dict[str, Any]]:
         """将附件列表转换为注入给大模型的多模态或文本指导消息块。
 
@@ -72,20 +72,14 @@ class AttachmentContent:
                 {
                     "type": "text",
                     "text": (
-                        f"Attachment: {ref['name']}\nPath: {path_in_workspace}\n"
-                        + (
-                            "Write a local table-summary .py script and run it with execute_python_file; do not print the full table. "
-                            "Otherwise start with read_file(offset=0, limit=40)."
-                            if path.suffix.lower() in {".csv", ".parquet", ".xlsx"}
-                            else "Start with read_file(offset=0, limit=40); if more is needed, continue with later offsets."
-                        )
+                            f"Attachment: {ref['name']}\nPath: {path_in_workspace}\n"
+                            + (
+                                "Write a local table-summary .py script and run it with execute_python_file; do not print the full table. "
+                                "Otherwise start with read_file(offset=0, limit=40)."
+                                if path.suffix.lower() in {".csv", ".parquet", ".xlsx"}
+                                else "Start with read_file(offset=0, limit=40); if more is needed, continue with later offsets."
+                            )
                     ),
                 }
             )
         return blocks
-
-
-extract_text = AttachmentContent.extract_text
-content_blocks = AttachmentContent.content_blocks
-
-__all__ = ["AttachmentContent", "content_blocks", "extract_text"]

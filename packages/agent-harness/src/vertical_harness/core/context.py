@@ -35,8 +35,8 @@ class RunContext:
         """
         # 第一步：校验租户 ID 与用户 ID 必须为非空有效字符串
         if any(
-            not isinstance(value, str) or not value.strip()
-            for value in (self.tenant_id, self.user_id)
+                not isinstance(value, str) or not value.strip()
+                for value in (self.tenant_id, self.user_id)
         ):
             raise ValueError("RunContext requires nonempty trusted tenant_id and user_id")
         # 第二步：校验任务层级是否处于受控枚举集合内

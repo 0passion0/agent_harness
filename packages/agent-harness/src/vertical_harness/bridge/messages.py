@@ -15,7 +15,7 @@ class DesktopMessages:
 
     @staticmethod
     def attachment_message(
-        workspace_root: Path, text: str, attachments: list[dict[str, str]]
+            workspace_root: Path, text: str, attachments: list[dict[str, str]]
     ) -> str | list[dict[str, Any]]:
         """校验附件安全性（必须在工作区物理边界内）并生成多模态消息内容块。
 
@@ -75,6 +75,3 @@ class DesktopMessages:
         :date: 2026-10-21
         """
         return message.model_dump(mode="json", exclude_none=True)
-
-
-__all__ = ["DesktopMessages"]

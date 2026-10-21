@@ -9,7 +9,7 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_deepseek import ChatDeepSeek
 
 from vertical_harness.config.settings import HarnessSettings
-from vertical_harness.middleware.routing.middleware import ModelRouterMiddleware
+from vertical_harness.middleware.routing import ModelRouterMiddleware
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +23,7 @@ class ModelRouting:
 
     @staticmethod
     def init_configured_model(
-        settings: HarnessSettings, model: str | None = None
+            settings: HarnessSettings, model: str | None = None
     ) -> BaseChatModel:
         """基于已验证的 VA_* 配置项实例化 LangChain 聊天模型。
 
@@ -59,7 +59,7 @@ class ModelRouting:
         :param settings: 包含模型标识符及路由相关配置的对象。
         :type settings: vertical_harness.config.settings.HarnessSettings
         :return: LangChain 包装后的模型调用路由中间件，未配置路由时返回 None。
-        :rtype: vertical_harness.middleware.routing.middleware.ModelRouterMiddleware | None
+        :rtype: vertical_harness.middleware.routing.ModelRouterMiddleware | None
         :raises ValueError: 当仅配置了经济模型或品质模型之一时抛出（两者必须同时配置）。
         :author: tongliga
         :date: 2026-10-19
@@ -74,9 +74,3 @@ class ModelRouting:
         logger.info("model_routing_enabled")
         # 第三步：实例化并返回模型路由中间件对象
         return ModelRouterMiddleware(settings, economy_model, quality_model)
-
-
-init_configured_model = ModelRouting.init_configured_model
-make_router = ModelRouting.make_router
-
-__all__ = ["ModelRouting", "init_configured_model", "make_router"]

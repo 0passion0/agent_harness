@@ -11,6 +11,8 @@ from vertical_harness import desktop as bridge
 
 
 def test_streamed_tool_details_reach_the_original_cards(monkeypatch, tmp_path):
+    agent_loop = bridge.AgentLoop()
+
     @tool
     def write_note(content: str) -> str:
         """Write a note in the test workspace."""
@@ -56,7 +58,7 @@ def test_streamed_tool_details_reach_the_original_cards(monkeypatch, tmp_path):
 
     async def scenario():
         monkeypatch.setenv("VA_MODEL", "test:fake")
-        await bridge.loop.dispatch(
+        await agent_loop.dispatch(
             "configure",
             {
                 "tenant_id": "tool-test",
@@ -75,7 +77,7 @@ def test_streamed_tool_details_reach_the_original_cards(monkeypatch, tmp_path):
         monkeypatch.setattr(bridge.AgentLoop, "open_configured_agent", open_agent)
         monkeypatch.setattr(bridge.AgentLoop, "notify", capture)
         thread_id, run_id = str(uuid4()), str(uuid4())
-        await bridge.loop._run(thread_id, run_id, {"messages": [HumanMessage(content="write")]})
+        await agent_loop._run(thread_id, run_id, {"messages": [HumanMessage(content="write")]})
 
     asyncio.run(scenario())
     start = next(frame for frame in frames if frame["type"] == "tool.started")

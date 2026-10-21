@@ -2,7 +2,7 @@ import asyncio
 
 import openpyxl
 
-from vertical_harness.storage.backends import DocumentFilesystemBackend
+from vertical_harness.storage.document_backend import DocumentFilesystemBackend
 
 
 def test_binary_workbook_is_extracted_before_native_text_read_and_paginated(tmp_path):

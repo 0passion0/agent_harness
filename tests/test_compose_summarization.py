@@ -8,7 +8,7 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.checkpoint.memory import InMemorySaver
 from pydantic import Field
 
-from vertical_harness.engine.compose import _summarization_middleware
+from vertical_harness.core.compose import AgentComposer
 
 
 class ToolBindableFakeModel(FakeListChatModel):
@@ -35,7 +35,9 @@ def test_native_compaction_waits_until_ninety_percent_of_475k(
     agent = create_deep_agent(
         model=model,
         backend=FilesystemBackend(root_dir=tmp_path),
-        middleware=[_summarization_middleware(model, FilesystemBackend(root_dir=tmp_path))],
+        middleware=[
+            AgentComposer._summarization_middleware(model, FilesystemBackend(root_dir=tmp_path))
+        ],
         checkpointer=InMemorySaver(),
     )
     config = {"configurable": {"thread_id": "475k-context"}}
@@ -60,7 +62,7 @@ def test_native_summarization_compacts_model_view_and_preserves_checkpoint_histo
         profile={"max_input_tokens": 100_000},
     )
     backend = FilesystemBackend(root_dir=tmp_path)
-    middleware = _summarization_middleware(model, backend)
+    middleware = AgentComposer._summarization_middleware(model, backend)
 
     # Large old tool input forces argument truncation; long history crosses the 90% trigger.
     old_args = "OLD_ARG_SENTINEL " + ("x" * 40_000)
@@ -162,7 +164,7 @@ def test_completed_script_is_trimmed_before_the_next_model_call(tmp_path) -> Non
     agent = create_deep_agent(
         model=model,
         backend=backend,
-        middleware=[_summarization_middleware(model, backend)],
+        middleware=[AgentComposer._summarization_middleware(model, backend)],
         checkpointer=InMemorySaver(),
     )
     config = {"configurable": {"thread_id": "saved-script-test"}}
@@ -179,7 +181,9 @@ def test_completed_script_is_trimmed_before_the_next_model_call(tmp_path) -> Non
 
 def test_summarization_threshold_respects_small_model_profile(tmp_path) -> None:
     large = FakeListChatModel(responses=["ok"], profile={"max_input_tokens": 100_000})
-    large_middleware = _summarization_middleware(large, FilesystemBackend(root_dir=tmp_path))
+    large_middleware = AgentComposer._summarization_middleware(
+        large, FilesystemBackend(root_dir=tmp_path)
+    )
     assert large_middleware._lc_helper.trigger == ("tokens", 90_000)
     assert large_middleware._lc_helper.keep == ("tokens", 10_000)
     assert large_middleware._truncate_args_trigger == ("tokens", 8_000)
@@ -187,7 +191,9 @@ def test_summarization_threshold_respects_small_model_profile(tmp_path) -> None:
     assert large_middleware._max_arg_length == 1_200
 
     small = FakeListChatModel(responses=["ok"], profile={"max_input_tokens": 20_000})
-    small_middleware = _summarization_middleware(small, FilesystemBackend(root_dir=tmp_path))
+    small_middleware = AgentComposer._summarization_middleware(
+        small, FilesystemBackend(root_dir=tmp_path)
+    )
     assert small_middleware._lc_helper.trigger == ("tokens", 18_000)
     assert small_middleware._lc_helper.keep == ("tokens", 2_000)
     assert small_middleware._truncate_args_trigger == ("tokens", 8_000)
@@ -195,7 +201,7 @@ def test_summarization_threshold_respects_small_model_profile(tmp_path) -> None:
 
 @pytest.mark.parametrize("profile", [None, {}])
 def test_unprofiled_model_uses_475k_context_budget(tmp_path, profile) -> None:
-    middleware = _summarization_middleware(
+    middleware = AgentComposer._summarization_middleware(
         FakeListChatModel(responses=["ok"], profile=profile),
         FilesystemBackend(root_dir=tmp_path),
     )
@@ -225,7 +231,7 @@ def test_summarization_respects_configured_context_limit(
         responses=["ok"],
         profile={"max_input_tokens": profile_limit} if profile_limit else None,
     )
-    middleware = _summarization_middleware(
+    middleware = AgentComposer._summarization_middleware(
         model, FilesystemBackend(root_dir=tmp_path), configured_limit
     )
     assert middleware._lc_helper.trigger == ("tokens", trigger)

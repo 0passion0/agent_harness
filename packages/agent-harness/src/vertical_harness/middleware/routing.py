@@ -9,7 +9,8 @@ from typing import Any
 
 from langchain.agents.middleware import AgentMiddleware, ModelRequest, ModelResponse
 
-from vertical_harness.config.settings import HarnessSettings, TaskTier
+from vertical_harness.config.settings import HarnessSettings
+from vertical_harness.config.task_tier import TaskTier
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +28,7 @@ class ModelRouterMiddleware(AgentMiddleware[Any, Any, Any]):
     quality_model: Any
 
     def wrap_model_call(
-        self, request: ModelRequest, handler: Callable[[ModelRequest], ModelResponse]
+            self, request: ModelRequest, handler: Callable[[ModelRequest], ModelResponse]
     ) -> ModelResponse:
         """拦截并包装同步模型调用请求，动态覆盖为目标路由模型。
 
@@ -44,7 +45,7 @@ class ModelRouterMiddleware(AgentMiddleware[Any, Any, Any]):
         return handler(self.select_model(request))
 
     async def awrap_model_call(
-        self, request: ModelRequest, handler: Callable[[ModelRequest], Awaitable[ModelResponse]]
+            self, request: ModelRequest, handler: Callable[[ModelRequest], Awaitable[ModelResponse]]
     ) -> ModelResponse:
         """拦截并包装异步模型调用请求，动态覆盖为目标路由模型。
 
@@ -85,6 +86,3 @@ class ModelRouterMiddleware(AgentMiddleware[Any, Any, Any]):
         )
         # 第三步：覆盖请求绑定的底层模型并返回
         return request.override(model=self.economy_model if economy else self.quality_model)
-
-
-__all__ = ["ModelRouterMiddleware"]

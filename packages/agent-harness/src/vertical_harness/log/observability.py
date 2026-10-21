@@ -59,8 +59,3 @@ class TracingSession:
                 logger.debug("tracing_session_flushing")
                 client.flush()
                 logger.debug("tracing_session_closed")
-
-
-tracing_session = TracingSession.tracing_session
-
-__all__ = ["LangSmithSettings", "TracingSession", "tracing_session"]

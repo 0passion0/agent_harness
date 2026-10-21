@@ -11,7 +11,8 @@ from langgraph.store.base import BaseStore
 from langgraph.store.memory import InMemoryStore
 from langgraph.store.sqlite import AsyncSqliteStore, SqliteStore
 
-from vertical_harness.config.settings import HarnessSettings, StoreBackendType
+from vertical_harness.config.settings import HarnessSettings
+from vertical_harness.config.store_backend import StoreBackendType
 
 logger = logging.getLogger(__name__)
 
@@ -121,7 +122,7 @@ class StoreFactory:
             else:
                 # 第二步：异步打开 AsyncSqliteStore 并执行异步 setup()
                 async with AsyncSqliteStore.from_conn_string(
-                    cls._prepare_conn_string(settings)
+                        cls._prepare_conn_string(settings)
                 ) as store:
                     await store.setup()
                     logger.info("async_store_ready", extra={"event_fields": {"backend": backend}})
@@ -129,8 +130,3 @@ class StoreFactory:
         finally:
             # 第三步：退出异步上下文时记录诊断日志
             logger.debug("async_store_context_exited", extra={"event_fields": {"backend": backend}})
-
-
-create_store = StoreFactory.create_store
-open_store = StoreFactory.open_store
-aopen_store = StoreFactory.aopen_store

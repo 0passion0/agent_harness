@@ -11,8 +11,10 @@ import pytest
 from langchain_core.tools import tool
 from pydantic import ValidationError
 
-from vertical_harness import HarnessSettings, configure_logging, log_context, open_store
+from vertical_harness import HarnessSettings
+from vertical_harness.log.logging import HarnessLogging
 from vertical_harness.storage import store as store_module
+from vertical_harness.storage.store import StoreFactory
 
 
 @tool
@@ -43,11 +45,11 @@ def records(capsys) -> list[dict]:
 
 @pytest.mark.parametrize("output_format", ["text", "json"])
 def test_safe_output_and_exception_diagnostics(output_format, capsys):
-    configure_logging(
+    HarnessLogging.configure_logging(
         settings(log_level="DEBUG", log_format=output_format, api_key="secret-api-key")
     )
     logger = logging.getLogger("vertical_harness.test")
-    with log_context("run-1"):
+    with HarnessLogging.log_context("run-1"):
         logger.info(
             "event\n\x1b[31m",
             extra={"event_fields": {"issue_count": 2}, "api_key": "secret-api-key"},
@@ -81,8 +83,8 @@ def test_reconfiguration_preserves_host_handlers_and_filters_level(capsys):
     parent = logging.getLogger("arbitrary_plugin")
     host_handler = logging.NullHandler()
     root.addHandler(host_handler)
-    configure_logging(settings(log_level="ERROR", log_format="json"))
-    configure_logging(settings(log_level="WARNING", log_format="json"))
+    HarnessLogging.configure_logging(settings(log_level="ERROR", log_format="json"))
+    HarnessLogging.configure_logging(settings(log_level="WARNING", log_format="json"))
     parent.info("hidden")
     parent.warning("visible")
     logged = records(capsys)
@@ -95,7 +97,7 @@ def test_reconfiguration_preserves_host_handlers_and_filters_level(capsys):
 def test_rotating_file_output_and_reconfiguration(tmp_path, capsys):
     path = tmp_path / "logs" / "harness.log"
     config = settings(log_file=path, log_format="json", log_max_bytes=250, log_backup_count=2)
-    configure_logging(config)
+    HarnessLogging.configure_logging(config)
     parent = logging.getLogger("vertical_harness")
     handler = next(
         handler
@@ -109,7 +111,7 @@ def test_rotating_file_output_and_reconfiguration(tmp_path, capsys):
     assert path.with_name("harness.log.1").is_file()
     assert len(list(path.parent.iterdir())) <= 3
     assert json.loads(path.read_text(encoding="utf-8").splitlines()[-1])["event"] == "中文事件"
-    configure_logging(config)
+    HarnessLogging.configure_logging(config)
     assert handler.stream is None
     parent.info("after_reconfiguration")
     assert (
@@ -126,14 +128,14 @@ def test_rotating_file_output_and_reconfiguration(tmp_path, capsys):
 
 
 def test_log_context_is_nested_and_isolated_between_async_tasks(capsys):
-    configure_logging(settings(log_format="json"))
+    HarnessLogging.configure_logging(settings(log_format="json"))
     logger = logging.getLogger("vertical_harness.test")
 
     async def worker(run_id):
-        with log_context(run_id):
+        with HarnessLogging.log_context(run_id):
             await asyncio.sleep(0)
             logger.info("worker")
-            with log_context("nested"):
+            with HarnessLogging.log_context("nested"):
                 logger.info("nested")
             logger.info("restored")
 
@@ -141,7 +143,7 @@ def test_log_context_is_nested_and_isolated_between_async_tasks(capsys):
         await asyncio.gather(worker("a"), worker("b"))
 
     asyncio.run(run())
-    with pytest.raises(RuntimeError), log_context("failed"):
+    with pytest.raises(RuntimeError), HarnessLogging.log_context("failed"):
         raise RuntimeError("test")
     logger.info("outside")
     logged = records(capsys)
@@ -181,8 +183,8 @@ def test_logging_settings_from_environment(monkeypatch, tmp_path):
 
 
 def test_plugin_defined_fields_do_not_override_reserved_fields(capsys):
-    configure_logging(settings(log_format="json"))
-    with log_context("real-run"):
+    HarnessLogging.configure_logging(settings(log_format="json"))
+    with HarnessLogging.log_context("real-run"):
         logging.getLogger("independent_plugin").info(
             "domain_event",
             extra={"event_fields": {"domain_metric": 7, "run_id": "fake-run", "level": "DEBUG"}},
@@ -194,7 +196,7 @@ def test_plugin_defined_fields_do_not_override_reserved_fields(capsys):
 
 
 def test_error_logging_keeps_exception_and_records_identity(capsys):
-    configure_logging(settings(log_format="json"))
+    HarnessLogging.configure_logging(settings(log_format="json"))
     logger = logging.getLogger("vertical_harness.test")
     try:
         raise RuntimeError("sensitive error input")
@@ -212,8 +214,8 @@ def test_error_logging_keeps_exception_and_records_identity(capsys):
 
 def test_store_context_exit_does_not_misreport_caller_failure(capsys):
     config = settings(log_format="json", log_level="DEBUG", store_backend="memory")
-    configure_logging(config)
-    with pytest.raises(RuntimeError), open_store(config):
+    HarnessLogging.configure_logging(config)
+    with pytest.raises(RuntimeError), StoreFactory.open_store(config):
         raise RuntimeError("caller error")
     logged = records(capsys)
     assert [item["event"] for item in logged] == [
@@ -229,7 +231,9 @@ def test_store_setup_failure_releases_connection(monkeypatch):
     failure = RuntimeError("setup failed")
     monkeypatch.setattr(store_module.sqlite3, "connect", lambda *args, **kwargs: connection)
     monkeypatch.setattr(
-        store_module, "SqliteStore", Mock(return_value=SimpleNamespace(setup=Mock(side_effect=failure)))
+        store_module,
+        "SqliteStore",
+        Mock(return_value=SimpleNamespace(setup=Mock(side_effect=failure))),
     )
     with pytest.raises(RuntimeError) as exc:
         store_module.StoreFactory.create_store(settings(store_db_path=":memory:"))

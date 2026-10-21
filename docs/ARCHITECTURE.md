@@ -1,14 +1,28 @@
 # Agent Harness
 
-系统仅保留一个 Agent：网络检索、工作区文件工具、保存的 Python 脚本。
+以 `deepagents.create_deep_agent` 为主 Harness。CLI 和桌面共用 `core/compose.py` 中的 `AgentComposer`，由 Deep Agents 管理模型与工具循环、子任务委派、摘要和工具调用修复。宿主只保留模型配置、文档适配、桌面协议和权限策略。
 
-- 主循环使用 LangChain create_agent，复用 Deep Agents 文件、摘要和工具调用修复中间件。
-- 不引入业务插件、MCP、技能注册、长期记忆、评估、监督者或自研工作流。
-- 配置在 config/settings.py，组装在 engine/compose.py；桌面 RPC 在 desktop.py。
-- 文件操作在 storage/backends.py；文档阅读用 MarkItDown，编辑用 Python 格式库。
-- 聊天、附件、产物和数据库属于用户数据；不得因代码清理删除。
-- 身份、工作区边界、敏感文件拒绝、审批、超时和取消必须保留。
-- 日志使用 logging.py，不记录用户内容、密钥或任意输入对象。
-- 优先复用标准库和已安装依赖，不复制第三方实现，不为已删除 API 加兼容层。
-- 验证：uv run pytest、uv run ruff check .、uv run mypy；desktop 下 npm run typecheck、npm test、npm run build。
-- 不手动编辑生成的 openwiki/ 页面。
+目录位于 `packages/agent-harness/src/vertical_harness/`，按实际职责组织，复用框架提供的能力：
+
+| 组件 | 实现与边界 |
+| --- | --- |
+| Agent Loop | `core/compose.py` 装配 Deep Agents；`cli.py` 和 `desktop.py` 负责宿主入口。 |
+| Model Adapter | `core/routing.py` 配置 LangChain Provider，`middleware/routing.py` 按可信上下文选择模型。 |
+| Prompt Builder | `core/compose.py` 组合基础提示与 `agent_content`，工具 schema 由框架生成。 |
+| Context Manager | Deep Agents 摘要中间件在有效容量的 90% 压缩；`middleware/context_limit.py` 检查完整请求预算。 |
+| Tool Registry / Executor | Deep Agents 注册和执行文件工具；`tools/` 提供检索、Python 脚本和用户交互。 |
+| Session / State Store | `storage/checkpoint.py`、`storage/store.py` 管理检查点和状态存储的生命周期。 |
+| Memory Manager | 当前使用会话历史和摘要；未配置独立长期记忆或知识检索。 |
+| Orchestrator / Planner | Deep Agents 原生 `task` 委派与可选 `TodoListMiddleware`；子任务复用宿主权限、审批和预算限制。 |
+| Runtime / Sandbox | `bridge/runtime.py` 配置宿主环境，`tools/python_execution.py` 执行已保存的脚本；脚本以当前用户权限运行。 |
+| Guardrails / Permissions | `middleware/permission.py`、`middleware/approval.py` 和 Deep Agents 文件权限；只读模式禁止委派及副作用工具。 |
+| Lifecycle Hooks | 使用原生 middleware 和 callback；`langchain/streaming.py`、`desktop.py` 处理流事件、超时、取消和审批恢复。 |
+| Observability / Evaluation | `log/`、`langchain/callbacks.py`、`utils/usage.py` 提供日志、Trace 和用量统计；没有独立评估平台。 |
+
+文件系统适配位于 `storage/document_backend.py`。Office/PDF 使用 MarkItDown 阅读，编辑和精确读取使用保存的 Python 脚本。敏感路径拒绝、工作区边界、身份、审批、超时和取消继续保留；文件工具权限不构成 Python 进程沙箱。
+
+业务接口直接通过类调用，`__all__` 只在 `__init__.py` 声明类导出。不保留 `engine/` 转发包、未接入运行链路的 `aop/`、类方法别名或 `sys.modules` 旧路径映射。四个独立 middleware 直接放在 `middleware/` 下。
+
+聊天、附件、产物和数据库属于用户数据，代码整理不得删除。日志不记录用户内容、密钥或任意输入对象。优先复用标准库和已安装依赖，不复制第三方实现，不为已删除 API 加兼容层。不手动编辑生成的 `openwiki/` 页面。
+
+验证命令：项目 `.venv` 中的 `python -m pytest`、`python -m ruff check .`、`python -m mypy`；桌面在 `desktop/` 下执行 `npm run typecheck`、`npm test`、`npm run build`。

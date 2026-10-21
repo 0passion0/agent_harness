@@ -11,7 +11,7 @@ import openai._base_client as sdk
 import pytest
 
 from vertical_harness import HarnessSettings
-from vertical_harness.engine import routing
+from vertical_harness.core import routing
 
 
 @pytest.mark.parametrize("mode", ["invoke", "ainvoke", "stream", "astream"])
@@ -75,7 +75,7 @@ def test_model_retry_limit_backoff_and_permanent_errors(monkeypatch, mode, failu
                         name, http_client=client, http_async_client=async_client, **kwargs
                     ),
                 )
-                model = routing.init_configured_model(
+                model = routing.ModelRouting.init_configured_model(
                     HarnessSettings(
                         _env_file=None,
                         model="deepseek:deepseek-chat",

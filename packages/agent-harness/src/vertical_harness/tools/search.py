@@ -56,9 +56,3 @@ class WebSearch:
             return json.dumps(results, ensure_ascii=False, default=str)
         except Exception as exc:
             return f"Web search failed ({type(exc).__name__}); no sources were retrieved."
-
-
-search_api_key = WebSearch.search_api_key
-web_search = WebSearch.web_search
-
-__all__ = ["WebSearch", "search_api_key", "web_search"]

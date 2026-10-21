@@ -45,6 +45,3 @@ class StreamEvent(BaseModel):
     agent_name: str | None = None
     node: str | None = None
     data: dict[str, JsonValue]
-
-
-__all__ = ["StreamEvent"]

@@ -92,9 +92,3 @@ class HarnessLogging:
             logger.addHandler(handler)
         for handler in previous:
             handler.close()
-
-
-configure_logging = HarnessLogging.configure_logging
-log_context = HarnessLogging.log_context
-
-__all__ = ["HarnessLogging", "configure_logging", "log_context"]

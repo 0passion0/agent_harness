@@ -16,14 +16,14 @@ class UsageEstimator:
 
     @staticmethod
     def usage_estimate(
-        messages: list[Any],
-        model: str,
-        maximum: int = 475_000,
-        options: dict[str, Any] | None = None,
-        *,
-        request_messages: list[Any] | None = None,
-        tools: list[Any] | None = None,
-        reported_tokens: int | None = None,
+            messages: list[Any],
+            model: str,
+            maximum: int = 475_000,
+            options: dict[str, Any] | None = None,
+            *,
+            request_messages: list[Any] | None = None,
+            tools: list[Any] | None = None,
+            reported_tokens: int | None = None,
     ) -> dict[str, Any]:
         """估算或按模型真实上报用量拆分各区块（系统提示词、工具定义、历史消息）的 Token 构成与占比。
 
@@ -119,6 +119,3 @@ class UsageEstimator:
             "sections": sections,
             "summary_text": summary,
         }
-
-
-__all__ = ["UsageEstimator"]

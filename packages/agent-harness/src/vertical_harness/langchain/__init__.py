@@ -2,18 +2,10 @@
 
 from vertical_harness.langchain.callbacks import WorkflowLoggingHandler
 from vertical_harness.langchain.stream_event import StreamEvent
-from vertical_harness.langchain.streaming import (
-    AgentStreaming,
-    _project,
-    ainvoke_agent,
-    astream_agent,
-)
+from vertical_harness.langchain.streaming import AgentStreaming
 
 __all__ = [
     "AgentStreaming",
     "StreamEvent",
     "WorkflowLoggingHandler",
-    "_project",
-    "ainvoke_agent",
-    "astream_agent",
 ]

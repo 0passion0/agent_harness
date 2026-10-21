@@ -129,8 +129,8 @@ class AgentLoop:
             if self.active:
                 raise RuntimeError("Cannot configure while a run is active")
             if any(
-                not isinstance(params[field], str)
-                for field in ("tenant_id", "user_id", "workspace_root", "runtime_data_dir")
+                    not isinstance(params[field], str)
+                    for field in ("tenant_id", "user_id", "workspace_root", "runtime_data_dir")
             ):
                 raise ValueError("Identity and paths must be strings")
             settings, options = DesktopRuntime.configured_settings(params)
@@ -189,7 +189,8 @@ class AgentLoop:
                 "thread_id": thread_id,
                 "run_id": metadata.get("desktop_run_id"),
                 "messages": [
-                    {"type": msg.type, "data": DesktopMessages.raw_message(msg), "message": DesktopMessages.raw_message(msg)}
+                    {"type": msg.type, "data": DesktopMessages.raw_message(msg),
+                     "message": DesktopMessages.raw_message(msg)}
                     for msg in messages
                     if msg.type in {"human", "ai"}
                 ],
@@ -222,8 +223,8 @@ class AgentLoop:
                 if metadata.get("desktop_run_id") != run_id:
                     raise ValueError("run_id does not match the paused turn")
                 if (
-                    metadata.get("desktop_user_id") != self.identity.user_id
-                    or metadata.get("desktop_tenant_id") != self.identity.tenant_id
+                        metadata.get("desktop_user_id") != self.identity.user_id
+                        or metadata.get("desktop_tenant_id") != self.identity.tenant_id
                 ):
                     raise PermissionError(
                         "Paused turn identity does not match the configured user and tenant"
@@ -237,15 +238,15 @@ class AgentLoop:
                         if not isinstance(answer, str) or not answer.strip():
                             raise ValueError("Answers must be nonempty text")
                     elif (
-                        not isinstance(answer, dict)
-                        or not isinstance(answer.get("decisions"), list)
-                        or len(answer["decisions"]) != len(pending[key].get("action_requests", []))
-                        or any(
-                            not isinstance(item, dict)
-                            or set(item) != {"type"}
-                            or item["type"] not in {"approve", "reject"}
-                            for item in answer["decisions"]
-                        )
+                            not isinstance(answer, dict)
+                            or not isinstance(answer.get("decisions"), list)
+                            or len(answer["decisions"]) != len(pending[key].get("action_requests", []))
+                            or any(
+                        not isinstance(item, dict)
+                        or set(item) != {"type"}
+                        or item["type"] not in {"approve", "reject"}
+                        for item in answer["decisions"]
+                    )
                     ):
                         raise ValueError("Approval decisions must contain approve or reject items")
                 inputs = Command(resume=decisions)
@@ -275,8 +276,8 @@ class AgentLoop:
                         if state.metadata.get("desktop_run_id") != run_id:
                             raise ValueError("run_id does not match the paused turn")
                         if (
-                            state.metadata.get("desktop_user_id") != self.identity.user_id
-                            or state.metadata.get("desktop_tenant_id") != self.identity.tenant_id
+                                state.metadata.get("desktop_user_id") != self.identity.user_id
+                                or state.metadata.get("desktop_tenant_id") != self.identity.tenant_id
                         ):
                             raise PermissionError("Paused turn identity does not match")
                         await agent.aupdate_state(
@@ -342,8 +343,8 @@ class AgentLoop:
 
                     # 注入模型调用结束后的 Token 统计报告
                     if (
-                        event.type == "model.completed"
-                        and event.operation_id in details.context_reports
+                            event.type == "model.completed"
+                            and event.operation_id in details.context_reports
                     ):
                         report = details.context_reports.pop(event.operation_id)
                         async with StoreFactory.aopen_store(self.settings) as store:
@@ -486,7 +487,7 @@ class AgentLoop:
         """
         # 第一步：若启用 LangSmith 追踪，预热探测 Git 版本以防 SDK 自动探测阻塞 stdin
         if LangSmithSettings().tracing and not (
-            os.getenv("LANGSMITH_REVISION_ID") or os.getenv("LANGCHAIN_REVISION_ID")
+                os.getenv("LANGSMITH_REVISION_ID") or os.getenv("LANGCHAIN_REVISION_ID")
         ):
             try:
                 revision = subprocess.run(
@@ -526,17 +527,6 @@ class AgentLoop:
         await asyncio.gather(*tasks, return_exceptions=True)
 
 
-make_checkpoint_config = CheckpointConfig.make_checkpoint_config
-
-loop = AgentLoop()
-main = loop.main
-open_configured_agent = AgentLoop.open_configured_agent
-emit = AgentLoop.emit
-notify = AgentLoop.notify
-require = AgentLoop.require
-require_uuid = AgentLoop.require_uuid
-
-
 if __name__ == "__main__":
     logging.basicConfig(stream=sys.stderr, level=logging.INFO)
-    asyncio.run(loop.main())
+    asyncio.run(AgentLoop().main())

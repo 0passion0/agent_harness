@@ -1,6 +1,8 @@
 # Agent Harness
 
-一个 Agent，直接使用网络检索、文件工具和 Python 脚本。保留模型选择、会话历史、流式输出、取消、审批恢复、上下文压缩和用量统计。
+以 Deep Agents 的 `create_deep_agent` 为主入口，直接使用网络检索、文件工具、Python 脚本和原生子任务委派。保留模型选择、会话历史、流式输出、取消、审批恢复、上下文压缩和用量统计。子任务继承工作区、敏感路径权限、审批和上下文预算；只读模式禁止委派。
+
+Python 接口统一通过类调用，例如 `AgentComposer.build_agent(settings)`、`AgentStreaming.astream_agent(...)` 和 `StoreFactory.open_store(settings)`。目录职责见 [架构说明](docs/ARCHITECTURE.md)。
 
 ## 开发
 

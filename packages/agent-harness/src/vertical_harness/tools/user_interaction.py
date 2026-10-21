@@ -32,7 +32,7 @@ class UserInteraction:
         """
         # 第一步：校验提问文本及候选项非空
         if not question.strip() or (
-            options is not None and any(not option.strip() for option in options)
+                options is not None and any(not option.strip() for option in options)
         ):
             raise ValueError("Questions and answer options must not be blank")
 
@@ -43,8 +43,3 @@ class UserInteraction:
         if not isinstance(answer, str) or not answer.strip():
             raise ValueError("User answer must be non-empty text")
         return answer
-
-
-ask_user = UserInteraction.ask_user
-
-__all__ = ["UserInteraction", "ask_user"]

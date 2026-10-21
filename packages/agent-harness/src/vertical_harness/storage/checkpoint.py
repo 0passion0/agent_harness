@@ -95,7 +95,7 @@ class CheckpointFactory:
             else:
                 # 第二步：使用 SqliteSaver 上下文管理器安全打开并 setup()
                 with SqliteSaver.from_conn_string(
-                    cls._prepare_checkpoint_conn_string(settings)
+                        cls._prepare_checkpoint_conn_string(settings)
                 ) as saver:
                     saver.setup()
                     logger.info("checkpointer_ready", extra={"event_fields": {"backend": backend}})
@@ -109,7 +109,7 @@ class CheckpointFactory:
     @classmethod
     @asynccontextmanager
     async def aopen_checkpointer(
-        cls, settings: HarnessSettings
+            cls, settings: HarnessSettings
     ) -> AsyncIterator[BaseCheckpointSaver[Any]]:
         """基于异步上下文管理器管理原生 AsyncSqliteSaver 检查点的异步生命周期。
 
@@ -133,7 +133,7 @@ class CheckpointFactory:
             else:
                 # 第二步：异步打开 AsyncSqliteSaver 并执行异步 setup()
                 async with AsyncSqliteSaver.from_conn_string(
-                    cls._prepare_checkpoint_conn_string(settings)
+                        cls._prepare_checkpoint_conn_string(settings)
                 ) as saver:
                     await saver.setup()
                     logger.info(
@@ -145,8 +145,3 @@ class CheckpointFactory:
             logger.debug(
                 "async_checkpointer_context_exited", extra={"event_fields": {"backend": backend}}
             )
-
-
-create_checkpointer = CheckpointFactory.create_checkpointer
-open_checkpointer = CheckpointFactory.open_checkpointer
-aopen_checkpointer = CheckpointFactory.aopen_checkpointer

@@ -146,8 +146,3 @@ class PythonExecution:
         """
         # 第一步：实例化 PythonExecution 实体并通过 LangChain tool 装饰绑定
         return tool(PythonExecution(workspace, interpreter).execute_python_file)
-
-
-python_file_tool = PythonExecution.python_file_tool
-
-__all__ = ["PythonExecution", "python_file_tool"]

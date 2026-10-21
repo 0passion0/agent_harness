@@ -92,12 +92,12 @@ class WorkflowLoggingHandler(BaseCallbackHandler):
         )
 
     def _finish(
-        self,
-        kind: str,
-        *,
-        error: BaseException | None = None,
-        failed: bool = False,
-        **kwargs: Any,
+            self,
+            kind: str,
+            *,
+            error: BaseException | None = None,
+            failed: bool = False,
+            **kwargs: Any,
     ) -> None:
         """记录组件结束运行的耗时、状态分类及审计日志。
 
@@ -319,6 +319,3 @@ class WorkflowLoggingHandler(BaseCallbackHandler):
                 }
             },
         )
-
-
-__all__ = ["WorkflowLoggingHandler"]

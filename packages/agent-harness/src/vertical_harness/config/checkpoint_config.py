@@ -1,7 +1,6 @@
 """LangGraph 运行检查点与会话线程配置生成模块。"""
 
 
-
 class CheckpointConfig:
     """会话检查点配置工厂，统一生成状态图调用所需的 configurable 字典。
 
@@ -26,8 +25,3 @@ class CheckpointConfig:
             raise ValueError("thread_id must be nonempty")
         # 第二步：构造并返回原生 LangGraph 检查点配置字典
         return {"configurable": {"thread_id": thread_id}}
-
-
-make_checkpoint_config = CheckpointConfig.make_checkpoint_config
-
-__all__ = ["CheckpointConfig", "make_checkpoint_config"]

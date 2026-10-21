@@ -5,7 +5,8 @@ from unittest.mock import Mock
 from langsmith import tracing_context
 from langsmith.run_helpers import get_tracing_context
 
-from vertical_harness.log.observability import LangSmithSettings, tracing_session
+from vertical_harness.config.langsmith_settings import LangSmithSettings
+from vertical_harness.log.observability import TracingSession
 
 
 def test_dotenv_configuration_and_tracing_lifecycle(tmp_path, monkeypatch):
@@ -19,7 +20,7 @@ def test_dotenv_configuration_and_tracing_lifecycle(tmp_path, monkeypatch):
     assert settings.api_key.get_secret_value() == "private-key"
     client = Mock()
     monkeypatch.setattr(LangSmithSettings, "create_client", lambda self: client)
-    with tracing_session(settings):
+    with TracingSession.tracing_session(settings):
         state = get_tracing_context()
         assert state["enabled"] is True
         assert state["client"] is client
@@ -31,11 +32,11 @@ def test_dotenv_configuration_and_tracing_lifecycle(tmp_path, monkeypatch):
 def test_disabled_or_outer_local_context_never_creates_client(monkeypatch):
     factory = Mock(side_effect=AssertionError("No network client expected"))
     monkeypatch.setattr(LangSmithSettings, "create_client", factory)
-    with tracing_session(LangSmithSettings(_env_file=None, tracing=False)):
+    with TracingSession.tracing_session(LangSmithSettings(_env_file=None, tracing=False)):
         assert get_tracing_context()["enabled"] is False
     with (
         tracing_context(enabled=False),
-        tracing_session(LangSmithSettings(_env_file=None, tracing=True)),
+        TracingSession.tracing_session(LangSmithSettings(_env_file=None, tracing=True)),
     ):
         assert get_tracing_context()["enabled"] is False
     factory.assert_not_called()

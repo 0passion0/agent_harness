@@ -11,14 +11,8 @@ from typing import Any
 
 from dotenv import dotenv_values
 
-from vertical_harness.bridge.messages import DesktopMessages
 from vertical_harness.config.settings import HarnessSettings
-from vertical_harness.middleware.approval.middleware import DesktopApprovalMiddleware
-from vertical_harness.middleware.context_limit.middleware import ContextLimitMiddleware
-from vertical_harness.middleware.permission.middleware import DesktopPermissionMiddleware
 from vertical_harness.tools.search import WebSearch
-from vertical_harness.tools.user_interaction import UserInteraction
-from vertical_harness.utils.usage import UsageEstimator
 
 
 class DesktopRuntime:
@@ -87,8 +81,8 @@ class DesktopRuntime:
         base = HarnessSettings.model_validate(
             {
                 "model": os.environ.get("VA_MODEL")
-                or values.get("VA_MODEL")
-                or HarnessSettings().model,
+                         or values.get("VA_MODEL")
+                         or HarnessSettings().model,
             }
         )
 
@@ -168,29 +162,3 @@ class DesktopRuntime:
             "node_version": node_version,
             "platform": sys.platform,
         }
-
-
-configured_settings = DesktopRuntime.configured_settings
-environment_defaults = DesktopRuntime.environment_defaults
-runtime_environment = DesktopRuntime.runtime_environment
-attachment_message = DesktopMessages.attachment_message
-raw_message = DesktopMessages.raw_message
-usage_estimate = UsageEstimator.usage_estimate
-ask_user = UserInteraction.ask_user
-
-__all__ = [
-    "ContextLimitMiddleware",
-    "DesktopApprovalMiddleware",
-    "DesktopMessages",
-    "DesktopPermissionMiddleware",
-    "DesktopRuntime",
-    "UsageEstimator",
-    "UserInteraction",
-    "ask_user",
-    "attachment_message",
-    "configured_settings",
-    "environment_defaults",
-    "raw_message",
-    "runtime_environment",
-    "usage_estimate",
-]

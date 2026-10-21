@@ -12,12 +12,11 @@ from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import MessagesState, StateGraph
 from langgraph.types import Command, interrupt
 
-from vertical_harness import HarnessSettings, astream_agent
+from vertical_harness import HarnessSettings
+from vertical_harness.langchain.streaming import AgentStreaming
 
 
 def test_model_completed_reports_usage_without_stream_double_counting():
-    from vertical_harness.engine.streaming import _project
-
     usage = {"input_tokens": 10, "output_tokens": 5, "total_tokens": 15}
     message = AIMessage(
         content="answer",
@@ -25,7 +24,7 @@ def test_model_completed_reports_usage_without_stream_double_counting():
         response_metadata={"model_name": "actual-plugin-model"},
     )
     event = {"event": "on_chat_model_end", "data": {"output": message}}
-    kind, payload = _project(event, "root", ())
+    kind, payload = AgentStreaming._project(event, "root", ())
     assert kind == "model.completed"
     assert payload["usage"] == usage
     assert payload["model"] == "actual-plugin-model"
@@ -33,14 +32,12 @@ def test_model_completed_reports_usage_without_stream_double_counting():
         "event": "on_chat_model_stream",
         "data": {"chunk": AIMessageChunk(content="answer", usage_metadata=usage)},
     }
-    kind, payload = _project(event, "root", ())
+    kind, payload = AgentStreaming._project(event, "root", ())
     assert kind == "model.delta"
     assert "usage" not in payload
 
 
 def test_non_root_chain_error_projects_failed_phase():
-    from vertical_harness.engine.streaming import _project
-
     event = {
         "event": "on_chain_error",
         "run_id": "child-run",
@@ -48,10 +45,10 @@ def test_non_root_chain_error_projects_failed_phase():
         "metadata": {},
         "data": {"error": RuntimeError("private")},
     }
-    assert _project(event, "root-run", ()) == ("chain.failed", {})
+    assert AgentStreaming._project(event, "root-run", ()) == ("chain.failed", {})
     event["metadata"] = {"lc_agent_name": "worker"}
     event["name"] = "worker"
-    assert _project(event, "root-run", ()) == ("chain.failed", {})
+    assert AgentStreaming._project(event, "root-run", ()) == ("chain.failed", {})
 
 
 class StreamingModel(FakeMessagesListChatModel):
@@ -91,7 +88,7 @@ def _config():
 
 
 async def _collect(agent, inputs, config):
-    async with aclosing(astream_agent(agent, inputs, config=config)) as events:
+    async with aclosing(AgentStreaming.astream_agent(agent, inputs, config=config)) as events:
         return [event async for event in events]
 
 
@@ -130,7 +127,9 @@ def test_failure_is_safe_and_still_raises():
     events = []
 
     async def run():
-        async with aclosing(astream_agent(agent, {"messages": []}, config=_config())) as stream:
+        async with aclosing(
+            AgentStreaming.astream_agent(agent, {"messages": []}, config=_config())
+        ) as stream:
             with pytest.raises(RuntimeError, match="private exception"):
                 async for event in stream:
                     events.append(event)
@@ -169,7 +168,9 @@ def test_invalid_thread_id_rejected_before_execution(thread_id):
     async def run():
         with pytest.raises(ValueError, match="thread_id"):
             await anext(
-                astream_agent(None, None, config={"configurable": {"thread_id": thread_id}})
+                AgentStreaming.astream_agent(
+                    None, None, config={"configurable": {"thread_id": thread_id}}
+                )
             )
 
     asyncio.run(run())
@@ -190,7 +191,7 @@ def test_close_and_cancel_stop_underlying_execution(cancel):
 
         graph = StateGraph(MessagesState).add_node("wait", wait)
         graph.set_entry_point("wait")
-        stream = astream_agent(
+        stream = AgentStreaming.astream_agent(
             graph.compile(checkpointer=InMemorySaver()), {"messages": []}, config=_config()
         )
         events = []

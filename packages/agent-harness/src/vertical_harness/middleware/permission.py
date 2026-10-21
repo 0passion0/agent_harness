@@ -60,6 +60,3 @@ class DesktopPermissionMiddleware(AgentMiddleware):
             raise PermissionError(f"Tool {request.tool.name} is disabled in read_only mode")
         # 第二步：通过权限检查，放行至下游异步执行
         return await handler(request)
-
-
-__all__ = ["DesktopPermissionMiddleware"]

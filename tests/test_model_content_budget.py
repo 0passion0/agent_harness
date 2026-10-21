@@ -4,14 +4,14 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_deepseek import ChatDeepSeek
 
 from vertical_harness.config.settings import HarnessSettings
-from vertical_harness.engine import routing
+from vertical_harness.core import routing
 
 
 def test_deepseek_tool_images_are_filtered_before_payload_serialization(monkeypatch):
     model = ChatDeepSeek(model="deepseek-flash", api_key="offline-test-key")
     original_profile = dict(model.profile)
     monkeypatch.setattr(routing, "init_chat_model", lambda *_args, **_kwargs: model)
-    configured = routing.init_configured_model(
+    configured = routing.ModelRouting.init_configured_model(
         HarnessSettings(_env_file=None, model="deepseek:deepseek-flash")
     )
     assert configured.profile["image_inputs"] == original_profile["image_inputs"]
@@ -40,7 +40,7 @@ def test_deepseek_tool_images_are_filtered_before_payload_serialization(monkeypa
 def test_agent_bounds_file_reads_and_preserves_private_path_denial(tmp_path, monkeypatch):
     from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
 
-    from vertical_harness.engine import compose
+    from vertical_harness.core import compose
 
     class Model(FakeMessagesListChatModel):
         def bind_tools(self, tools, **kwargs):
@@ -79,7 +79,7 @@ def test_agent_bounds_file_reads_and_preserves_private_path_denial(tmp_path, mon
         enable_memory=False,
         enable_user_preferences=False,
     )
-    agent = compose.build_agent(settings)
+    agent = compose.AgentComposer.build_agent(settings)
     result = agent.invoke(
         {"messages": [HumanMessage(content="Read files")]},
         {"configurable": {"thread_id": "bounded"}},

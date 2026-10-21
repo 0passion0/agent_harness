@@ -14,6 +14,36 @@ def test_backend_logic_is_in_methods_with_one_class_per_module():
     for path in paths:
         tree = ast.parse(path.read_text(encoding="utf-8"))
         classes = [node for node in ast.walk(tree) if isinstance(node, ast.ClassDef)]
+        for node in tree.body:
+            if isinstance(node, ast.Assign):
+                assert not (
+                    path.name != "__init__.py"
+                    and any(
+                        isinstance(target, ast.Name) and target.id == "__all__"
+                        for target in node.targets
+                    )
+                ), path
+                assert not (
+                    isinstance(node.value, ast.Attribute)
+                    and isinstance(node.value.value, ast.Name)
+                    and any(
+                        cls.name == node.value.value.id
+                        and any(
+                            method.name == node.value.attr
+                            for method in cls.body
+                            if isinstance(method, (ast.FunctionDef, ast.AsyncFunctionDef))
+                        )
+                        for cls in classes
+                    )
+                ), path
+                assert not any(
+                    isinstance(target, ast.Subscript)
+                    and isinstance(target.value, ast.Attribute)
+                    and isinstance(target.value.value, ast.Name)
+                    and target.value.value.id == "sys"
+                    and target.value.attr == "modules"
+                    for target in node.targets
+                ), path
         assert len(classes) <= 1, path
         functions = (ast.FunctionDef, ast.AsyncFunctionDef)
         assert not any(isinstance(node, functions) for node in tree.body), path

@@ -189,7 +189,7 @@ class DocumentFilesystemBackend(FilesystemBackend):
             return WriteResult(error=f"Write failed: {exc}")
 
     def edit(
-        self, file_path: str, old_string: str, new_string: str, replace_all: bool = False
+            self, file_path: str, old_string: str, new_string: str, replace_all: bool = False
     ) -> EditResult:
         """精确匹配并替换文件局部内容，保持原有 BOM 标记与换行符格式不变。
 
@@ -232,7 +232,7 @@ class DocumentFilesystemBackend(FilesystemBackend):
             positions = [0]
             i = 0
             while i < len(text):
-                i += 2 if text[i : i + 2] == "\r\n" else 1
+                i += 2 if text[i: i + 2] == "\r\n" else 1
                 positions.append(i)
             newline = "\r\n" if "\r\n" in text else "\r" if "\r" in text else "\n"
             replacement = new_string.replace("\n", newline)
@@ -241,7 +241,7 @@ class DocumentFilesystemBackend(FilesystemBackend):
             matches = list(re.finditer(re.escape(old_string), normalized))
             for match in reversed(matches):
                 text = (
-                    text[: positions[match.start()]] + replacement + text[positions[match.end()] :]
+                        text[: positions[match.start()]] + replacement + text[positions[match.end()]:]
                 )
             data = (b"\xef\xbb\xbf" if original.startswith(b"\xef\xbb\xbf") else b"") + text.encode(
                 "utf-8"

@@ -10,7 +10,8 @@ from langchain_core.language_models.fake_chat_models import FakeMessagesListChat
 from langchain_core.messages import AIMessage, ToolMessage
 from langgraph.errors import GraphInterrupt
 
-from vertical_harness import HarnessSettings, WorkflowLoggingHandler, configure_logging
+from vertical_harness import HarnessSettings, WorkflowLoggingHandler
+from vertical_harness.log.logging import HarnessLogging
 
 
 class ToolCallingModel(FakeMessagesListChatModel):
@@ -49,7 +50,7 @@ def test_usage_marks_missing_provider_metadata_and_errors_incomplete():
 def test_callbacks_distinguish_failure_suspension_and_cancellation(
     kind, error, event, level, capsys
 ):
-    configure_logging(
+    HarnessLogging.configure_logging(
         HarnessSettings(_env_file=None, model="test:model", log_level="DEBUG", log_format="json")
     )
     callback = WorkflowLoggingHandler()
@@ -68,7 +69,7 @@ def test_callbacks_distinguish_failure_suspension_and_cancellation(
 
 
 def test_tool_error_result_and_retry_are_logged(capsys):
-    configure_logging(
+    HarnessLogging.configure_logging(
         HarnessSettings(_env_file=None, model="test:model", log_level="DEBUG", log_format="json")
     )
     callback = WorkflowLoggingHandler()

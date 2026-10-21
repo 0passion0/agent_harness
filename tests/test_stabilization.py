@@ -6,7 +6,7 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from pydantic import Field
 
 from vertical_harness import HarnessSettings, RunContext
-from vertical_harness.engine import compose, routing
+from vertical_harness.core import compose, routing
 
 
 class RecordingModel(FakeMessagesListChatModel):
@@ -40,7 +40,7 @@ def test_model_router_supports_native_execution_paths(tmp_path, monkeypatch, mod
         "init_configured_model",
         lambda _, name=None: economy if name == "test:cheap" else quality,
     )
-    agent = compose.build_agent(
+    agent = compose.AgentComposer.build_agent(
         settings(tmp_path, economy_model="test:cheap", quality_model="test:quality")
     )
     inputs = {"messages": [HumanMessage(content="hello")]}
@@ -90,13 +90,13 @@ def test_private_database_cannot_be_read_or_deleted(tmp_path, monkeypatch, async
     inputs = {"messages": [HumanMessage(content="try files")]}
 
     async def run():
-        async with compose.aopen_agent(config) as agent:
+        async with compose.AgentComposer.aopen_agent(config) as agent:
             return await agent.ainvoke(inputs, **kwargs)
 
     if asynchronous:
         result = asyncio.run(run())
     else:
-        with compose.open_agent(config) as agent:
+        with compose.AgentComposer.open_agent(config) as agent:
             result = agent.invoke(inputs, **kwargs)
     errors = [m for m in result["messages"] if isinstance(m, ToolMessage)]
     assert len(errors) == 2 and all("permission denied" in str(m.content).lower() for m in errors)

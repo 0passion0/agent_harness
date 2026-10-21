@@ -71,6 +71,3 @@ class StructuredFormatter(logging.Formatter):
             for key, value in payload.items()
             if value is not None
         )
-
-
-__all__ = ["_RUN_ID", "StructuredFormatter"]

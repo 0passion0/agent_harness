@@ -11,16 +11,8 @@ from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from vertical_harness.config.store_backend import StoreBackendType
-from vertical_harness.config.task_tier import TaskTier
 
 logger = logging.getLogger(__name__)
-
-
-
-
-
-
-
 
 NonEmptyStr = Annotated[str, Field(min_length=1)]
 
@@ -177,11 +169,3 @@ class HarnessSettings(BaseSettings):
         :date: 2026-10-19
         """
         return bool(self.economy_model)
-
-
-__all__ = [
-    "HarnessSettings",
-    "NonEmptyStr",
-    "StoreBackendType",
-    "TaskTier",
-]

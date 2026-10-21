@@ -1,11 +1,12 @@
-
 """原生 LangGraph SQLite Store 与 Deep Agents CompositeBackend 解耦架构测试模块。"""
+
 import asyncio
 from pathlib import Path
 
 from langgraph.store.sqlite import SqliteStore
 
-from vertical_harness import HarnessSettings, aopen_store, open_store
+from vertical_harness import HarnessSettings
+from vertical_harness.storage.store import StoreFactory
 
 
 def test_native_sqlite_store_lifecycle_and_crud(tmp_path: Path) -> None:
@@ -19,10 +20,10 @@ def test_native_sqlite_store_lifecycle_and_crud(tmp_path: Path) -> None:
         _env_file=None, model="deepseek:deepseek-flash", workspace_root=tmp_path / "ws"
     )
     ns = ("tenant_alpha", "user_1", "memories")
-    with open_store(settings) as store:
+    with StoreFactory.open_store(settings) as store:
         assert isinstance(store, SqliteStore)
         store.put(ns, "pref", {"theme": "dark", "citations": "ieee"})
-    with open_store(settings) as store:
+    with StoreFactory.open_store(settings) as store:
         reloaded = store.get(ns, "pref")
         assert reloaded is not None
         assert reloaded.value == {"theme": "dark", "citations": "ieee"}
@@ -49,7 +50,7 @@ def test_native_async_sqlite_store_lifecycle(tmp_path: Path) -> None:
 
         :return: None
         """
-        async with aopen_store(settings) as store:
+        async with StoreFactory.aopen_store(settings) as store:
             ns = ("async_tenant", "user_42", "memories")
             await store.aput(ns, "k1", {"fact": "evidence-first"})
             item = await store.aget(ns, "k1")

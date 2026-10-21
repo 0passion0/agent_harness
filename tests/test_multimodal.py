@@ -9,7 +9,7 @@ from langchain_deepseek import ChatDeepSeek
 from pydantic import Field
 
 from vertical_harness import HarnessSettings, cli
-from vertical_harness.engine import compose
+from vertical_harness.core import compose
 
 PNG = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aD1sAAAAASUVORK5CYII="
@@ -47,7 +47,7 @@ def test_cli_images_reach_model_as_images(tmp_path, monkeypatch, capsys, prompt)
     image.write_bytes(PNG)
     args = [prompt] if prompt else []
     args += ["--image", str(image), "--image", str(image), "--thread-id", "original"]
-    cli.main(args)
+    cli.Cli.main(args)
     message = next(m for m in reversed(model.seen[-1]) if isinstance(m, HumanMessage))
     images = [b for b in message.content if b["type"] == "image"]
     assert len(images) == 2
@@ -81,7 +81,7 @@ def test_invalid_images_fail_before_building_agent(tmp_path, monkeypatch, capsys
 
     monkeypatch.setattr(cli, "HarnessSettings", unexpected_settings)
     with pytest.raises(SystemExit) as exc:
-        cli.main(["--image", str(image)])
+        cli.Cli.main(["--image", str(image)])
     assert exc.value.code == 2
     assert "--image" in capsys.readouterr().err
 
@@ -100,5 +100,5 @@ def test_images_cannot_be_silently_ignored(tmp_path, command):
     image = tmp_path / "image.png"
     image.write_bytes(PNG)
     with pytest.raises(SystemExit) as exc:
-        cli.main(["--image", str(image), *command])
+        cli.Cli.main(["--image", str(image), *command])
     assert exc.value.code == 2
