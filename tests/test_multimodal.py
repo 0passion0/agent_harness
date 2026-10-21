@@ -41,7 +41,7 @@ def test_cli_images_reach_model_as_images(tmp_path, monkeypatch, capsys, prompt)
         responses=[AIMessage(content="received")], profile={"image_inputs": True}
     )
     monkeypatch.setattr(cli, "HarnessSettings", lambda: settings)
-    monkeypatch.setattr(compose, "init_configured_model", lambda *_: model)
+    monkeypatch.setattr(compose.ModelRouting, "init_configured_model", lambda *_: model)
 
     image = tmp_path / "测试图片.PNG"
     image.write_bytes(PNG)

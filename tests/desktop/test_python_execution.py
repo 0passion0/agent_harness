@@ -139,7 +139,7 @@ def test_python_permission_modes_in_composed_graph(tmp_path, monkeypatch, mode, 
             return self
 
     monkeypatch.setattr(
-        compose,
+        compose.ModelRouting,
         "init_configured_model",
         lambda _settings: Model(
             responses=[

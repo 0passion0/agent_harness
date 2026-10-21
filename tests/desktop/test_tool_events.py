@@ -72,8 +72,8 @@ def test_streamed_tool_details_reach_the_original_cards(monkeypatch, tmp_path):
                 },
             },
         )
-        monkeypatch.setattr(bridge, "open_configured_agent", open_agent)
-        monkeypatch.setattr(bridge, "notify", capture)
+        monkeypatch.setattr(bridge.AgentLoop, "open_configured_agent", open_agent)
+        monkeypatch.setattr(bridge.AgentLoop, "notify", capture)
         thread_id, run_id = str(uuid4()), str(uuid4())
         await bridge.loop._run(thread_id, run_id, {"messages": [HumanMessage(content="write")]})
 

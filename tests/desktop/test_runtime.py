@@ -81,7 +81,7 @@ def test_composed_desktop_agent_can_ask_questions_in_every_permission_mode(
             return self
 
     monkeypatch.setattr(
-        compose,
+        compose.ModelRouting,
         "init_configured_model",
         lambda _settings: Model(
             responses=[
@@ -304,7 +304,7 @@ def test_desktop_context_limit_checks_compacted_model_request(
         ],
         profile={"max_input_tokens": 20000},
     )
-    monkeypatch.setattr(compose, "init_configured_model", lambda _settings: model)
+    monkeypatch.setattr(compose.ModelRouting, "init_configured_model", lambda _settings: model)
     selected = {**options(), "permission_mode": "full", "max_context_tokens": 12000}
     selected["agent_content"] = ""
     selected["skills"] = []
@@ -361,7 +361,7 @@ def test_read_only_real_graph_blocks_builtin_write_file(tmp_path, monkeypatch):
             return self
 
     monkeypatch.setattr(
-        compose,
+        compose.ModelRouting,
         "init_configured_model",
         lambda _settings: ToolCallingFakeModel(
             responses=[
@@ -412,7 +412,7 @@ def test_ask_rejection_returns_tool_error_and_allows_model_to_continue(tmp_path,
             return self
 
     monkeypatch.setattr(
-        compose,
+        compose.ModelRouting,
         "init_configured_model",
         lambda _settings: ToolCallingFakeModel(
             responses=[
@@ -478,7 +478,7 @@ def test_streaming_six_tool_calls_keeps_agent_recursion_limit(tmp_path, monkeypa
     ]
     responses.append(AIMessage(content="Finished after six listings."))
     monkeypatch.setattr(
-        compose,
+        compose.ModelRouting,
         "init_configured_model",
         lambda _settings: ToolCallingFakeModel(responses=responses),
     )

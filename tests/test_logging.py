@@ -12,7 +12,7 @@ from langchain_core.tools import tool
 from pydantic import ValidationError
 
 from vertical_harness import HarnessSettings, configure_logging, log_context, open_store
-from vertical_harness.storage import backends
+from vertical_harness.storage import store as store_module
 
 
 @tool
@@ -227,11 +227,11 @@ def test_store_context_exit_does_not_misreport_caller_failure(capsys):
 def test_store_setup_failure_releases_connection(monkeypatch):
     connection = Mock()
     failure = RuntimeError("setup failed")
-    monkeypatch.setattr(backends.sqlite3, "connect", lambda *args, **kwargs: connection)
+    monkeypatch.setattr(store_module.sqlite3, "connect", lambda *args, **kwargs: connection)
     monkeypatch.setattr(
-        backends, "SqliteStore", Mock(return_value=SimpleNamespace(setup=Mock(side_effect=failure)))
+        store_module, "SqliteStore", Mock(return_value=SimpleNamespace(setup=Mock(side_effect=failure)))
     )
     with pytest.raises(RuntimeError) as exc:
-        backends.create_store(settings(store_db_path=":memory:"))
+        store_module.StoreFactory.create_store(settings(store_db_path=":memory:"))
     assert exc.value is failure
     connection.close.assert_called_once_with()

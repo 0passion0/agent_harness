@@ -35,11 +35,10 @@ def settings(root, **kwargs):
 def test_model_router_supports_native_execution_paths(tmp_path, monkeypatch, mode, tier):
     economy = RecordingModel(responses=[AIMessage(content="economy")])
     quality = RecordingModel(responses=[AIMessage(content="quality")])
-    monkeypatch.setattr(compose, "init_configured_model", lambda *_: quality)
     monkeypatch.setattr(
-        routing,
+        routing.ModelRouting,
         "init_configured_model",
-        lambda _, name: economy if name == "test:cheap" else quality,
+        lambda _, name=None: economy if name == "test:cheap" else quality,
     )
     agent = compose.build_agent(
         settings(tmp_path, economy_model="test:cheap", quality_model="test:quality")
@@ -86,7 +85,7 @@ def test_private_database_cannot_be_read_or_deleted(tmp_path, monkeypatch, async
             AIMessage(content="done"),
         ]
     )
-    monkeypatch.setattr(compose, "init_configured_model", lambda *_: model)
+    monkeypatch.setattr(compose.ModelRouting, "init_configured_model", lambda *_: model)
     kwargs = {"config": {"configurable": {"thread_id": "private"}}, "context": RunContext("t", "u")}
     inputs = {"messages": [HumanMessage(content="try files")]}
 

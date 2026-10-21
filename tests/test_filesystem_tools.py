@@ -43,7 +43,7 @@ def test_partial_read_and_exact_edit_preserve_unrelated_content(tmp_path, monkey
             AIMessage(content="Done"),
         ]
     )
-    monkeypatch.setattr(compose, "init_configured_model", lambda _settings: model)
+    monkeypatch.setattr(compose.ModelRouting, "init_configured_model", lambda _settings: model)
     settings = HarnessSettings(
         _env_file=None,
         model="test:edit",
@@ -111,7 +111,7 @@ def test_search_is_bounded_and_ambiguous_or_private_edits_do_not_write(tmp_path,
             AIMessage(content="Done"),
         ]
     )
-    monkeypatch.setattr(compose, "init_configured_model", lambda _settings: model)
+    monkeypatch.setattr(compose.ModelRouting, "init_configured_model", lambda _settings: model)
     settings = HarnessSettings(
         _env_file=None,
         model="test:search",

@@ -69,7 +69,7 @@ def test_agent_bounds_file_reads_and_preserves_private_path_denial(tmp_path, mon
             AIMessage(content="Done"),
         ]
     )
-    monkeypatch.setattr(compose, "init_configured_model", lambda _settings: model)
+    monkeypatch.setattr(compose.ModelRouting, "init_configured_model", lambda _settings: model)
     settings = HarnessSettings(
         _env_file=None,
         model="test:bounded",

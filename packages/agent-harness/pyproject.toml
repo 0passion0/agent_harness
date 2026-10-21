@@ -38,7 +38,7 @@ desktop = [
 dev = ["pytest>=8", "ruff>=0.9", "mypy>=1.15,<2"]
 
 [project.scripts]
-vertical-agent = "vertical_harness.cli:main"
+vertical-agent = "vertical_harness.cli:Cli.main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/vertical_harness"]

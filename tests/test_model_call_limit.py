@@ -39,7 +39,7 @@ def test_run_can_continue_past_thirty_model_calls(monkeypatch, tmp_path, use_asy
             AIMessage(content="Follow-up complete."),
         ]
     )
-    monkeypatch.setattr(compose, "init_configured_model", lambda settings: model)
+    monkeypatch.setattr(compose.ModelRouting, "init_configured_model", lambda settings: model)
     settings = HarnessSettings(
         _env_file=None,
         model="test:model",

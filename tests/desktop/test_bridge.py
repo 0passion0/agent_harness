@@ -136,7 +136,7 @@ def test_snapshot_of_new_sqlite_thread_has_no_run(monkeypatch, tmp_path):
             async with aopen_checkpointer(bridge.loop.settings) as saver:
                 yield agent(saver)
 
-        monkeypatch.setattr(bridge, "open_configured_agent", open_agent)
+        monkeypatch.setattr(bridge.AgentLoop, "open_configured_agent", open_agent)
         snapshot = await bridge.loop.dispatch("snapshot", {"thread_id": thread_id})
         assert snapshot["thread_id"] == thread_id
         assert snapshot["run_id"] is None
@@ -158,7 +158,7 @@ def test_actual_model_context_is_streamed_persisted_and_isolated_by_chat(monkeyp
             return self
 
     monkeypatch.setattr(
-        compose,
+        compose.ModelRouting,
         "init_configured_model",
         lambda settings: Model(
             responses=[
@@ -174,7 +174,7 @@ def test_actual_model_context_is_streamed_persisted_and_isolated_by_chat(monkeyp
     async def capture(state, method, params):
         frames.append(params)
 
-    monkeypatch.setattr(bridge, "notify", capture)
+    monkeypatch.setattr(bridge.AgentLoop, "notify", capture)
 
     async def scenario():
         await configure(monkeypatch, tmp_path)
@@ -222,7 +222,7 @@ def test_snapshot_reopens_sqlite_checkpoint_with_messages_and_interrupt(monkeypa
             async with aopen_checkpointer(bridge.loop.settings) as saver:
                 yield agent(saver)
 
-        monkeypatch.setattr(bridge, "open_configured_agent", open_agent)
+        monkeypatch.setattr(bridge.AgentLoop, "open_configured_agent", open_agent)
         snapshot = await bridge.loop.dispatch("snapshot", {"thread_id": thread_id})
         assert snapshot["run_id"] == run_id
         assert snapshot["messages"][0]["data"]["content"] == "hello"
@@ -252,7 +252,7 @@ def test_stream_resumes_by_real_interrupt_id_and_cleans_up_before_terminal(monke
             finally:
                 context_exited = True
 
-        monkeypatch.setattr(bridge, "open_configured_agent", open_agent)
+        monkeypatch.setattr(bridge.AgentLoop, "open_configured_agent", open_agent)
         events = []
 
         async def capture(_state, method, params):
@@ -265,7 +265,7 @@ def test_stream_resumes_by_real_interrupt_id_and_cleans_up_before_terminal(monke
                 assert context_exited
             events.append((method, params))
 
-        monkeypatch.setattr(bridge, "notify", capture)
+        monkeypatch.setattr(bridge.AgentLoop, "notify", capture)
         thread_id, run_id = (str(uuid4()), str(uuid4()))
         await bridge.loop.dispatch(
             "run.start", {"thread_id": thread_id, "run_id": run_id, "text": "hello"}
@@ -298,13 +298,13 @@ def test_stop_cancels_active_run(monkeypatch, tmp_path):
             await asyncio.Event().wait()
             yield None
 
-        monkeypatch.setattr(bridge, "open_configured_agent", slow_open)
+        monkeypatch.setattr(bridge.AgentLoop, "open_configured_agent", slow_open)
         events = []
 
         async def capture(_state, method, params):
             events.append((method, params))
 
-        monkeypatch.setattr(bridge, "notify", capture)
+        monkeypatch.setattr(bridge.AgentLoop, "notify", capture)
         thread_id, run_id = (str(uuid4()), str(uuid4()))
         await bridge.loop.dispatch(
             "run.start", {"thread_id": thread_id, "run_id": run_id, "text": "cancel"}
@@ -328,8 +328,8 @@ def test_stop_paused_run_checks_identity_and_clears_current_run(monkeypatch, tmp
         async def open_agent(_state):
             yield agent(saver)
 
-        monkeypatch.setattr(bridge, "open_configured_agent", open_agent)
-        monkeypatch.setattr(bridge, "notify", lambda *_args: asyncio.sleep(0))
+        monkeypatch.setattr(bridge.AgentLoop, "open_configured_agent", open_agent)
+        monkeypatch.setattr(bridge.AgentLoop, "notify", lambda *_args: asyncio.sleep(0))
         thread_id, run_id = (str(uuid4()), str(uuid4()))
         await bridge.loop.dispatch(
             "run.start", {"thread_id": thread_id, "run_id": run_id, "text": "pause and stop"}

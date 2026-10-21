@@ -10,99 +10,77 @@ from uuid import uuid4
 
 from pydantic import ValidationError
 
-from vertical_harness import (
-    HarnessSettings,
-    RunContext,
-    ainvoke_agent,
-    aopen_agent,
-    configure_logging,
-    make_checkpoint_config,
-)
+from vertical_harness.checkpoint_config import CheckpointConfig
+from vertical_harness.config import HarnessSettings
+from vertical_harness.context import RunContext
+from vertical_harness.engine.compose import AgentComposer
+from vertical_harness.engine.streaming import AgentStreaming
+from vertical_harness.logging import HarnessLogging
 
 logger = logging.getLogger(__name__)
 
 
-def _image_content(value: str) -> dict[str, str]:
-    """读取本地图片为标准内容块，限制读取量以免附件耗尽内存。
+class Cli:
+    @staticmethod
+    def image_content(value: str) -> dict[str, str]:
+        """Read a supported local image and return its base64 content block."""
+        logger.debug("parsing_image_argument")
+        path = Path(value).expanduser()
+        mime_type = mimetypes.guess_type(path.name)[0]
+        if mime_type not in {"image/png", "image/jpeg", "image/gif", "image/webp"}:
+            raise argparse.ArgumentTypeError("Image must be PNG, JPEG, GIF or WebP")
+        max_bytes = 20 * 1024 * 1024
 
-    校验图片文件格式（支持 PNG、JPEG、GIF、WebP）及字节大小（<= 20 MiB），编码为 Base64 字典。
+        try:
+            with path.open("rb") as source:
+                data = source.read(max_bytes + 1)
+        except OSError as exc:
+            raise argparse.ArgumentTypeError("Cannot read image file") from exc
+        if not data or len(data) > max_bytes:
+            raise argparse.ArgumentTypeError("Image must be nonempty and at most 20 MiB")
 
-    :param value: 本地图片的文件路径字符串。
-    :type value: str
-    :return: 包含 Base64 编码数据与 MIME 类型的标准多模态内容块字典。
-    :rtype: dict[str, str]
-    :raises argparse.ArgumentTypeError: 当文件不存在、格式不受支持或大小超出 20 MiB 时抛出。
-    :author: tongliga
-    :date: 2026-10-21
-    """
-    logger.debug("parsing_image_argument")
-    # 第一步：解析文件路径并检测 MIME 类型
-    path = Path(value).expanduser()
-    mime_type = mimetypes.guess_type(path.name)[0]
-    if mime_type not in {"image/png", "image/jpeg", "image/gif", "image/webp"}:
-        raise argparse.ArgumentTypeError("Image must be PNG, JPEG, GIF or WebP")
-    max_bytes = 20 * 1024 * 1024
+        logger.debug(
+            "image_content_parsed",
+            extra={"event_fields": {"mime_type": mime_type, "byte_size": len(data)}},
+        )
+        return {
+            "type": "image",
+            "base64": base64.b64encode(data).decode("ascii"),
+            "mime_type": mime_type,
+        }
 
-    # 第二步：安全读取图片字节流并校验文件体积上限
-    try:
-        with path.open("rb") as source:
-            data = source.read(max_bytes + 1)
-    except OSError as exc:
-        raise argparse.ArgumentTypeError("Cannot read image file") from exc
-    if not data or len(data) > max_bytes:
-        raise argparse.ArgumentTypeError("Image must be nonempty and at most 20 MiB")
+    @staticmethod
+    def main(argv: list[str] | None = None) -> None:
+        parser = argparse.ArgumentParser(description="运行智能体对话命令")
+        parser.add_argument("prompt", nargs="?", default="")
+        parser.add_argument("--image", action="append", type=Cli.image_content, default=[])
+        parser.add_argument("--thread-id", default=str(uuid4()))
+        parser.add_argument("--user-id", default="default")
+        parser.add_argument("--tenant-id", default="default")
+        args = parser.parse_args(argv)
+        if not args.prompt.strip() and not args.image:
+            parser.error("Provide a prompt or --image")
 
-    # 第三步：构建并返回 Base64 编码的多模态图片字典
-    logger.debug(
-        "image_content_parsed",
-        extra={"event_fields": {"mime_type": mime_type, "byte_size": len(data)}},
-    )
-    return {
-        "type": "image",
-        "base64": base64.b64encode(data).decode("ascii"),
-        "mime_type": mime_type,
-    }
+        try:
+            settings = HarnessSettings()
+        except ValidationError:
+            parser.error("Invalid harness configuration")
+        HarnessLogging.configure_logging(settings)
 
+        content = [{"type": "text", "text": args.prompt}, *args.image] if args.image else args.prompt
+        asyncio.run(Cli.run(settings, args, content))
 
-def main(argv: list[str] | None = None) -> None:
-    """命令行运行或续接基于原生检查点的智能体对话会话入口。
-
-    :param argv: 命令行入参列表，为 None 时从 sys.argv 读取。
-    :type argv: list[str] | None
-    :return: 无返回值。
-    :rtype: None
-    :author: tongliga
-    :date: 2026-10-21
-    """
-    # 第一步：配置并解析命令行选项参数
-    parser = argparse.ArgumentParser(description="运行智能体对话命令")
-    parser.add_argument("prompt", nargs="?", default="")
-    parser.add_argument("--image", action="append", type=_image_content, default=[])
-    parser.add_argument("--thread-id", default=str(uuid4()))
-    parser.add_argument("--user-id", default="default")
-    parser.add_argument("--tenant-id", default="default")
-    args = parser.parse_args(argv)
-    if not args.prompt.strip() and not args.image:
-        parser.error("Provide a prompt or --image")
-
-    # 第二步：加载应用全局配置与初始化受控日志
-    try:
-        settings = HarnessSettings()
-    except ValidationError:
-        parser.error("Invalid harness configuration")
-    configure_logging(settings)
-
-    # 第三步：组装多模态消息体并在异步上下文中运行智能体输出结果
-    content = [{"type": "text", "text": args.prompt}, *args.image] if args.image else args.prompt
-
-    async def run() -> None:
-        async with aopen_agent(settings) as agent:
-            result = await ainvoke_agent(
+    @staticmethod
+    async def run(settings: HarnessSettings, args: argparse.Namespace, content: str | list) -> None:
+        async with AgentComposer.aopen_agent(settings) as agent:
+            result = await AgentStreaming.ainvoke_agent(
                 agent,
                 {"messages": [("user", content)]},
-                config=make_checkpoint_config(args.thread_id),
+                config=CheckpointConfig.make_checkpoint_config(args.thread_id),
                 context=RunContext(tenant_id=args.tenant_id, user_id=args.user_id),
             )
             print(result["messages"][-1].text)
 
-    asyncio.run(run())
+
+_image_content = Cli.image_content
+main = Cli.main

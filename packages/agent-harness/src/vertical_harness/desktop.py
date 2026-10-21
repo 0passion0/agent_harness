@@ -10,37 +10,34 @@ import subprocess
 import sys
 from collections.abc import AsyncIterator
 from contextlib import aclosing, asynccontextmanager
-from time import perf_counter
+from dataclasses import dataclass, field
+from functools import partial
 from typing import Any
 from uuid import UUID
 
-from langchain_core.callbacks import AsyncCallbackHandler
 from langchain_core.messages import HumanMessage
 from langgraph.types import Command
 
 from vertical_harness import (
+    AgentStreaming,
+    CheckpointConfig,
+    CheckpointFactory,
     HarnessSettings,
     LangSmithSettings,
+    ModelRouting,
     RunContext,
-    aopen_checkpointer,
-    aopen_store,
-    astream_agent,
-    init_configured_model,
-    make_checkpoint_config,
+    StoreFactory,
 )
-from vertical_harness.desktop_runtime import (
-    attachment_message,
-    configured_settings,
-    environment_defaults,
-    raw_message,
-    runtime_environment,
-    usage_estimate,
-)
-from vertical_harness.engine.compose import aopen_agent
+from vertical_harness.desktop_messages import DesktopMessages
+from vertical_harness.desktop_runtime import DesktopRuntime
+from vertical_harness.engine.compose import AgentComposer
+from vertical_harness.tool_details import ToolDetails
+from vertical_harness.usage import UsageEstimator
 
 logger = logging.getLogger(__name__)
 
 
+@dataclass(eq=False)
 class AgentLoop:
     """桌面端智能体交互生命周期循环管理器。
 
@@ -50,19 +47,11 @@ class AgentLoop:
     :date: 2026-10-21
     """
 
-    def __init__(self) -> None:
-        """初始化桌面端 Agent 交互管理循环。
-
-        :return: 无返回值。
-        :rtype: None
-        :author: tongliga
-        :date: 2026-10-21
-        """
-        self.settings: HarnessSettings | None = None
-        self.identity: RunContext | None = None
-        self.desktop_options: dict[str, Any] | None = None
-        self.active: dict[str, tuple[str, asyncio.Task[None]]] = {}
-        self.output_lock = asyncio.Lock()
+    settings: HarnessSettings | None = field(default=None, init=False)
+    identity: RunContext | None = field(default=None, init=False)
+    desktop_options: dict[str, Any] | None = field(default=None, init=False)
+    active: dict[str, tuple[str, asyncio.Task[None]]] = field(default_factory=dict, init=False)
+    output_lock: asyncio.Lock = field(default_factory=asyncio.Lock, init=False)
 
     def _context_namespace(self, thread_id: str) -> tuple[str, ...]:
         """构建保存在 BaseStore 中的会话级命名空间元组。
@@ -97,15 +86,16 @@ class AgentLoop:
         """
         # 第一步：断言配置已初始化并获取上下文上限
         assert self.settings is not None
-        maximum = (self.desktop_options or {}).get("max_context_tokens", 475_000)
+        assert self.desktop_options is not None
+        maximum = self.desktop_options["max_context_tokens"]
 
         # 第二步：从持久化 Store 中检索最近一次缓存的用量报告
-        async with aopen_store(self.settings) as store:
+        async with StoreFactory.aopen_store(self.settings) as store:
             saved = await store.aget(self._context_namespace(thread_id), "usage")
 
         # 第三步：若无持久化记录，根据现有消息即时估算
         if saved is None:
-            return usage_estimate(messages, self.settings.model, maximum)
+            return UsageEstimator.usage_estimate(messages, self.settings.model, maximum)
 
         # 第四步：若存在缓存报告，基于当前配置上限更新剩余量与比率
         report = saved.value
@@ -137,7 +127,7 @@ class AgentLoop:
         """
         # 第一步：处理配置 configure 方法
         if method == "configure":
-            require(params, "tenant_id", "user_id", "workspace_root", "runtime_data_dir", "options")
+            self.require(params, "tenant_id", "user_id", "workspace_root", "runtime_data_dir", "options")
             if self.active:
                 raise RuntimeError("Cannot configure while a run is active")
             if any(
@@ -145,14 +135,14 @@ class AgentLoop:
                 for field in ("tenant_id", "user_id", "workspace_root", "runtime_data_dir")
             ):
                 raise ValueError("Identity and paths must be strings")
-            settings, options = configured_settings(params)
+            settings, options = DesktopRuntime.configured_settings(params)
             identity = RunContext(tenant_id=params["tenant_id"], user_id=params["user_id"])
             self.settings, self.desktop_options, self.identity = settings, options, identity
-            return {"model": settings.model, "environment": runtime_environment(options)}
+            return {"model": settings.model, "environment": DesktopRuntime.runtime_environment(options)}
 
         # 第二步：查询环境 environment 方法
         if method == "environment":
-            return {**environment_defaults(), **runtime_environment(self.desktop_options)}
+            return {**DesktopRuntime.environment_defaults(), **DesktopRuntime.runtime_environment(self.desktop_options)}
 
         # 第三步：优雅关闭 shutdown 方法
         if method == "shutdown":
@@ -168,25 +158,25 @@ class AgentLoop:
 
         # 第五步：模型连接测试 model.test 方法
         if method == "model.test":
-            response = await init_configured_model(self.settings).ainvoke("Reply with the word OK.")
+            response = await ModelRouting.init_configured_model(self.settings).ainvoke("Reply with the word OK.")
             return {"ok": True, "model": self.settings.model, "response": response.content}
 
         # 第六步：校验会话线程 thread_id 必填
-        require(params, "thread_id")
-        thread_id = require_uuid(params["thread_id"], "thread_id")
+        self.require(params, "thread_id")
+        thread_id = self.require_uuid(params["thread_id"], "thread_id")
 
         # 第七步：会话删除 session.delete 方法
         if method == "session.delete":
-            async with aopen_checkpointer(self.settings) as saver:
+            async with CheckpointFactory.aopen_checkpointer(self.settings) as saver:
                 await saver.adelete_thread(thread_id)
-            async with aopen_store(self.settings) as store:
+            async with StoreFactory.aopen_store(self.settings) as store:
                 await store.adelete(self._context_namespace(thread_id), "usage")
             return {"thread_id": thread_id, "deleted": True}
 
         # 第八步：会话快照 snapshot 与 Token 用量 session.token_usage 方法
         if method in {"snapshot", "session.token_usage"}:
-            async with open_configured_agent(self) as agent:
-                state = await agent.aget_state(make_checkpoint_config(thread_id))
+            async with self.open_configured_agent() as agent:
+                state = await agent.aget_state(CheckpointConfig.make_checkpoint_config(thread_id))
             messages = state.values.get("messages", [])
             metadata = state.metadata or {}
             usage = await self.context_usage(thread_id, messages)
@@ -201,7 +191,7 @@ class AgentLoop:
                 "thread_id": thread_id,
                 "run_id": metadata.get("desktop_run_id"),
                 "messages": [
-                    {"type": msg.type, "data": raw_message(msg), "message": raw_message(msg)}
+                    {"type": msg.type, "data": DesktopMessages.raw_message(msg), "message": DesktopMessages.raw_message(msg)}
                     for msg in messages
                     if msg.type in {"human", "ai"}
                 ],
@@ -212,24 +202,24 @@ class AgentLoop:
 
         # 第九步：启动运行 run.start 或恢复执行 run.resume 方法
         if method in {"run.start", "run.resume"}:
-            require(params, "run_id")
-            run_id = require_uuid(params["run_id"], "run_id")
+            self.require(params, "run_id")
+            run_id = self.require_uuid(params["run_id"], "run_id")
             if self.active:
                 raise RuntimeError("A run is already active")
             if method == "run.start":
-                require(params, "text")
+                self.require(params, "text")
                 if not isinstance(params["text"], str) or not params["text"].strip():
                     raise ValueError("text must be non-empty")
-                message = attachment_message(
+                message = DesktopMessages.attachment_message(
                     self.settings.resolved_workspace_root,
                     params["text"],
                     params.get("attachments", []),
                 )
                 inputs: Any = {"messages": [HumanMessage(content=message)]}
             else:
-                require(params, "decisions")
-                async with open_configured_agent(self) as agent:
-                    state = await agent.aget_state(make_checkpoint_config(thread_id))
+                self.require(params, "decisions")
+                async with self.open_configured_agent() as agent:
+                    state = await agent.aget_state(CheckpointConfig.make_checkpoint_config(thread_id))
                 metadata = state.metadata or {}
                 if metadata.get("desktop_run_id") != run_id:
                     raise ValueError("run_id does not match the paused turn")
@@ -266,28 +256,23 @@ class AgentLoop:
             task = asyncio.create_task(self._run(thread_id, run_id, inputs))
             self.active[run_id] = (thread_id, task)
 
-            def finished(done: asyncio.Task[None]) -> None:
-                self.active.pop(run_id, None)
-                if not done.cancelled() and (error := done.exception()) is not None:
-                    logger.error("desktop run task ended with error", exc_info=error)
-
-            task.add_done_callback(finished)
+            task.add_done_callback(partial(self._finished, run_id))
             return {"run_id": run_id}
 
         # 第十步：中止正在运行或恢复挂起的执行 run.stop 方法
         if method == "run.stop":
-            require(params, "run_id")
-            run_id = require_uuid(params["run_id"], "run_id")
+            self.require(params, "run_id")
+            run_id = self.require_uuid(params["run_id"], "run_id")
             current = self.active.get(run_id)
             if current is not None:
                 if current[0] != thread_id:
                     raise ValueError("thread_id does not match the active run")
                 current[1].cancel()
                 await asyncio.gather(current[1], return_exceptions=True)
-                await notify(self, "run.cancelled", {"run_id": run_id, "thread_id": thread_id})
+                await self.notify("run.cancelled", {"run_id": run_id, "thread_id": thread_id})
             else:
-                async with open_configured_agent(self) as agent:
-                    state = await agent.aget_state(make_checkpoint_config(thread_id))
+                async with self.open_configured_agent() as agent:
+                    state = await agent.aget_state(CheckpointConfig.make_checkpoint_config(thread_id))
                     if state.tasks and any(task.interrupts for task in state.tasks):
                         if state.metadata.get("desktop_run_id") != run_id:
                             raise ValueError("run_id does not match the paused turn")
@@ -297,7 +282,7 @@ class AgentLoop:
                         ):
                             raise PermissionError("Paused turn identity does not match")
                         await agent.aupdate_state(
-                            make_checkpoint_config(thread_id), state.values, as_node=state.next[0]
+                            CheckpointConfig.make_checkpoint_config(thread_id), state.values, as_node=state.next[0]
                         )
             return {}
         raise ValueError(f"Unknown method: {method}")
@@ -319,11 +304,12 @@ class AgentLoop:
         terminal: dict[str, Any] | None = None
         cancelled = False
         failure: Exception | None = None
-        details = ToolDetails((self.desktop_options or {}).get("max_context_tokens", 475_000))
+        assert self.desktop_options is not None
+        details = ToolDetails(self.desktop_options["max_context_tokens"])
         assert self.identity is not None
 
         # 第一步：构建包含桌面审计信息的检查点配置
-        checkpoint_config = make_checkpoint_config(thread_id)
+        checkpoint_config = CheckpointConfig.make_checkpoint_config(thread_id)
         checkpoint_config["metadata"] = {
             "desktop_run_id": run_id,
             "desktop_user_id": self.identity.user_id,
@@ -335,9 +321,9 @@ class AgentLoop:
 
             # 第二步：打开智能体实例并以 aclosing 安全管理流式事件
             async with (
-                open_configured_agent(self) as agent,
+                self.open_configured_agent() as agent,
                 aclosing(
-                    astream_agent(
+                    AgentStreaming.astream_agent(
                         agent,
                         inputs,
                         config={
@@ -362,7 +348,7 @@ class AgentLoop:
                         and event.operation_id in details.context_reports
                     ):
                         report = details.context_reports.pop(event.operation_id)
-                        async with aopen_store(self.settings) as store:
+                        async with StoreFactory.aopen_store(self.settings) as store:
                             await store.aput(self._context_namespace(thread_id), "usage", report)
                         payload["data"]["token_usage"] = report
 
@@ -374,7 +360,7 @@ class AgentLoop:
                     if event.type in {"run.completed", "run.interrupted", "run.failed"}:
                         terminal = payload
                     else:
-                        await notify(self, "agent.event", payload)
+                        await self.notify("agent.event", payload)
 
         except asyncio.CancelledError:
             cancelled = True
@@ -401,314 +387,158 @@ class AgentLoop:
             # 第四步：从活跃任务表中移出当前 run
             self.active.pop(run_id, None)
             if terminal is not None and not cancelled:
-                await notify(self, "agent.event", terminal)
+                await self.notify("agent.event", terminal)
 
         if failure is not None:
             raise failure
 
+    def _finished(self, run_id: str, done: asyncio.Task[None]) -> None:
+        self.active.pop(run_id, None)
+        if not done.cancelled() and (error := done.exception()) is not None:
+            logger.error("desktop run task ended with error", exc_info=error)
+
+    @asynccontextmanager
+    async def open_configured_agent(self) -> AsyncIterator[Any]:
+        """根据 AgentLoop 的全局配置与桌面选项打开可用的智能体上下文。
+
+        :param state: 桌面端 AgentLoop 实例。
+        :type state: vertical_harness.desktop.AgentLoop
+        :return: 异步编译状态图智能体实例迭代器。
+        :rtype: collections.abc.AsyncIterator[typing.Any]
+        :author: tongliga
+        :date: 2026-10-21
+        """
+        async with AgentComposer.aopen_agent(self.settings, options=self.desktop_options) as agent:
+            yield agent
+
+    @staticmethod
+    def emit(frame: dict[str, Any]) -> None:
+        """向标准输出（stdout）打印单行 JSON-RPC 响应或通知帧，并强制刷新。
+
+        :param frame: 待发送的标准 JSON-RPC 数据字典。
+        :type frame: dict[str, typing.Any]
+        :return: 无返回值。
+        :rtype: None
+        :author: tongliga
+        :date: 2026-10-21
+        """
+        print(json.dumps(frame, ensure_ascii=False), flush=True)
+
+    async def notify(self, method: str, params: dict[str, Any]) -> None:
+        """在并发输出锁保护下向桌面端推送异步 JSON-RPC 通知消息。
+
+        :param state: 桌面端 AgentLoop 实例。
+        :type state: vertical_harness.desktop.AgentLoop
+        :param method: 通知方法名称（如 'agent.event', 'run.cancelled'）。
+        :type method: str
+        :param params: 通知载荷字典。
+        :type params: dict[str, typing.Any]
+        :return: 无返回值。
+        :rtype: None
+        :author: tongliga
+        :date: 2026-10-21
+        """
+        async with self.output_lock:
+            self.emit({"jsonrpc": "2.0", "method": method, "params": params})
+
+    @staticmethod
+    def require(params: dict[str, Any], *fields: str) -> None:
+        """断言参数字典中必须包含全部指定的必填键。
+
+        :param params: 待校验的参数字典。
+        :type params: dict[str, typing.Any]
+        :param fields: 必须存在的键名列表。
+        :type fields: str
+        :return: 无返回值。
+        :rtype: None
+        :raises ValueError: 当缺少任何必填键时抛出。
+        :author: tongliga
+        :date: 2026-10-21
+        """
+        for name in fields:
+            if name not in params:
+                raise ValueError(f"Missing required parameter: {name}")
+
+    @staticmethod
+    def require_uuid(value: Any, field: str) -> str:
+        """断言指定字段值必须为有效的 UUID 格式字符串。
+
+        :param value: 待校验的原始值。
+        :type value: typing.Any
+        :param field: 字段名称（用于错误提示）。
+        :type field: str
+        :return: 校验合法的 UUID 字符串。
+        :rtype: str
+        :raises ValueError: 当值非字符串或无法解析为 UUID 时抛出。
+        :author: tongliga
+        :date: 2026-10-21
+        """
+        if not isinstance(value, str):
+            raise ValueError(f"{field} must be a UUID string")
+        UUID(value)
+        return value
+
+    async def main(self) -> None:
+        """桌面端守护进程主入口：从 stdin 循环读取 JSON-RPC 指令并异步分发。
+
+        :return: 无返回值。
+        :rtype: None
+        :author: tongliga
+        :date: 2026-10-21
+        """
+        # 第一步：若启用 LangSmith 追踪，预热探测 Git 版本以防 SDK 自动探测阻塞 stdin
+        if LangSmithSettings().tracing and not (
+            os.getenv("LANGSMITH_REVISION_ID") or os.getenv("LANGCHAIN_REVISION_ID")
+        ):
+            try:
+                revision = subprocess.run(
+                    ["git", "describe", "--tags", "--always", "--dirty"],
+                    stdin=subprocess.DEVNULL,
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                    timeout=2,
+                )
+                revision_id = revision.stdout.strip() or "unknown"
+            except (OSError, subprocess.SubprocessError):
+                revision_id = "unknown"
+            os.environ["LANGSMITH_REVISION_ID"] = revision_id
+
+        # 第二步：按行异步监听标准输入中的 JSON-RPC 消息
+        while line := await asyncio.to_thread(sys.stdin.readline):
+            request = json.loads(line)
+            request_id = request.get("id")
+            try:
+                # 第三步：分发执行指令并返回结果
+                result = await self.dispatch(request["method"], request.get("params", {}))
+            except Exception as exc:
+                logger.exception("JSON-RPC request failed")
+                self.emit(
+                    {"jsonrpc": "2.0", "id": request_id, "error": {"code": -32000, "message": str(exc)}}
+                )
+            else:
+                self.emit({"jsonrpc": "2.0", "id": request_id, "result": result})
+            if request.get("method") == "shutdown":
+                break
+
+        # 第四步：进程退出前安全取消所有活跃运行任务并等待清理完成
+        tasks = [task for _, task in self.active.values()]
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+
+make_checkpoint_config = CheckpointConfig.make_checkpoint_config
 
 loop = AgentLoop()
-
-
-class ToolDetails(AsyncCallbackHandler):
-    """异步捕获并收集工具与模型调用的入参、耗时及实际 Token 请求的观察处理器。
-
-    :author: tongliga
-    :date: 2026-10-21
-    """
-
-    run_inline = True
-
-    def __init__(self, maximum: int = 475_000) -> None:
-        """初始化工具细节回调观察处理器。
-
-        :param maximum: 上下文最大 Token 上限。
-        :type maximum: int
-        :return: 无返回值。
-        :rtype: None
-        :author: tongliga
-        :date: 2026-10-21
-        """
-        super().__init__()
-        self.records: dict[str, dict[str, Any]] = {}
-        self.started: dict[str, float] = {}
-        self.maximum = maximum
-        self.context_requests: dict[str, tuple[list[Any], list[Any]]] = {}
-        self.context_reports: dict[str, dict[str, Any]] = {}
-
-    async def on_chat_model_start(
-        self, serialized: dict[str, Any], messages: list[Any], *, run_id: UUID, metadata: dict[str, Any] | None = None, invocation_params: dict[str, Any] | None = None, **kwargs: Any
-    ) -> None:
-        """记录模型发起调用时的第一层输入消息与工具列表。
-
-        :param serialized: 序列化模型元数据。
-        :type serialized: dict[str, typing.Any]
-        :param messages: 模型输入消息列表。
-        :type messages: list[typing.Any]
-        :param run_id: 操作运行 ID。
-        :type run_id: uuid.UUID
-        :param metadata: 调用元数据字典。
-        :type metadata: dict[str, typing.Any] | None
-        :param invocation_params: 调用参数。
-        :type invocation_params: dict[str, typing.Any] | None
-        :param kwargs: 其他关键字参数。
-        :type kwargs: typing.Any
-        :return: 无返回值。
-        :rtype: None
-        :author: tongliga
-        :date: 2026-10-21
-        """
-        if (metadata or {}).get("lc_agent_name") == "vertical-agent" and messages:
-            self.context_requests[str(run_id)] = (
-                messages[0],
-                (invocation_params or {}).get("tools", []),
-            )
-
-    async def on_llm_end(self, response: Any, *, run_id: UUID, **kwargs: Any) -> None:
-        """模型调用完成时提取真实用量并估算各分区 Token 消耗。
-
-        :param response: 模型响应对象。
-        :type response: typing.Any
-        :param run_id: 操作运行 ID。
-        :type run_id: uuid.UUID
-        :param kwargs: 其他关键字参数。
-        :type kwargs: typing.Any
-        :return: 无返回值。
-        :rtype: None
-        :author: tongliga
-        :date: 2026-10-21
-        """
-        request = self.context_requests.pop(str(run_id), None)
-        if request is None:
-            return
-        messages, tools = request
-        message = response.generations[0][0].message
-        usage = message.usage_metadata
-        self.context_reports[str(run_id)] = usage_estimate(
-            [],
-            "",
-            self.maximum,
-            request_messages=[*messages, message],
-            tools=tools,
-            reported_tokens=usage["input_tokens"] + usage["output_tokens"] if usage else None,
-        )
-
-    async def on_llm_error(self, error: BaseException, *, run_id: UUID, **kwargs: Any) -> None:
-        """模型调用异常时清理对应的上下文追踪请求缓存。
-
-        :param error: 异常对象。
-        :type error: BaseException
-        :param run_id: 操作运行 ID。
-        :type run_id: uuid.UUID
-        :param kwargs: 其他关键字参数。
-        :type kwargs: typing.Any
-        :return: 无返回值。
-        :rtype: None
-        :author: tongliga
-        :date: 2026-10-21
-        """
-        self.context_requests.pop(str(run_id), None)
-
-    async def on_tool_start(self, serialized: dict[str, Any], input_str: str, *, run_id: UUID, inputs: dict[str, Any] | None = None, **kwargs: Any) -> None:
-        """记录工具开始执行的高精度时间与输入参数。
-
-        :param serialized: 序列化工具元数据。
-        :type serialized: dict[str, typing.Any]
-        :param input_str: 工具输入字符串。
-        :type input_str: str
-        :param run_id: 操作运行 ID。
-        :type run_id: uuid.UUID
-        :param inputs: 工具输入参数字典。
-        :type inputs: dict[str, typing.Any] | None
-        :param kwargs: 其他关键字参数。
-        :type kwargs: typing.Any
-        :return: 无返回值。
-        :rtype: None
-        :author: tongliga
-        :date: 2026-10-21
-        """
-        key = str(run_id)
-        self.started[key] = perf_counter()
-        self.records[key] = {"arguments": inputs}
-
-    async def on_tool_end(self, output: Any, *, run_id: UUID, **kwargs: Any) -> None:
-        """记录工具成功执行完成的输出内容与持续时间。
-
-        :param output: 工具输出结果对象。
-        :type output: typing.Any
-        :param run_id: 操作运行 ID。
-        :type run_id: uuid.UUID
-        :param kwargs: 其他关键字参数。
-        :type kwargs: typing.Any
-        :return: 无返回值。
-        :rtype: None
-        :author: tongliga
-        :date: 2026-10-21
-        """
-        key = str(run_id)
-        self.records[key].update(
-            {
-                "output": output.content,
-                "elapsed": perf_counter() - self.started[key],
-            }
-        )
-
-    async def on_tool_error(self, error: BaseException, *, run_id: UUID, **kwargs: Any) -> None:
-        """记录工具执行发生异常时的错误类型与耗时。
-
-        :param error: 异常对象。
-        :type error: BaseException
-        :param run_id: 操作运行 ID。
-        :type run_id: uuid.UUID
-        :param kwargs: 其他关键字参数。
-        :type kwargs: typing.Any
-        :return: 无返回值。
-        :rtype: None
-        :author: tongliga
-        :date: 2026-10-21
-        """
-        key = str(run_id)
-        self.records[key].update(
-            {
-                "output": {"error_type": type(error).__name__},
-                "elapsed": perf_counter() - self.started[key],
-            }
-        )
-
-
-@asynccontextmanager
-async def open_configured_agent(state: AgentLoop) -> AsyncIterator[Any]:
-    """根据 AgentLoop 的全局配置与桌面选项打开可用的智能体上下文。
-
-    :param state: 桌面端 AgentLoop 实例。
-    :type state: vertical_harness.desktop.AgentLoop
-    :return: 异步编译状态图智能体实例迭代器。
-    :rtype: collections.abc.AsyncIterator[typing.Any]
-    :author: tongliga
-    :date: 2026-10-21
-    """
-    async with aopen_agent(state.settings, options=state.desktop_options) as agent:
-        yield agent
-
-
-def emit(frame: dict[str, Any]) -> None:
-    """向标准输出（stdout）打印单行 JSON-RPC 响应或通知帧，并强制刷新。
-
-    :param frame: 待发送的标准 JSON-RPC 数据字典。
-    :type frame: dict[str, typing.Any]
-    :return: 无返回值。
-    :rtype: None
-    :author: tongliga
-    :date: 2026-10-21
-    """
-    print(json.dumps(frame, ensure_ascii=False), flush=True)
-
-
-async def notify(state: AgentLoop, method: str, params: dict[str, Any]) -> None:
-    """在并发输出锁保护下向桌面端推送异步 JSON-RPC 通知消息。
-
-    :param state: 桌面端 AgentLoop 实例。
-    :type state: vertical_harness.desktop.AgentLoop
-    :param method: 通知方法名称（如 'agent.event', 'run.cancelled'）。
-    :type method: str
-    :param params: 通知载荷字典。
-    :type params: dict[str, typing.Any]
-    :return: 无返回值。
-    :rtype: None
-    :author: tongliga
-    :date: 2026-10-21
-    """
-    async with state.output_lock:
-        emit({"jsonrpc": "2.0", "method": method, "params": params})
-
-
-def require(params: dict[str, Any], *fields: str) -> None:
-    """断言参数字典中必须包含全部指定的必填键。
-
-    :param params: 待校验的参数字典。
-    :type params: dict[str, typing.Any]
-    :param fields: 必须存在的键名列表。
-    :type fields: str
-    :return: 无返回值。
-    :rtype: None
-    :raises ValueError: 当缺少任何必填键时抛出。
-    :author: tongliga
-    :date: 2026-10-21
-    """
-    for field in fields:
-        if field not in params:
-            raise ValueError(f"Missing required parameter: {field}")
-
-
-def require_uuid(value: Any, field: str) -> str:
-    """断言指定字段值必须为有效的 UUID 格式字符串。
-
-    :param value: 待校验的原始值。
-    :type value: typing.Any
-    :param field: 字段名称（用于错误提示）。
-    :type field: str
-    :return: 校验合法的 UUID 字符串。
-    :rtype: str
-    :raises ValueError: 当值非字符串或无法解析为 UUID 时抛出。
-    :author: tongliga
-    :date: 2026-10-21
-    """
-    if not isinstance(value, str):
-        raise ValueError(f"{field} must be a UUID string")
-    UUID(value)
-    return value
-
-
-async def main() -> None:
-    """桌面端守护进程主入口：从 stdin 循环读取 JSON-RPC 指令并异步分发。
-
-    :return: 无返回值。
-    :rtype: None
-    :author: tongliga
-    :date: 2026-10-21
-    """
-    # 第一步：若启用 LangSmith 追踪，预热探测 Git 版本以防 SDK 自动探测阻塞 stdin
-    if LangSmithSettings().tracing and not (
-        os.getenv("LANGSMITH_REVISION_ID") or os.getenv("LANGCHAIN_REVISION_ID")
-    ):
-        try:
-            revision = subprocess.run(
-                ["git", "describe", "--tags", "--always", "--dirty"],
-                stdin=subprocess.DEVNULL,
-                capture_output=True,
-                text=True,
-                check=True,
-                timeout=2,
-            )
-            revision_id = revision.stdout.strip() or "unknown"
-        except (OSError, subprocess.SubprocessError):
-            revision_id = "unknown"
-        os.environ["LANGSMITH_REVISION_ID"] = revision_id
-
-    # 第二步：按行异步监听标准输入中的 JSON-RPC 消息
-    while line := await asyncio.to_thread(sys.stdin.readline):
-        request = json.loads(line)
-        request_id = request.get("id")
-        try:
-            # 第三步：分发执行指令并返回结果
-            result = await loop.dispatch(request["method"], request.get("params", {}))
-        except Exception as exc:
-            logger.exception("JSON-RPC request failed")
-            emit(
-                {"jsonrpc": "2.0", "id": request_id, "error": {"code": -32000, "message": str(exc)}}
-            )
-        else:
-            emit({"jsonrpc": "2.0", "id": request_id, "result": result})
-        if request.get("method") == "shutdown":
-            break
-
-    # 第四步：进程退出前安全取消所有活跃运行任务并等待清理完成
-    tasks = [task for _, task in loop.active.values()]
-    for task in tasks:
-        task.cancel()
-    await asyncio.gather(*tasks, return_exceptions=True)
+main = loop.main
+open_configured_agent = AgentLoop.open_configured_agent
+emit = AgentLoop.emit
+notify = AgentLoop.notify
+require = AgentLoop.require
+require_uuid = AgentLoop.require_uuid
 
 
 if __name__ == "__main__":
     logging.basicConfig(stream=sys.stderr, level=logging.INFO)
-    asyncio.run(main())
+    asyncio.run(loop.main())

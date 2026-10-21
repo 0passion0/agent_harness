@@ -4,28 +4,22 @@ from __future__ import annotations
 
 import logging
 import sys
-from enum import StrEnum
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
 from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from vertical_harness.config.store_backend import StoreBackendType
+from vertical_harness.config.task_tier import TaskTier
+
 logger = logging.getLogger(__name__)
 
 
-class StoreBackendType(StrEnum):
-    """状态存储后端类型枚举。"""
-
-    SQLITE = "sqlite"
-    MEMORY = "memory"
 
 
-class TaskTier(StrEnum):
-    """任务质量与计算预算路由层级枚举。"""
 
-    ECONOMY = "economy"
-    QUALITY = "quality"
+
 
 
 NonEmptyStr = Annotated[str, Field(min_length=1)]
