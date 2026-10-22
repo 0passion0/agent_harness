@@ -43,6 +43,24 @@ class ExecutionLimitsMiddleware(AgentMiddleware):
 
     max_steps: int | None = None
 
+    @hook_config(can_jump_to=["end"])
+    def before_model(self, state: Any, runtime: Any) -> dict[str, Any] | None:
+        """超限后最多再给一次文字收尾机会，随后由图强制结束。"""
+        if self.max_steps is None or self._step_count(state["messages"]) <= self.max_steps:
+            return None
+        return {
+            "messages": [AIMessage(content=(
+                "Maximum agent steps reached. The run was stopped after the final response "
+                "attempt. Remaining work is incomplete; send a new message to continue."
+            ))],
+            "jump_to": "end",
+        }
+
+    @hook_config(can_jump_to=["end"])
+    async def abefore_model(self, state: Any, runtime: Any) -> dict[str, Any] | None:
+        """异步执行相同的终止检查。"""
+        return self.before_model(state, runtime)
+
     @staticmethod
     def _synthetic(message: Any) -> bool:
         """判定消息是否属于框架合成注入的提示消息（如续跑或动态上下文）。

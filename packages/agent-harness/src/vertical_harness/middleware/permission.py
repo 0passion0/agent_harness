@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from langchain.agents.middleware import AgentMiddleware
+from langchain.agents.middleware import AgentMiddleware, ModelRequest
 
 
 @dataclass(eq=False)
@@ -22,6 +22,24 @@ class DesktopPermissionMiddleware(AgentMiddleware):
 
     mode: str
     tools: list[Any] = field(default_factory=list, init=False)
+
+    def _prepare(self, request: ModelRequest) -> ModelRequest:
+        """只向模型公开当前权限允许的工具，执行入口仍独立强制校验。"""
+        if self.mode != "read_only":
+            return request
+        return request.override(tools=[
+            tool for tool in request.tools
+            if (tool.get("function", tool).get("name") if isinstance(tool, dict) else tool.name)
+            in self._READ_ONLY_TOOLS
+        ])
+
+    def wrap_model_call(self, request: ModelRequest, handler: Any) -> Any:
+        """同步过滤工具描述。"""
+        return handler(self._prepare(request))
+
+    async def awrap_model_call(self, request: ModelRequest, handler: Any) -> Any:
+        """异步过滤工具描述。"""
+        return await handler(self._prepare(request))
 
     def wrap_tool_call(self, request: Any, handler: Any) -> Any:
         """同步拦截工具调用，若在只读模式下尝试执行白名单外工具则抛出权限错误。

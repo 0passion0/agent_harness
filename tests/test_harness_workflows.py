@@ -161,6 +161,22 @@ def test_max_steps_disables_tools_and_new_user_resets_budget(tmp_path, monkeypat
 
 
 @pytest.mark.parametrize("execution", ["sync", "async"])
+def test_max_steps_stops_model_that_ignores_tool_choice(tmp_path, monkeypatch, execution):
+    agent, model = agent_for(tmp_path, monkeypatch, [
+        call("write_file", {"file_path": "/blocked.txt", "content": "blocked"}, f"blocked-{index}")
+        for index in range(20)
+    ], max_steps=1)
+    config = {"configurable": {"thread_id": "ignores-limit"}, "recursion_limit": 40}
+    request = {"messages": [HumanMessage(content="Keep writing indefinitely.")]}
+    result = asyncio.run(agent.ainvoke(request, config)) if execution == "async" else agent.invoke(request, config)
+    assert len(model.seen) == 2
+    assert "maximum agent steps" in result["messages"][-1].content.lower()
+    assert not result["messages"][-1].tool_calls
+    assert not (tmp_path / "blocked.txt").exists()
+    assert all(item.status == "error" for item in result["messages"] if isinstance(item, ToolMessage))
+
+
+@pytest.mark.parametrize("execution", ["sync", "async"])
 def test_output_limit_continues_on_native_graph_and_is_bounded(tmp_path, monkeypatch, execution):
     agent, model = agent_for(tmp_path, monkeypatch, [
         AIMessage(content="part one", response_metadata={"finish_reason": "length"}),

@@ -193,7 +193,11 @@ def test_nearby_instructions_refresh_without_mutating_history(tmp_path):
     assert original.messages[0].content.endswith("old guidance")
     path.unlink()
     middleware.wrap_model_call(original, handler)
-    assert handler.call_args.args[0].messages == [original.messages[1]]
+    removed = handler.call_args.args[0].messages
+    assert len(removed) == 2
+    assert removed[0].id == instructions.id
+    assert removed[0].content == "Previously loaded project instructions are no longer available."
+    assert removed[1] is original.messages[1]
     path.write_text("restored guidance", encoding="utf-8")
     middleware.wrap_model_call(original, handler)
     assert handler.call_args.args[0].messages[0].content.endswith("restored guidance")
@@ -243,7 +247,10 @@ def test_nearby_instructions_outside_current_workspace_are_not_read(tmp_path, mo
     monkeypatch.setattr(Path, "read_text", read)
     handler = Mock()
     middleware.wrap_model_call(original, handler)
-    assert handler.call_args.args[0].messages == [original.messages[1]]
+    removed = handler.call_args.args[0].messages
+    assert len(removed) == 2
+    assert removed[0].content == "Previously loaded project instructions are no longer available."
+    assert removed[1] is original.messages[1]
     read.assert_called_once_with(encoding="utf-8")
 
 

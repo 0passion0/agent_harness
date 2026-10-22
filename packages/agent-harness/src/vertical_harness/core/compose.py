@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator, Iterator, Sequence
 from contextlib import asynccontextmanager, contextmanager
 from pathlib import Path
 from typing import Any
@@ -16,7 +16,7 @@ from deepagents import FilesystemPermission, create_deep_agent
 from deepagents.backends import CompositeBackend, FilesystemBackend
 from deepagents.backends.protocol import BackendProtocol
 from deepagents.middleware.summarization import SummarizationMiddleware
-from langchain.agents.middleware import TodoListMiddleware
+from langchain.agents.middleware import AgentMiddleware, TodoListMiddleware
 from langgraph.checkpoint.memory import InMemorySaver
 
 from vertical_harness.config.settings import HarnessSettings
@@ -30,6 +30,7 @@ from vertical_harness.middleware.filesystem import HarnessFilesystemMiddleware
 from vertical_harness.middleware.model_retry import ModelRetryMiddleware
 from vertical_harness.middleware.permission import DesktopPermissionMiddleware
 from vertical_harness.middleware.project_instructions import ProjectInstructionsMiddleware
+from vertical_harness.middleware.summarization import HarnessSummarizationMiddleware
 from vertical_harness.storage.checkpoint import CheckpointFactory
 from vertical_harness.storage.document_backend import DocumentFilesystemBackend
 from vertical_harness.tools.code_formatter import CodeFormatter
@@ -75,7 +76,8 @@ class AgentComposer:
 
     @staticmethod
     def _summarization_middleware(
-            model: Any, backend: BackendProtocol, max_context_tokens: int = 475_000
+            model: Any, backend: BackendProtocol, max_context_tokens: int = 475_000,
+            *, request_middleware: Sequence[AgentMiddleware] = (),
     ) -> SummarizationMiddleware:
         """构建自动上下文摘要压缩中间件。
 
@@ -87,6 +89,8 @@ class AgentComposer:
         :type backend: deepagents.backends.protocol.BackendProtocol
         :param max_context_tokens: 允许的最大上下文 Token 上限阈值，默认为 475,000。
         :type max_context_tokens: int
+        :param request_middleware: 摘要前执行的无状态请求准备中间件，不承载工具或生命周期钩子。
+        :type request_middleware: collections.abc.Sequence[AgentMiddleware]
         :return: 配置完成的 DeepAgents 原生 SummarizationMiddleware 中间件实例。
         :rtype: deepagents.middleware.summarization.SummarizationMiddleware
         :author: tongliga
@@ -101,12 +105,14 @@ class AgentComposer:
         )
 
         # 第三步：设定触发摘要的 90% 阈值与保留的 10% 核心上下文
+        # shortcut: 保留量沿用构建时模型，跨模型窗口差异频繁触顶时改为按请求预算计算。
         token_trigger = max(1, int(context_limit * 0.90))
         keep_tokens = max(1, int(context_limit * 0.10))
         arg_trigger = min(8_000, token_trigger)
 
         # 第四步：实例化并返回摘要中间件
-        return SummarizationMiddleware(
+        return HarnessSummarizationMiddleware(
+            request_middleware=request_middleware,
             model=model,
             backend=backend,
             trigger=("tokens", token_trigger),
@@ -209,18 +215,23 @@ class AgentComposer:
         middleware = []
         if settings.enable_planning:
             middleware.append(TodoListMiddleware())
+        request_middleware = []
         if router := ModelRouting.make_router(settings):
-            middleware.append(router)
+            request_middleware.append(router)
+        request_middleware.append(
+            ProjectInstructionsMiddleware(
+                backend, permissions, system_instructions=system_root / "AGENTS.md"
+            )
+        )
         middleware.extend(
             [
-                ProjectInstructionsMiddleware(
-                    backend, permissions, system_instructions=system_root / "AGENTS.md"
-                ),
                 ExecutionLimitsMiddleware(settings.max_steps),
-                cls._summarization_middleware(model, backend, maximum),
+                cls._summarization_middleware(
+                    model, backend, maximum, request_middleware=request_middleware
+                ),
+                DesktopPermissionMiddleware(options.get("permission_mode", "full")),
                 ContextLimitMiddleware(maximum),
                 ModelRetryMiddleware(),
-                DesktopPermissionMiddleware(options.get("permission_mode", "full")),
             ]
         )
         if options.get("permission_mode") == "ask":

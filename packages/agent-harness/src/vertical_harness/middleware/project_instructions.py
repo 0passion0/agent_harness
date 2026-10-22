@@ -87,23 +87,25 @@ class ProjectInstructionsMiddleware(AgentMiddleware):
                 messages.append(message)
                 continue
             changed = True
-            if files:
-                kwargs_update = {}
-                if "harness_instructions" in message.additional_kwargs or "opencode_instructions" not in message.additional_kwargs:
-                    kwargs_update["harness_instructions"] = list(files)
-                if "opencode_instructions" in message.additional_kwargs:
-                    kwargs_update["opencode_instructions"] = list(files)
-                messages.append(
-                    message.model_copy(
-                        update={
-                            "content": content,
-                            "additional_kwargs": {
-                                **message.additional_kwargs,
-                                **kwargs_update,
-                            },
-                        }
-                    )
+            kwargs_update = {}
+            if "harness_instructions" in message.additional_kwargs or "opencode_instructions" not in message.additional_kwargs:
+                kwargs_update["harness_instructions"] = list(files)
+            if "opencode_instructions" in message.additional_kwargs:
+                kwargs_update["opencode_instructions"] = list(files)
+            # 原生摘要按检查点消息索引截断，失效指令也必须保留一个不含旧内容的槽位。
+            if not files:
+                kwargs_update["harness_synthetic"] = "project-instructions"
+            messages.append(
+                message.model_copy(
+                    update={
+                        "content": content or "Previously loaded project instructions are no longer available.",
+                        "additional_kwargs": {
+                            **message.additional_kwargs,
+                            **kwargs_update,
+                        },
+                    }
                 )
+            )
         return request.override(messages=messages) if changed else request
 
     def _prepare(self, request: ModelRequest[Any]) -> ModelRequest[Any]:

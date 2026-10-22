@@ -141,7 +141,7 @@ def test_python_permission_modes_in_composed_graph(tmp_path, monkeypatch, mode, 
 
     class Model(FakeMessagesListChatModel):
         def bind_tools(self, tools, **kwargs):
-            assert any(getattr(item, "name", None) == "execute_python_file" for item in tools)
+            assert any(getattr(item, "name", None) == "execute_python_file" for item in tools) == (mode != "read_only")
             assert not any(getattr(item, "name", None) == "run_python" for item in tools)
             return self
 

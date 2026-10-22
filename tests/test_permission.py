@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
 import pytest
+from langchain.agents.middleware import ModelRequest
 
 from vertical_harness.middleware.permission import DesktopPermissionMiddleware
 
@@ -43,3 +44,29 @@ def test_permission_checks_precede_handler(mode, tool, allowed, use_async):
             else:
                 middleware.wrap_tool_call(request, handler)
         handler.assert_not_called()
+
+
+@pytest.mark.parametrize("use_async", [False, True])
+@pytest.mark.parametrize("mode", ["read_only", "ask", "full"])
+def test_tool_filter_handles_dict_schemas_without_mutating_request(mode, use_async):
+    tools = [
+        {"name": "read_file", "parameters": {"type": "object"}},
+        {"type": "function", "function": {"name": "grep", "parameters": {"type": "object"}}},
+        {"type": "function", "function": {"name": "shell", "parameters": {"type": "object"}}},
+        {"type": "unknown_provider_tool"},
+    ]
+    request = ModelRequest(model=Mock(), messages=[], tools=tools)
+    middleware = DesktopPermissionMiddleware(mode)
+    handler = AsyncMock(return_value="done") if use_async else Mock(return_value="done")
+    result = (
+        asyncio.run(middleware.awrap_model_call(request, handler))
+        if use_async else middleware.wrap_model_call(request, handler)
+    )
+    assert result == "done"
+    prepared = handler.call_args.args[0]
+    if mode == "read_only":
+        assert prepared.tools == tools[:2]
+        assert all(left is right for left, right in zip(prepared.tools, tools, strict=False))
+    else:
+        assert prepared is request
+    assert request.tools is tools and len(tools) == 4

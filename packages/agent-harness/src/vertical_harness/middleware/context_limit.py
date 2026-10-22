@@ -17,8 +17,6 @@ class ContextLimitMiddleware(AgentMiddleware):
     :date: 2026-10-21
     """
 
-    after_summarization = True
-
     maximum: int
     tools: list[Any] = field(default_factory=list, init=False)
 
