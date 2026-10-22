@@ -280,8 +280,8 @@ class RipgrepSearch:
             return GlobResult(
                 error=f"Search timed out after {SEARCH_TIMEOUT} seconds. Consider using a more specific path or pattern."
             )
-        except (OSError, ValueError) as error:
-            return GlobResult(error=str(error))
+        except Exception as error:
+            return GlobResult(error=f"{type(error).__name__}: {error}")
 
     def grep(
         self,
@@ -423,5 +423,5 @@ class RipgrepSearch:
             return StructuredGrepResult(
                 error=f"Search timed out after {SEARCH_TIMEOUT} seconds. Consider using a more specific path or pattern."
             )
-        except (OSError, ValueError) as error:
-            return StructuredGrepResult(error=str(error))
+        except Exception as error:
+            return StructuredGrepResult(error=f"{type(error).__name__}: {error}")

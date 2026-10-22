@@ -1,0 +1,107 @@
+/* Settings use the existing palette; layout is scoped away from the workspace. */
+.product-v3 .codex-settings.modern-settings {
+  grid-template-columns: 224px minmax(0, 1fr);
+}
+.product-v3 .modern-settings .settings-navigation { padding: 32px 16px 24px; }
+.product-v3 .modern-settings .settings-nav-header { padding: 0 12px 28px; }
+.product-v3 .modern-settings .settings-nav-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0;
+  margin-bottom: 10px;
+  font-size: 20px;
+}
+.product-v3 .modern-settings .settings-nav-caption {
+  padding: 0;
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.7;
+}
+.product-v3 .modern-settings .settings-nav-group { margin-bottom: 26px; }
+.product-v3 .modern-settings .settings-nav-label { padding: 0 12px; margin-bottom: 8px; font-size: 10px; }
+.product-v3 .modern-settings .settings-nav-item { height: 44px; gap: 10px; margin: 3px 0; font-size: 12px; border-radius: 10px; }
+.product-v3 .modern-settings .settings-nav-item > svg { flex: none; }
+.product-v3 .modern-settings .settings-nav-item .settings-nav-arrow { color: var(--muted); }
+.product-v3 .modern-settings .settings-nav-item.active .settings-nav-arrow { color: var(--accent); }
+.product-v3 .modern-settings .settings-content-scroll { scrollbar-gutter: stable; container-type: inline-size; }
+.product-v3 .modern-settings .settings-content-inner { max-width: 1040px; padding: 44px 40px 64px; }
+.product-v3 .modern-settings .settings-main-header { margin-bottom: 28px; }
+.product-v3 .modern-settings .settings-kicker { font-size: 11px; letter-spacing: .04em; }
+.product-v3 .modern-settings .settings-main-header h1 { margin: 12px 0 10px; font-size: 28px; line-height: 1.35; }
+.product-v3 .modern-settings .settings-main-header p { font-size: 13px; }
+.product-v3 .modern-settings .settings-model-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+.product-v3 .modern-settings .pref-section {
+  min-width: 0;
+  max-width: none;
+  margin: 0 0 20px;
+  padding: 24px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--panel);
+}
+.product-v3 .modern-settings .settings-model-grid > .pref-section { margin: 0; display: flex; flex-direction: column; }
+.product-v3 .modern-settings .settings-model-grid .pref-actions { margin-top: auto; padding-top: 20px; }
+.product-v3 .modern-settings .settings-runtime { grid-column: 1 / -1; }
+.product-v3 .modern-settings .pref-section h2 { margin-bottom: 8px; font-size: 15px; }
+.product-v3 .modern-settings .pref-desc,
+.product-v3 .modern-settings .pref-section-heading p { font-size: 12px; line-height: 1.8; overflow-wrap: anywhere; }
+.product-v3 .modern-settings .pref-desc { margin-bottom: 20px; }
+.product-v3 .modern-settings .pref-form { max-width: none; grid-template-columns: 1fr; gap: 16px; }
+.product-v3 .modern-settings .pref-form label { font-size: 12px; gap: 9px; }
+.product-v3 .modern-settings .pref-form input,
+.product-v3 .modern-settings .pref-form select { width: 100%; height: 44px; font-size: 13px; background: var(--bg); border-radius: 10px; }
+.product-v3 .modern-settings .pref-actions { gap: 8px; margin-top: 20px; }
+.product-v3 .modern-settings .pref-actions button { min-height: 36px; padding: 8px 14px; font-size: 12px; border-radius: 9px; }
+.product-v3 .modern-settings .pref-actions button.pref-primary { background: var(--soft); color: var(--accent); border-color: var(--line-strong); }
+.product-v3 .modern-settings .pref-actions button:hover:not(:disabled) { background: var(--hover); border-color: var(--accent); color: var(--accent); }
+.product-v3 .modern-settings button:disabled { cursor: not-allowed; opacity: .5; }
+.product-v3 .modern-settings .pref-actions small { flex-basis: 100%; color: var(--muted); font-size: 11px; overflow-wrap: anywhere; line-height: 1.7; }
+.product-v3 .modern-settings .pref-section-heading { margin-bottom: 20px; }
+.product-v3 .modern-settings .pref-toolbar { padding: 16px; background: var(--sidebar); border: 1px solid var(--line); border-radius: 10px; margin-bottom: 20px; }
+.product-v3 .modern-settings .pref-toolbar label { align-items: flex-start; flex-direction: column; gap: 8px; font-size: 12px; }
+.product-v3 .modern-settings .pref-toolbar select { width: 100%; max-width: 100%; }
+.product-v3 .modern-settings .pref-setting-row { padding: 20px 0 0; margin-top: 20px; gap: 16px; }
+.product-v3 .modern-settings .pref-setting-row label { font-size: 13px; font-weight: 630; color: var(--heading); }
+.product-v3 .modern-settings .pref-setting-row select,
+.product-v3 .modern-settings .pref-toolbar select,
+.product-v3 .modern-settings .usage-filter-group select { min-height: 40px; max-width: 100%; border: 1px solid var(--line-strong); border-radius: 9px; padding: 8px 12px; color: var(--text); background: var(--panel); font: inherit; }
+.product-v3 .modern-settings .pref-editor { padding: 18px; background: var(--bg); font-family: var(--font-mono, ui-monospace, Consolas, monospace); font-size: 13px; line-height: 1.8; }
+.product-v3 .modern-settings :is(button, input, select, textarea):focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.product-v3 .modern-settings .skill-row { gap: 16px; padding: 18px 0; font-size: 13px; }
+.product-v3 .modern-settings .skill-row > div:first-child { flex: 1 1 200px; line-height: 1.7; }
+.product-v3 .modern-settings .skill-row > .pref-actions { margin: 0; }
+.product-v3 .modern-settings .skill-editor-box { min-width: 0; }
+.product-v3 .modern-settings .usage-filters { display: block; }
+.product-v3 .modern-settings .usage-filter-group { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 16px; align-items: end; }
+.product-v3 .modern-settings .usage-filter-group label { min-width: 0; font-size: 12px; gap: 8px; }
+.product-v3 .modern-settings .usage-filter-group > small { grid-column: 1 / -1; color: var(--muted); font-size: 11px; line-height: 1.7; }
+.product-v3 .modern-settings .usage-cards { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 22px 0; }
+.product-v3 .modern-settings .usage-cards > div { padding: 18px; gap: 10px; border: 1px solid var(--line); border-radius: 12px; }
+.product-v3 .modern-settings .usage-cards strong { font-size: 24px; letter-spacing: -.6px; font-variant-numeric: tabular-nums; }
+.product-v3 .modern-settings .usage-cards small,
+.product-v3 .modern-settings .usage-cards span { font-size: 11px; line-height: 1.6; }
+.product-v3 .modern-settings .usage-table-wrap { margin-top: 18px; border: 1px solid var(--line); border-radius: 10px; }
+.product-v3 .modern-settings .usage-table { font-size: 12px; font-variant-numeric: tabular-nums; }
+.product-v3 .modern-settings .usage-table th,
+.product-v3 .modern-settings .usage-table td { padding: 14px 12px; }
+.product-v3 .modern-settings .usage-table thead { background: var(--sidebar); }
+.product-v3 .modern-settings .usage-table tr:last-child td,
+.product-v3 .modern-settings .usage-table tr:last-child th { border-bottom: 0; }
+.product-v3 .modern-settings .usage-table thead th { border-bottom: 1px solid var(--line); }
+.product-v3 .modern-settings .settings-feedback { margin: 20px 0 0; line-height: 1.7; overflow-wrap: anywhere; }
+@container (max-width: 650px) {
+  .product-v3 .modern-settings .settings-model-grid { grid-template-columns: 1fr; }
+  .product-v3 .modern-settings .settings-content-inner { padding: 28px 20px 48px; }
+  .product-v3 .modern-settings .pref-section { padding: 20px; }
+}
+@media (max-width: 720px) {
+  .product-v3 .codex-settings.modern-settings { grid-template-columns: 1fr; }
+  .product-v3 .modern-settings .settings-navigation { padding: 12px; border-right: 0; }
+  .product-v3 .modern-settings .settings-nav-header { display: none; }
+  .product-v3 .modern-settings .settings-nav-scroll { display: flex; flex: none; gap: 4px; overflow-x: auto; }
+  .product-v3 .modern-settings .settings-nav-group { display: flex; flex: none; gap: 4px; margin: 0; }
+  .product-v3 .modern-settings .settings-nav-label { display: none; }
+  .product-v3 .modern-settings .settings-nav-item { height: 38px; margin: 0; padding: 0 12px; white-space: nowrap; }
+  .product-v3 .modern-settings .settings-main-header h1 { font-size: 24px; }
+}

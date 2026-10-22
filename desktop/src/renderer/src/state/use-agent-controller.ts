@@ -255,9 +255,9 @@ export function useAgentController() {
    */
   async function stop(): Promise<void> {
     if (!state.runId) return
+    dispatch({ event: 'run.stopping' })
     try {
       await window.medpeer.command({ id: requestId(), method: 'run.stop', params: { run_id: state.runId } })
-      dispatch({ event: 'run.stopping' })
     } catch (reason) {
       setError(String(reason))
     }

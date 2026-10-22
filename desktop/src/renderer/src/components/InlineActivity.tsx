@@ -11,12 +11,11 @@ import React, { useState } from 'react'
 import {
   ChevronDown,
   ChevronRight,
-  Cpu,
-  CheckCircle2,
   AlertCircle,
   Loader2,
   Terminal,
   FileCode,
+  Pencil,
   Search,
   Wrench,
   Boxes,
@@ -36,11 +35,12 @@ function getToolIcon(name?: string) {
   if (n.includes('repl') || n.includes('exec') || n.includes('shell') || n.includes('cmd') || n.includes('terminal')) {
     return <Terminal size={13} className="act-icon-terminal" />
   }
-  if (n.includes('read') || n.includes('write') || n.includes('file') || n.includes('cat')) {
-    return <FileCode size={13} className="act-icon-file" />
-  }
+  if (/write|edit|patch/.test(n)) return <Pencil size={13} />
   if (n.includes('search') || n.includes('find') || n.includes('grep') || n.includes('query')) {
     return <Search size={13} className="act-icon-search" />
+  }
+  if (n.includes('read') || n.includes('file') || n.includes('cat')) {
+    return <FileCode size={13} className="act-icon-file" />
   }
   if (n.includes('workflow') || n.includes('flow') || n.includes('pipeline')) {
     return <Boxes size={13} className="act-icon-workflow" />
@@ -123,24 +123,30 @@ function ActivityItem({ record, status }: { record: RunRecord; status: string })
 
   const name = record.name || record.node || record.kind
   const elapsed = typeof record.elapsed === 'number' ? `${record.elapsed.toFixed(2)}s` : ''
+  const args = record.arguments && typeof record.arguments === 'object' && !Array.isArray(record.arguments) ? record.arguments : {}
+  const preview = [args.command, args.cmd, args.path, args.file_path, args.query, args.pattern].find(value => typeof value === 'string')
+  const verb = /write|edit|patch/i.test(name) ? '编辑' : /read|cat/i.test(name) ? '读取' : /search|find|grep/i.test(name) ? '搜索' : '运行'
+  const action = `${isRunning ? '正在' : isError ? '未能' : isComplete ? '已' : '已停止'}${verb}`
+  const title = `${action} ${preview || record.summary || name}`
 
   return (
     <details className={`act-item ${isRunning ? 'is-running' : isError ? 'is-error' : isComplete ? 'is-complete' : 'is-interrupted'}`}
       onToggle={event => setOpen(event.currentTarget.open)}>
-      <summary className="act-item-header">
+      <summary className="act-item-header" title={`${name} · ${title}`}>
         <span className="act-item-icon-wrap">
           {isRunning ? (
             <Loader2 size={13} className="act-spinner" />
           ) : isError ? (
             <AlertCircle size={13} className="act-status-err" />
-          ) : isComplete ? (
-            <CheckCircle2 size={13} className="act-status-ok" />
-          ) : <Cpu size={13} />}
+          ) : getToolIcon(name)}
         </span>
 
         <span className="act-item-title-wrap">
-          {getToolIcon(name)}
-          <strong className="act-item-title">{name}</strong>
+          <span className="act-item-title">
+            {typeof preview === 'string' && (preview === args.path || preview === args.file_path) && isFilePath(preview)
+              ? <>{action} <FileLink path={preview} inline /></>
+              : title}
+          </span>
           
         </span>
 
@@ -184,13 +190,14 @@ export interface InlineActivityProps {
   /** 是否正在执行中 */
   running?: boolean
   status?: string
+  elapsed?: number
 }
 
 /**
  * 现代极简风格的内联活动执行流组件。
  * 聚合展示 LLM 后台动作、工具调用、插件执行细节。
  */
-export function InlineActivity({ records = [], tools = {}, running = false, status = running ? 'running' : 'complete' }: InlineActivityProps) {
+export function InlineActivity({ records = [], tools = {}, running = false, status = running ? 'running' : 'complete', elapsed }: InlineActivityProps) {
   const toolRecords = toolSteps([...records, ...Object.entries(tools).map(([id, record]) => ({ ...record, call_id: id }))])
   const statuses = toolRecords.map(record => stepStatus(record, status))
   const activeCount = statuses.filter(value => value === 'running').length
@@ -198,21 +205,23 @@ export function InlineActivity({ records = [], tools = {}, running = false, stat
   const failedCount = statuses.filter(value => value === 'failed' || value === 'tool_error').length
   const current = toolRecords.filter((_, index) => statuses[index] === 'running').at(-1)
   const isRunning = status === 'running'
-  const label = status === 'paused' ? '等待你的答复' : status === 'stopping' ? '正在停止' : status === 'cancelled' ? '执行已取消' : status === 'failed' ? '执行失败' : status === 'disconnected' ? '连接已中断' : isRunning ? (current?.name || current?.node || '正在处理') : '执行记录'
+  const seconds = typeof elapsed === 'number' && Number.isFinite(elapsed) ? Math.max(0, Math.round(elapsed)) : null
+  const duration = seconds === null ? '' : `用时 ${seconds >= 60 ? `${Math.floor(seconds / 60)}分` : ''}${seconds % 60}秒`
+  const label = status === 'paused' ? '等待你的答复' : status === 'stopping' ? '正在停止' : status === 'cancelled' ? '执行已取消' : status === 'failed' ? '执行失败' : status === 'disconnected' ? '连接已中断' : isRunning ? (current?.name || current?.node || '正在处理') : '运行了工具'
 
   if (toolRecords.length === 0 && !isRunning && !records.some(record => record.kind === 'workflow')) {
     return null
   }
 
   return (
-    <details className={`inline-activity-card ${isRunning ? 'is-active' : ''}`}>
+    <details className={`inline-activity-card ${isRunning ? 'is-active' : ''}${duration ? ' has-duration' : ''}`}>
       <summary className="inline-activity-bar">
         <div className="act-bar-left">
           <span className="act-bar-symbol">
-            {isRunning ? <Loader2 size={14} className="act-spinner" /> : status === 'failed' ? <AlertCircle size={14} /> : <Cpu size={14} />}
+            {isRunning ? <Loader2 size={14} className="act-spinner" /> : status === 'failed' ? <AlertCircle size={14} /> : <Terminal size={14} />}
           </span>
           <span className="act-bar-label">
-            {label}
+            {!isRunning && ['complete', 'completed', 'success'].includes(status) && duration ? duration : label}
           </span>
           <span className="act-count-pill">
             {toolRecords.length} 项操作

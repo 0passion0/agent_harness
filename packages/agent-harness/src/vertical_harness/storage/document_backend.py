@@ -102,7 +102,7 @@ class DocumentFilesystemBackend(FilesystemBackend):
                 return ReadResult(file_data=FileData(content=media[1], encoding="base64"))
             # 第五步：普通文本文件按行切片读取并做二进制安全校验
             return FileReader.read_text_page(path, offset, limit)
-        except (OSError, ValueError) as exc:
+        except Exception as exc:
             return ReadResult(error=f"Cannot read file ({type(exc).__name__}).")
 
     def _text_path(self, file_path: str) -> Path:
@@ -187,7 +187,7 @@ class DocumentFilesystemBackend(FilesystemBackend):
                 if self.formatter is not None and self.formatter.file(path):
                     self._sync_text_bom(path, bool(data))
             return WriteResult(path=file_path)
-        except (OSError, ValueError) as exc:
+        except Exception as exc:
             # 第三步：捕获异常并返回错误结果
             return WriteResult(error=f"Write failed: {exc}")
 
@@ -231,7 +231,7 @@ class DocumentFilesystemBackend(FilesystemBackend):
                     else:
                         path.read_bytes().decode("utf-8-sig")
             return EditResult(path=file_path, occurrences=occurrences)
-        except (OSError, ValueError) as exc:
+        except Exception as exc:
             return EditResult(error=f"Edit failed: {exc}")
 
     def glob(self, pattern: str, path: str | None = None):

@@ -305,6 +305,8 @@ class AgentLoop:
                 if current[0] != thread_id:
                     raise ValueError("thread_id does not match the active run")
                 current[1].cancel()
+                if self.shell_execution is not None and self.identity is not None:
+                    await self.shell_execution.aclose_session(self.identity.tenant_id, self.identity.user_id, thread_id)
                 await asyncio.gather(current[1], return_exceptions=True)
                 await self.notify("run.cancelled", {"run_id": run_id, "thread_id": thread_id})
             else:
@@ -539,7 +541,7 @@ class AgentLoop:
                     timeout=2,
                 )
                 revision_id = revision.stdout.strip() or "unknown"
-            except (OSError, subprocess.SubprocessError):
+            except Exception:
                 revision_id = "unknown"
             os.environ["LANGSMITH_REVISION_ID"] = revision_id
 

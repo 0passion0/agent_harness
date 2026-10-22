@@ -24,12 +24,12 @@ import 'prismjs/components/prism-markdown'
 import 'prismjs/components/prism-sql'
 import 'prismjs/components/prism-yaml'
 import 'prismjs/components/prism-css'
-import { BarChart3, Check, Code, Copy, Download, Eye, Layers, Maximize2, Minimize2, Minus, Plus, RotateCcw } from 'lucide-react'
+import { ArrowDown, BarChart3, Check, Code, Copy, Download, Eye, Layers, Maximize2, Minimize2, Minus, Plus, RotateCcw } from 'lucide-react'
 import type { AgentState } from '../state/agent-state'
 import type { ArtifactRef, Snapshot, RunRecord } from '../../../shared/protocol'
 import { FileLink, isFilePath } from './FileLink'
 import { InlineActivity } from './InlineActivity'
-import medpeerIcon from '../../../../../assets/medpeer.ico?url'
+import './conversation.css'
 
 /** 支持在对话流内直接预览的图片 MIME 格式列表 */
 const previewImageTypes = ['image/png', 'image/jpeg', 'image/webp']
@@ -787,12 +787,12 @@ export function Conversation({ state, openArtifact }: { state: AgentState; openA
   })
   const savedActivity = (run: Snapshot['runs'][number], index: number) => (
     <div className="saved-run-activity" key={run.id ?? index}>
-      <InlineActivity records={run.records} tools={run.tools as Record<string, RunRecord>} status={run.status ?? 'complete'} />
+      <InlineActivity records={run.records} tools={run.tools as Record<string, RunRecord>} status={run.status ?? 'complete'} elapsed={run.elapsed} />
     </div>
   )
 
   return (
-    <div className="conversation-wrap">
+    <div className="conversation-wrap codex-conversation">
       <div
         className="conversation"
         ref={pane}
@@ -811,8 +811,8 @@ export function Conversation({ state, openArtifact }: { state: AgentState; openA
 
             return (
               <React.Fragment key={typeof message.data.id === 'string' ? message.data.id : index}>
+              {message.type === 'ai' && state.snapshot?.runs.filter(run => run.user_message_id && lastMessageByUser.get(run.user_message_id) === index).map(savedActivity)}
               <article className={`message ${message.type}`} aria-label={message.type === 'human' ? '你' : 'MedPeer'}>
-                {message.type === 'ai' && <img className="message-avatar" src={medpeerIcon} alt="MedPeer" />}
                 <div className="message-content">
                   <MessageMarkdown
                     content={message.type === 'human' && Array.isArray(message.data.content) ? message.data.content.slice(0, 1) : message.data.content}
@@ -826,7 +826,7 @@ export function Conversation({ state, openArtifact }: { state: AgentState; openA
                   </div>
                 </div>
               </article>
-              {state.snapshot?.runs.filter(run => run.user_message_id && lastMessageByUser.get(run.user_message_id) === index).map(savedActivity)}
+              {message.type === 'human' && state.snapshot?.runs.filter(run => run.user_message_id && lastMessageByUser.get(run.user_message_id) === index).map(savedActivity)}
               </React.Fragment>
             )
           })}
@@ -846,13 +846,14 @@ export function Conversation({ state, openArtifact }: { state: AgentState; openA
         {/* 实时流式响应气泡或思考中气泡 */}
         {(isStreaming || hasLiveRun) && (
           <article className="message ai is-active-response" aria-label="MedPeer" aria-busy={isRunning}>
-            <img className="message-avatar" src={medpeerIcon} alt="MedPeer" />
             <div className="message-header-row">
               <div className="message-label streaming-label">
                 <span className="streaming-pulse-dot" />
                 {state.phase === 'question' ? '等待你的答复' : state.phase === 'stopping' ? '正在停止…' : state.phase === 'disconnected' ? '连接已中断' : state.phase === 'idle' ? '等待继续' : isThinking ? '正在思考…' : '正在回复'}
               </div>
             </div>
+
+            <InlineActivity records={liveRecords} tools={state.tools} running={isRunning} status={activityStatus} />
 
             {/* 流式文本正文 */}
             {state.stream.length > 0 && (
@@ -864,14 +865,6 @@ export function Conversation({ state, openArtifact }: { state: AgentState; openA
                 />
               </div>
             )}
-
-            {/* 对话内联工具调用、插件执行与 LLM 后台动作展示 */}
-            <InlineActivity
-              records={liveRecords}
-              tools={state.tools}
-              running={isRunning}
-              status={activityStatus}
-            />
 
             {/* 复制按钮置于流式回复底部 */}
             {state.stream.length > 0 && (
@@ -933,9 +926,11 @@ export function Conversation({ state, openArtifact }: { state: AgentState; openA
       {!nearBottom && (
         <button
           className="back-bottom modern-back-bottom"
+          aria-label="回到底部"
+          title="回到底部"
           onClick={() => pane.current?.scrollTo({ top: pane.current.scrollHeight, behavior: 'smooth' })}
         >
-          回到底部
+          <ArrowDown size={18} aria-hidden="true" />
         </button>
       )}
     </div>

@@ -198,7 +198,7 @@ class ModelRetryMiddleware(AgentMiddleware):
                     continue
                 try:
                     minimum = parsedate_to_datetime(value).timestamp() - time.time()
-                except (ValueError, OverflowError):
+                except Exception:
                     continue
             if math.isfinite(minimum):
                 delay = max(delay, min(max(0, minimum), 900))

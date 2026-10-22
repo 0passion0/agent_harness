@@ -61,75 +61,97 @@ class PythonExecution:
         :author: tongliga
         :date: 2026-10-21
         """
-        # 第一步：校验并解析脚本路径，防止目录穿越攻击
-        if not file_path.strip():
-            raise ValueError("Script path must not be blank")
-        script = (self.workspace / file_path.removeprefix("/")).resolve(strict=True)
-        if not script.is_relative_to(self.workspace.resolve()):
-            raise ValueError("Script path must remain inside the workspace")
-        if script.suffix != ".py" or not script.is_file():
-            raise ValueError("Script path must name a .py file")
+        try:
+            # 第一步：校验并解析脚本路径，防止目录穿越攻击与缺失文件
+            if not file_path.strip():
+                raise ValueError("Script path must not be blank")
+            workspace_root = self.workspace.resolve()
+            script = (self.workspace / file_path.removeprefix("/")).resolve()
+            if not script.is_relative_to(workspace_root):
+                raise ValueError("Script path must remain inside the workspace")
+            if script.suffix != ".py":
+                raise ValueError("Script path must name a .py file")
+            if not script.exists():
+                raise FileNotFoundError(f"File does not exist: /{script.relative_to(workspace_root).as_posix()}")
+            if not script.is_file():
+                raise IsADirectoryError(
+                    f"Script path must name a regular file, not a directory: /{script.relative_to(workspace_root).as_posix()}"
+                )
 
-        # 第二步：构建安全隔离的环境变量（严格剔除可能含智能体 API 密钥的环境变量）
-        env = {
-            key: value
-            for key, value in os.environ.items()
-            if key.upper() in {"PATH", "SYSTEMROOT", "WINDIR", "TEMP", "TMP", "HOME", "USERPROFILE"}
-        }
-        env.update(PYTHONIOENCODING="utf-8", PYTHONUTF8="1")
+            # 第二步：构建安全隔离的环境变量（严格剔除可能含智能体 API 密钥的环境变量）
+            env = {
+                key: value
+                for key, value in os.environ.items()
+                if key.upper() in {"PATH", "SYSTEMROOT", "WINDIR", "TEMP", "TMP", "HOME", "USERPROFILE"}
+            }
+            env.update(PYTHONIOENCODING="utf-8", PYTHONUTF8="1")
 
-        # 第三步：创建本次执行专用的运行日志目录与重定向输出文件
-        run_dir = self.workspace / "runs" / "python" / uuid4().hex
-        run_dir.mkdir(parents=True)
-        stdout_path, stderr_path = run_dir / "stdout.txt", run_dir / "stderr.txt"
+            # 第三步：创建本次执行专用的运行日志目录与重定向输出文件
+            run_dir = self.workspace / "runs" / "python" / uuid4().hex
+            run_dir.mkdir(parents=True)
+            stdout_path, stderr_path = run_dir / "stdout.txt", run_dir / "stderr.txt"
 
-        # 第四步：启动异步子进程执行脚本，强制 UTF-8 编码与无依赖运行模式
-        with stdout_path.open("wb") as stdout_file, stderr_path.open("wb") as stderr_file:
-            process = await asyncio.create_subprocess_exec(
-                self.interpreter,
-                "-X",
-                "utf8",
-                "-E",
-                "-s",
-                str(script),
-                cwd=self.workspace,
-                env=env,
-                stdin=asyncio.subprocess.DEVNULL,
-                stdout=stdout_file,
-                stderr=stderr_file,
-            )
-            timed_out = False
-            try:
-                # 第五步：等待执行完毕，设置 120 秒硬超时限制
-                await asyncio.wait_for(process.wait(), timeout=120)
-            except TimeoutError:
-                timed_out = True
-            finally:
-                if process.returncode is None:
-                    process.kill()
-                    await process.wait()
+            # 第四步：启动异步子进程执行脚本，强制 UTF-8 编码与无依赖运行模式
+            with stdout_path.open("wb") as stdout_file, stderr_path.open("wb") as stderr_file:
+                process = await asyncio.create_subprocess_exec(
+                    self.interpreter,
+                    "-X",
+                    "utf8",
+                    "-E",
+                    "-s",
+                    str(script),
+                    cwd=self.workspace,
+                    env=env,
+                    stdin=asyncio.subprocess.DEVNULL,
+                    stdout=stdout_file,
+                    stderr=stderr_file,
+                )
+                timed_out = False
+                try:
+                    # 第五步：等待执行完毕，设置 120 秒硬超时限制
+                    await asyncio.wait_for(process.wait(), timeout=120)
+                except TimeoutError:
+                    timed_out = True
+                finally:
+                    if process.returncode is None:
+                        process.kill()
+                        await process.wait()
 
-        # 第六步：读取并截取前 12000 个字符的输出预览，防止大输出撑爆上下文
-        with stdout_path.open(encoding="utf-8") as stdout_text:
-            output = stdout_text.read(12001)
-        with stderr_path.open(encoding="utf-8") as stderr_text:
-            errors = stderr_text.read(12001)
+            # 第六步：读取并截取前 12000 个字符的输出预览，防止大输出撑爆上下文
+            with stdout_path.open(encoding="utf-8") as stdout_text:
+                output = stdout_text.read(12001)
+            with stderr_path.open(encoding="utf-8") as stderr_text:
+                errors = stderr_text.read(12001)
 
-        # 第七步：组装并返回标准化的执行结果字典
-        return {
-            "file_path": "/" + script.relative_to(self.workspace.resolve()).as_posix(),
-            "stdout_path": "/" + stdout_path.relative_to(self.workspace).as_posix(),
-            "stderr_path": "/" + stderr_path.relative_to(self.workspace).as_posix(),
-            "exit_code": process.returncode,
-            "timed_out": timed_out,
-            "error": "Python execution exceeded 120 seconds; no automatic retry was performed."
-            if timed_out
-            else None,
-            "stdout": output[:12000],
-            "stderr": errors[:12000],
-            "stdout_truncated": len(output) > 12000,
-            "stderr_truncated": len(errors) > 12000,
-        }
+            # 第七步：组装并返回标准化的执行结果字典
+            return {
+                "file_path": "/" + script.relative_to(workspace_root).as_posix(),
+                "stdout_path": "/" + stdout_path.relative_to(self.workspace).as_posix(),
+                "stderr_path": "/" + stderr_path.relative_to(self.workspace).as_posix(),
+                "exit_code": process.returncode,
+                "timed_out": timed_out,
+                "error": "Python execution exceeded 120 seconds; no automatic retry was performed."
+                if timed_out
+                else None,
+                "stdout": output[:12000],
+                "stderr": errors[:12000],
+                "stdout_truncated": len(output) > 12000,
+                "stderr_truncated": len(errors) > 12000,
+            }
+        except Exception as exc:
+            # 全局统一异常捕获：返回结构化错误字典并展示异常信息，避免破坏 Agent 图执行
+            return {
+                "file_path": file_path,
+                "stdout_path": None,
+                "stderr_path": None,
+                "exit_code": 1,
+                "timed_out": False,
+                "error": f"{type(exc).__name__}: {exc}",
+                "stdout": "",
+                "stderr": f"{type(exc).__name__}: {exc}",
+                "stdout_truncated": False,
+                "stderr_truncated": False,
+            }
 
     @staticmethod
     def python_file_tool(workspace: Path, interpreter: str) -> Callable[..., Any]:

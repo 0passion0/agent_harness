@@ -65,6 +65,18 @@ test('InlineActivity renders active tools and completed executions beautifully',
   expect(html).toContain('is-running')
 })
 
+test('activity summaries show command previews and duration while retaining failure details', () => {
+  const html = renderToStaticMarkup(<InlineActivity elapsed={385} records={[
+    { kind: 'tool_end', call_id: 'cmd', name: 'shell_exec', arguments: { command: 'npm run typecheck' }, status: 'success' },
+    { kind: 'tool_error', call_id: 'edit', name: 'edit_file', arguments: { path: 'src/App.tsx' }, status: 'failed', output: 'Permission denied' }
+  ]} />)
+  expect(html).toContain('用时 6分25秒')
+  expect(html).toContain('已运行 npm run typecheck')
+  expect(html).toContain('未能编辑 src/App.tsx')
+  expect(html).toContain('is-error')
+  expect(html).toContain('1 失败')
+})
+
 test('merges tool starts, ends and the tool dictionary without merging separate calls', () => {
   const records: RunRecord[] = [
     { kind: 'tool_start', call_id: 'one', name: 'read_file', status: 'running', arguments: { path: 'one.csv' } },
@@ -88,7 +100,7 @@ test('merges tool starts, ends and the tool dictionary without merging separate 
   expect(failed).not.toContain('is-complete')
 })
 
-test('keeps ordinary tool history after the final answer, after reload and in the correct turn', () => {
+test('keeps tool history before the final answer, after reload and in the correct turn', () => {
   const records: RunRecord[] = [
     { kind: 'tool_start', call_id: 'one', name: 'read_file', status: 'running', arguments: {path: 'data.csv'} },
     { kind: 'tool_end', call_id: 'one', name: 'read_file', status: 'success', output: 'ok' }
@@ -104,8 +116,9 @@ test('keeps ordinary tool history after the final answer, after reload and in th
   state = reduceAgent(state, {event:'run.finished',session_id:'s',run_id:'r',data:{status:'complete',snapshot}})
   for (const current of [state, reduceAgent(state, {event:'snapshot.loaded',data:snapshot})]) {
     const html = renderToStaticMarkup(<Conversation state={current} openArtifact={() => {}} />)
-    expect(html.indexOf('第一轮答案')).toBeLessThan(html.indexOf('saved-run-activity'))
-    expect(html.indexOf('saved-run-activity')).toBeLessThan(html.indexOf('第二轮问题'))
+    expect(html.indexOf('第一轮问题')).toBeLessThan(html.indexOf('saved-run-activity'))
+    expect(html.indexOf('saved-run-activity')).toBeLessThan(html.indexOf('第一轮答案'))
+    expect(html.indexOf('第一轮答案')).toBeLessThan(html.indexOf('第二轮问题'))
     expect(html).toContain('read_file')
     expect(html).toContain('1 项操作')
     expect(html.match(/class="act-item /g)).toHaveLength(1)

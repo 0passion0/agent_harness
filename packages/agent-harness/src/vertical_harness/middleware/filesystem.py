@@ -100,8 +100,8 @@ class HarnessFilesystemMiddleware(FilesystemMiddleware):
                 )
             recovered = self.backend._to_virtual_path(alternate)
             return recovered, self._authorize("read", recovered)
-        except (OSError, ValueError) as exc:
-            return validated, f"Cannot read file ({type(exc).__name__})."
+        except Exception as exc:
+            return validated, f"Cannot read file ({type(exc).__name__}: {exc})."
 
     def _read_directory(
         self, file_path: str, offset: int, limit: int, runtime: ToolRuntime
@@ -128,9 +128,9 @@ class HarnessFilesystemMiddleware(FilesystemMiddleware):
                 for name, is_dir in FileReader.directory_entries(path)
                 if not self._authorize("read", file_path.rstrip("/") + "/" + name)
             ]
-        except (OSError, ValueError) as exc:
+        except Exception as exc:
             return ToolMessage(
-                content=f"Cannot read directory: {exc}",
+                content=f"Cannot read directory ({type(exc).__name__}): {exc}",
                 status="error",
                 name="read_file",
                 tool_call_id=runtime.tool_call_id,
@@ -169,9 +169,9 @@ class HarnessFilesystemMiddleware(FilesystemMiddleware):
             value = FileReader.read_supported_media(
                 self.backend._resolve_path(file_path), pdf=native_media
             )
-        except (OSError, ValueError) as exc:
+        except Exception as exc:
             return ToolMessage(
-                content=str(exc),
+                content=f"{type(exc).__name__}: {exc}",
                 status="error",
                 name="read_file",
                 tool_call_id=runtime.tool_call_id,
@@ -355,7 +355,7 @@ class HarnessFilesystemMiddleware(FilesystemMiddleware):
                     ):
                         candidates[str(instruction)] = instruction.read_text(encoding="utf-8-sig")
                     parent = parent.parent
-            except (OSError, ValueError):
+            except Exception:
                 continue
         if not candidates:
             return None
@@ -670,9 +670,9 @@ class HarnessFilesystemMiddleware(FilesystemMiddleware):
             content, artifact = self.backend.apply_patch(
                 patch_text, lambda path: self._authorize("write", path)
             )
-        except (OSError, ValueError) as exc:
+        except Exception as exc:
             return ToolMessage(
-                content=str(exc),
+                content=f"{type(exc).__name__}: {exc}",
                 status="error",
                 name="apply_patch",
                 tool_call_id=runtime.tool_call_id,
@@ -700,9 +700,9 @@ class HarnessFilesystemMiddleware(FilesystemMiddleware):
             content, artifact = await self.backend.aapply_patch(
                 patch_text, lambda path: self._authorize("write", path)
             )
-        except (OSError, ValueError) as exc:
+        except Exception as exc:
             return ToolMessage(
-                content=str(exc),
+                content=f"{type(exc).__name__}: {exc}",
                 status="error",
                 name="apply_patch",
                 tool_call_id=runtime.tool_call_id,

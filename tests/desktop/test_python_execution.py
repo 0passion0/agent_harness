@@ -56,8 +56,9 @@ def test_python_exposes_script_failure_and_output_truncation(tmp_path, monkeypat
     assert len(result["stdout"]) == 12000
     assert result["stdout"] == "中" * 12000
     assert (tmp_path / result["stdout_path"].removeprefix("/")).stat().st_size > 12000
-    with pytest.raises(ValueError, match="must not be blank"):
-        asyncio.run(tool.ainvoke({"file_path": " "}))
+    blank_result = asyncio.run(tool.ainvoke({"file_path": " "}))
+    assert blank_result["exit_code"] == 1
+    assert "must not be blank" in blank_result["error"]
 
 
 def test_script_path_validation_precedes_execution(tmp_path):
@@ -66,12 +67,17 @@ def test_script_path_validation_precedes_execution(tmp_path):
     (tmp_path / "outside.py").write_text("raise AssertionError('must not run')", encoding="utf-8")
     (workspace / "data.txt").write_text("not Python", encoding="utf-8")
     tool = PythonExecution.python_file_tool(workspace, sys.executable)
-    with pytest.raises(ValueError, match="inside the workspace"):
-        asyncio.run(tool.ainvoke({"file_path": "../outside.py"}))
-    with pytest.raises(ValueError, match="\\.py file"):
-        asyncio.run(tool.ainvoke({"file_path": "data.txt"}))
-    with pytest.raises(FileNotFoundError):
-        asyncio.run(tool.ainvoke({"file_path": "missing.py"}))
+    outside_result = asyncio.run(tool.ainvoke({"file_path": "../outside.py"}))
+    assert outside_result["exit_code"] == 1
+    assert "inside the workspace" in outside_result["error"]
+    not_py_result = asyncio.run(tool.ainvoke({"file_path": "data.txt"}))
+    assert not_py_result["exit_code"] == 1
+    assert ".py file" in not_py_result["error"]
+    missing_result = asyncio.run(tool.ainvoke({"file_path": "missing.py"}))
+    assert missing_result["exit_code"] == 1
+    assert missing_result["error"] == "FileNotFoundError: File does not exist: /missing.py"
+    assert "FileNotFoundError" in missing_result["stderr"]
+    assert missing_result["stdout"] == ""
     assert not (workspace / "runs").exists()
 
 

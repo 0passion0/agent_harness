@@ -442,7 +442,7 @@ class CodeFormatter:
         """
         try:
             return path.read_text(encoding="utf-8")
-        except (OSError, UnicodeError):
+        except Exception:
             return ""
 
     def _detect(self, name: str, arguments: tuple[str, ...]) -> list[str] | None:
@@ -469,7 +469,7 @@ class CodeFormatter:
         }:
             try:
                 return self._detect_project(name, arguments)
-            except (OSError, ValueError):
+            except Exception:
                 return None
 
         # 第二步：针对通用工具检查 PATH 是否包含可执行文件
