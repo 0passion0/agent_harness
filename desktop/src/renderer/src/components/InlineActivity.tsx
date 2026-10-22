@@ -209,7 +209,7 @@ export function InlineActivity({ records = [], tools = {}, running = false, stat
   const duration = seconds === null ? '' : `用时 ${seconds >= 60 ? `${Math.floor(seconds / 60)}分` : ''}${seconds % 60}秒`
   const label = status === 'paused' ? '等待你的答复' : status === 'stopping' ? '正在停止' : status === 'cancelled' ? '执行已取消' : status === 'failed' ? '执行失败' : status === 'disconnected' ? '连接已中断' : isRunning ? (current?.name || current?.node || '正在处理') : '运行了工具'
 
-  if (toolRecords.length === 0 && !isRunning && !records.some(record => record.kind === 'workflow')) {
+  if (toolRecords.length === 0) {
     return null
   }
 
@@ -243,12 +243,6 @@ export function InlineActivity({ records = [], tools = {}, running = false, stat
           {toolRecords.map((item, idx) => (
               <ActivityItem key={item.call_id ?? item.operation_id ?? idx} record={item} status={statuses[idx]} />
           ))}
-          {toolRecords.length === 0 && isRunning && (
-            <div className="act-empty-loading">
-              <Loader2 size={14} className="act-spinner" />
-              <span>正在建立模型推理流与执行计划…</span>
-            </div>
-          )}
         </div>
     </details>
   )

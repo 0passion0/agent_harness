@@ -7,6 +7,7 @@ const preload = path.join(process.env.DESKTOP_SMOKE_DIR, 'preload.cjs')
 writeFileSync(preload, `
 const { contextBridge } = require('electron')
 const listeners = new Set()
+const tick = String.fromCharCode(96)
 const snapshot = { session_id:'chat',thread_id:'chat',thread_ids:['chat'],messages:[],attachments:[],artifacts:[],runs:[],totals:{},unsettled_history:false }
 const application = { build_mode:'development',projects:[{id:'project',name:'测试项目',path:'C:/workspace'}],active_project_id:'project',model:{provider:'deepseek',model:'test'},runtimes:{python:'',node:''},permission_mode:'ask',data_dir:'data' }
 const projects = [{id:'project',name:'workspace',path:'C:/workspace'},{id:'other',name:'another-app',path:'D:/projects/another-app'}]
@@ -34,11 +35,29 @@ contextBridge.exposeInMainWorld('medpeer', {
         return config
       }
       case 'run.start':
+        if(command.params.text === '验证图表') {
+          const fence = tick.repeat(3), newline = String.fromCharCode(10)
+          const text = [fence+'svg','<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 80"><rect width="160" height="80" fill="#e8f3ff"/><circle cx="80" cy="40" r="24" fill="#6158db"/></svg>',fence,'',fence+'MERMAID','graph TD','A[开始] --> B[完成]',fence,'',fence+'typescript','const answer: number = 42',fence].join(newline)
+          const split = text.indexOf('<') + 1
+          const emit = chunk => { for(const fn of listeners) fn({event:'run.event',session_id:'chat',run_id:command.id,data:{kind:'text',text:chunk}}) }
+          setTimeout(() => emit(text.slice(0, split)), 50)
+          setTimeout(() => emit(text.slice(split)), 350)
+          setTimeout(() => {
+            snapshot.messages.push({type:'human',data:{id:'u2',content:command.params.text}},{type:'ai',data:{content:text}})
+            snapshot.runs.push({id:command.id,user_message_id:'u2',status:'complete',elapsed:1,tools:{},requests:[],records:[]})
+            for(const fn of listeners) fn({event:'run.finished',session_id:'chat',run_id:command.id,data:{status:'complete',snapshot}})
+          }, 1400)
+          return {run_id:command.id}
+        }
         setTimeout(() => {
           snapshot.messages = [
             {type:'human',data:{id:'u1',content:command.params.text}},
             {type:'ai',data:{content:'明白，我会细化按钮、下拉框和表单对齐，重点检查页面的一致性。保存按钮会使用浅色强调底，减少大面积高饱和填色；代码上会把设置页样式收回组件目录，并补齐表单标签和键盘焦点状态。'}},
-            {type:'ai',data:{content:['已完成验证，保留原有色系，减少高饱和填色。','','- 统一按钮、下拉框、输入框的尺寸、圆角和交互状态。','- 调整导航、卡片分组与留白，宽屏双列、窄屏单列。','- 整理组件样式与导航定义，补齐表单标签和键盘焦点。','','类型检查、6 项测试、构建及三种窗口宽度的 Electron 检查均通过。'].join(String.fromCharCode(10))}}
+            {type:'ai',data:{content:['已完成验证，保留原有色系，减少高饱和填色。','','- 统一按钮、下拉框、输入框的尺寸、圆角和交互状态。','- 调整导航、卡片分组与留白，宽屏双列、窄屏单列。','- 整理组件样式与导航定义，补齐表单标签和键盘焦点。','','目录 '+tick+'desktop/'+tick+'，文件 '+tick+'src/App.tsx'+tick+'，函数 '+tick+'create_agent'+tick+' 保持为普通文字。','','类型检查、6 项测试、构建及三种窗口宽度的 Electron 检查均通过。'].join(String.fromCharCode(10))}}
+          ]
+          snapshot.artifacts = [
+            {id:'old-file',workspace_id:'project',name:'旧报告.pdf',relative_path:'exports/old.pdf',media_type:'application/pdf',source_run_id:'old'},
+            {id:'new-file',workspace_id:'project',name:'本轮报告.pdf',relative_path:'exports/new.pdf',media_type:'application/pdf',source_run_id:command.id}
           ]
           snapshot.runs = [{id:command.id,user_message_id:'u1',status:'complete',elapsed:385,tools:{},requests:[],records:[
             {kind:'tool_end',call_id:'edit-1',name:'edit_file',arguments:{path:'src/App.tsx'},status:'success',output:'Updated'},
@@ -62,7 +81,7 @@ contextBridge.exposeInMainWorld('medpeer', {
 `)
 const deadline = setTimeout(() => { console.error('Renderer smoke timed out'); app.exit(1) }, 20000)
 app.whenReady().then(async () => {
-  const window = new BrowserWindow({ show:false, webPreferences:{preload,contextIsolation:true} })
+  const window = new BrowserWindow({ show:false, webPreferences:{preload,contextIsolation:true,backgroundThrottling:false} })
   const url = process.env.ELECTRON_RENDERER_URL
   if(url) await window.loadURL(url)
   else await window.loadFile(path.join(__dirname,'../out/renderer/index.html'))
@@ -178,6 +197,10 @@ app.whenReady().then(async () => {
       await new Promise(resolve => setTimeout(resolve, 100))
       const pane = document.querySelector('.conversation')
       pane.scrollTop = 0
+      const inline = pane.querySelector('.modern-inline-code')
+      if(!inline || getComputedStyle(inline).backgroundColor !== 'rgba(0, 0, 0, 0)' || getComputedStyle(inline).borderTopWidth !== '0px') throw new Error('Inline code still has a colored badge')
+      if(pane.querySelector('.message-content .file-link-chip')) throw new Error('Inline paths became file widgets')
+      if(!pane.textContent.includes('本轮报告.pdf') || pane.textContent.includes('旧报告.pdf')) throw new Error('Transcript shows stale deliveries')
       const assistant = document.querySelector('.message.ai')
       if(getComputedStyle(assistant).paddingLeft !== '0px') throw new Error('Assistant transcript is indented')
       if(document.querySelector('.message-avatar')) throw new Error('Assistant avatar is still present')
@@ -193,6 +216,39 @@ app.whenReady().then(async () => {
     })()`)
     writeFileSync(path.join(__dirname, '../test-artifacts', `codex-conversation-${width}.png`), (await window.webContents.capturePage()).toPNG())
   }
+  window.setContentSize(1000, 1040)
+  await window.webContents.executeJavaScript(`(async () => {
+    const until = async predicate => { for(let i=0;i<160;i++){ if(predicate()) return; await new Promise(resolve=>setTimeout(resolve,40)) }; throw new Error('Rich content condition timed out') }
+    const input = document.querySelector('[aria-label="任务输入"]')
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(input,'验证图表')
+    input.dispatchEvent(new Event('input',{bubbles:true}))
+    await until(() => !document.querySelector('[aria-label="提交任务"]').disabled)
+    document.querySelector('[aria-label="提交任务"]').click()
+    await until(() => document.querySelector('.is-active-response .modern-code-block'))
+    await until(() => document.querySelector('.is-active-response .svg-preview-frame'))
+    await until(() => !document.querySelector('.is-active-response'))
+    await until(() => document.querySelector('.modern-mermaid-block .svg-preview-frame'))
+    const mermaid = document.querySelector('.modern-mermaid-block')
+    if(!mermaid.querySelector('iframe').srcdoc.includes('<svg')) throw new Error('Mermaid did not render SVG')
+    const button = (root, title) => [...root.querySelectorAll('button')].find(element => element.title === title)
+    button(mermaid,'查看图表源代码').click()
+    await until(() => mermaid.querySelector('pre'))
+    if(!mermaid.querySelector('pre').textContent.includes('graph TD')) throw new Error('Mermaid source is unavailable')
+    button(mermaid,'切换为可视化图表').click()
+    await until(() => mermaid.querySelector('iframe'))
+    const svg = [...document.querySelectorAll('.modern-code-block')].find(element => element.querySelector('.modern-code-lang')?.textContent === 'SVG')
+    if(!svg.querySelector('iframe').srcdoc.includes('<circle')) throw new Error('SVG preview lost the drawing')
+    button(svg,'查看 SVG 源代码').click()
+    await until(() => svg.querySelector('pre'))
+    button(svg,'预览 SVG 图表').click()
+    await until(() => svg.querySelector('iframe'))
+    if(!svg.querySelector('[aria-label="全屏查看图表"]') || !svg.querySelector('[aria-label="下载 SVG"]')) throw new Error('SVG controls are missing')
+    const code = [...document.querySelectorAll('.modern-code-block')].find(element => element.querySelector('.modern-code-lang')?.textContent === 'TYPESCRIPT')
+    if(!code.querySelector('.token.keyword') || !code.querySelector('[title="复制代码"]')) throw new Error('Code highlighting or copy control is missing')
+    mermaid.scrollIntoView({block:'center'})
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+  })()`)
+  writeFileSync(path.join(__dirname, '../test-artifacts/conversation-rich-content.png'), (await window.webContents.capturePage()).toPNG())
   console.log('Electron smoke passed: conversation, real project choices, isolated instructions and skill import/edit/delete')
   clearTimeout(deadline)
   window.destroy()

@@ -46,7 +46,8 @@ test('long report tables scroll independently and saved messages have no empty h
   expect(html).toContain('class="message-table-scroll" role="region"')
   expect(html).toContain('tabindex="0"><table>')
   expect(html).not.toContain('message-header-row')
-  expect(html).toContain('aria-label="打开 商品表"')
+  expect(html).toContain('class="transcript-file-link" href="data/products.csv"')
+  expect(html).not.toContain('file-link-chip')
   expect(html).not.toContain('file-chip-sub')
 })
 
@@ -126,7 +127,7 @@ test('keeps tool history before the final answer, after reload and in the correc
   }
 })
 
-test('Conversation renders copy buttons, file chips and code block headers in markdown', () => {
+test('Conversation keeps inline paths as text while retaining code blocks and streaming output', () => {
   const html = renderToStaticMarkup(<Conversation
     openArtifact={() => {}}
     state={{
@@ -153,14 +154,15 @@ test('Conversation renders copy buttons, file chips and code block headers in ma
   expect(html).toContain('TYPESCRIPT')
   expect(html).toContain('modern-code-copy')
 
-  // File link chips rendered inside message
-  expect(html).toContain('file-link-chip')
+  // Mentioned paths remain text rather than automatic file widgets.
+  expect(html).not.toContain('file-link-chip')
+  expect(html).not.toContain('0 项操作')
   expect(html).toContain('package.json')
   expect(html).toContain('README.md')
   expect(html).toContain('App.tsx')
 
-  // Streaming cursor
-  expect(html).toContain('streaming-cursor')
+  expect(html).toContain('message-markdown-wrap is-streaming')
+  expect(html).not.toContain('streaming-cursor')
 })
 
 test('Conversation renders Mermaid diagram blocks and HTML live preview switchers', () => {

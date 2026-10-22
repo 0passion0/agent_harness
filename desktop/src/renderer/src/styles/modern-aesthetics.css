@@ -495,7 +495,6 @@
 
 /* 消息正文与表格沿用同一阅读宽度，滚动只发生在表格内部。 */
 .product-v3 .message-content { font-size: 15px; line-height: 1.8; }
-.product-v3 .message-markdown-wrap.is-streaming > p:nth-last-child(2) { display: inline; }
 .product-v3 .message-markdown-wrap > :first-child { margin-top: 0; }
 .product-v3 .message-markdown-wrap > :last-child { margin-bottom: 0; }
 .product-v3 .message-content h1 { font-size: 22px; }

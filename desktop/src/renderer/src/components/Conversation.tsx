@@ -24,10 +24,10 @@ import 'prismjs/components/prism-markdown'
 import 'prismjs/components/prism-sql'
 import 'prismjs/components/prism-yaml'
 import 'prismjs/components/prism-css'
-import { ArrowDown, BarChart3, Check, Code, Copy, Download, Eye, Layers, Maximize2, Minimize2, Minus, Plus, RotateCcw } from 'lucide-react'
+import { ArrowDown, BarChart3, Check, Code, Copy, Download, Eye, Maximize2, Minimize2, Minus, Plus, RotateCcw } from 'lucide-react'
 import type { AgentState } from '../state/agent-state'
 import type { ArtifactRef, Snapshot, RunRecord } from '../../../shared/protocol'
-import { FileLink, isFilePath } from './FileLink'
+import { cleanPath, isFilePath } from './FileLink'
 import { InlineActivity } from './InlineActivity'
 import './conversation.css'
 
@@ -452,7 +452,8 @@ function CodeBlock({ language, code }: { language?: string; code: string }) {
   const [copied, setCopied] = useState(false)
   const isHtml = language?.toLowerCase() === 'html' || language?.toLowerCase() === 'htm'
   const isSvg = (language?.toLowerCase() === 'svg' || language?.toLowerCase() === 'xml') && /<svg\b/i.test(code)
-  const [viewMode, setViewMode] = useState<'code' | 'preview'>(() => isHtml || isSvg ? 'preview' : 'code')
+  const [selectedView, setViewMode] = useState<'code' | 'preview' | null>(null)
+  const viewMode = selectedView ?? (isHtml || isSvg ? 'preview' : 'code')
 
   const handleCopy = (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -553,7 +554,7 @@ function CodeBlock({ language, code }: { language?: string; code: string }) {
 /**
  * Markdown 排版与自定义组件映射器。
  * 支持 GitHub Flavored Markdown (GFM)，并安全重定向超链接与图片协议。
- * 自动识别文件路径转换为可直接点击穿透打开的交互式胶囊。
+ * 行内代码保持文本，仅显式文件链接支持打开。
  * 使用 React.memo 与 useMemo 深度稳定子组件引用，彻底消除会话滚动过程中的子组件卸载与重绘抖动。
  */
 const MessageMarkdown = React.memo(function MessageMarkdown({
@@ -575,9 +576,9 @@ const MessageMarkdown = React.memo(function MessageMarkdown({
         <table>{children}</table>
       </div>
     ),
-    // 自定义代码块与行内代码：行内文件路径转换为 FileLink，多行代码块添加复制按钮与语言头部
+    // 只有代码块使用独立容器，行内代码不自动升级为文件组件。
     pre: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
-    code: ({ className, children, ...props }: React.ComponentPropsWithoutRef<'code'>) => {
+    code: ({ className, children, node: _node, ...props }: React.ComponentPropsWithoutRef<'code'> & { node?: unknown }) => {
       const match = /language-(\w+)/.exec(className || '')
       const textContent = String(children)
       // 若为 Mermaid 流程图或时序图代码块
@@ -588,25 +589,22 @@ const MessageMarkdown = React.memo(function MessageMarkdown({
       if (match || textContent.includes('\n')) {
         return <CodeBlock language={match ? match[1] : ''} code={textContent.replace(/\n$/, '')} />
       }
-      // 若为行内代码且符合文件或目录路径特征，渲染为高颜值文件胶囊
-      const trimmed = textContent.trim()
-      if (isFilePath(trimmed)) {
-        return <FileLink path={trimmed} inline openArtifact={openArtifactRef.current} />
-      }
       return <code className="modern-inline-code" {...props}>{children}</code>
     },
     // 自定义超链接处理：外部链接浏览器打开，交付物/文件链接原生打开与穿透定位
-    a: ({ href, children, ...props }: React.ComponentPropsWithoutRef<'a'>) => {
+    a: ({ href, children, node: _node, ...props }: React.ComponentPropsWithoutRef<'a'> & { node?: unknown }) => {
       if (!href) return <span {...props}>{children}</span>
       // 检测是否属于本地物理文件或交付物协议
       if (href.startsWith('medpeer-artifact:') || href.startsWith('file://') || isFilePath(href)) {
-        return (
-          <FileLink
-            path={href}
-            title={typeof children === 'string' ? children : undefined}
-            openArtifact={openArtifactRef.current}
-          />
-        )
+        let path: string
+        try { path = href.startsWith('medpeer-artifact:') ? decodeURIComponent(href.slice('medpeer-artifact:'.length)) : cleanPath(href) }
+        catch { return <span>{children}</span> }
+        return <a {...props} className="transcript-file-link" href={href} onClick={event => {
+          event.preventDefault()
+          if (href.startsWith('medpeer-artifact:')) openArtifactRef.current(path)
+          else if (path.endsWith('/') || path.endsWith('\\')) void window.medpeer.openWorkspaceFolder(path)
+          else void window.medpeer.openWorkspaceFile(path).catch(() => window.medpeer.showItemInFolder(path))
+        }}>{children}</a>
       }
       return (
         <a
@@ -646,8 +644,6 @@ const MessageMarkdown = React.memo(function MessageMarkdown({
       >
         {rawText}
       </ReactMarkdown>
-      {/* 实时流式输出闪烁游标 */}
-      {isStreaming && <span className="streaming-cursor" aria-hidden="true" />}
     </div>
   )
 }, (prev, next) => {
@@ -682,10 +678,8 @@ function ArtifactCard({ artifact, open }: { artifact: ArtifactRef; open(path: st
     <details className="artifact-card modern-artifact-card" open={expanded} onToggle={event => setExpanded(event.currentTarget.open)}>
       <summary>
         <span className="artifact-title">
-          <Layers size={13} className="artifact-icon" />
           <strong>{artifact.name}</strong>
         </span>
-        <small>{artifact.media_type}</small>
       </summary>
       {error && <p role="alert">{error}</p>}
       {preview && <img src={preview} alt={artifact.name} />}
@@ -775,6 +769,8 @@ export function Conversation({ state, openArtifact }: { state: AgentState; openA
   const isStreaming = state.stream.length > 0
   const isThinking = isRunning && state.stream.length === 0
   const activeRun = state.snapshot?.active_run
+  const latestRunId = state.runId ?? activeRun?.id ?? state.lastFinishedRunId ?? state.snapshot?.runs.at(-1)?.id
+  const artifacts = React.useMemo(() => (state.snapshot?.artifacts ?? []).filter(artifact => latestRunId && artifact.source_run_id === latestRunId), [state.snapshot?.artifacts, latestRunId])
   const hasLiveRun = Boolean(state.runId || (!state.lastRunSaved && (activeRun || state.runLog.length)) || isRunning)
   const activityStatus = state.phase === 'question' || (!state.runId && activeRun && state.phase === 'idle') ? 'paused' : state.phase
   const liveRecords = [...(activeRun?.records ?? []), ...state.runLog]
@@ -846,12 +842,11 @@ export function Conversation({ state, openArtifact }: { state: AgentState; openA
         {/* 实时流式响应气泡或思考中气泡 */}
         {(isStreaming || hasLiveRun) && (
           <article className="message ai is-active-response" aria-label="MedPeer" aria-busy={isRunning}>
-            <div className="message-header-row">
+            {!isStreaming && <div className="message-header-row">
               <div className="message-label streaming-label">
-                <span className="streaming-pulse-dot" />
                 {state.phase === 'question' ? '等待你的答复' : state.phase === 'stopping' ? '正在停止…' : state.phase === 'disconnected' ? '连接已中断' : state.phase === 'idle' ? '等待继续' : isThinking ? '正在思考…' : '正在回复'}
               </div>
-            </div>
+            </div>}
 
             <InlineActivity records={liveRecords} tools={state.tools} running={isRunning} status={activityStatus} />
 
@@ -879,19 +874,8 @@ export function Conversation({ state, openArtifact }: { state: AgentState; openA
 
         {state.snapshot?.runs.filter(run => !run.user_message_id || !lastMessageByUser.has(run.user_message_id)).map(savedActivity)}
 
-        {/* 会话附件列表 */}
-        {state.snapshot?.attachments.map(attachment => (
-          <button
-            className="attachment-chip modern-attachment-chip"
-            key={attachment.id}
-            onClick={() => void window.medpeer.openAttachment(attachment.id)}
-          >
-            {attachment.name}
-          </button>
-        ))}
-
-        {/* 交付物卡片列表 */}
-        {state.snapshot?.artifacts.map(artifact => (
+        {/* 仅展示最新一轮生成的交付文件。 */}
+        {artifacts.map(artifact => (
           <ArtifactCard key={artifact.id} artifact={artifact} open={openArtifact} />
         ))}
 

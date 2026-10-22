@@ -96,16 +96,26 @@
 .product-v3 .codex-conversation .conversation-bottom-toolbar:hover .conv-toolbar-btn,
 .product-v3 .codex-conversation .conv-toolbar-btn:focus-visible { opacity: 1; }
 .product-v3 .codex-conversation .modern-back-bottom { display: grid; place-items: center; left: 50%; right: auto; bottom: 16px; transform: translateX(-50%); width: 32px; height: 32px; padding: 0; border: 1px solid var(--chat-line); border-radius: 50%; background: var(--chat-surface); color: var(--chat-text); box-shadow: 0 2px 6px #00000008; }
-.product-v3 .codex-conversation .modern-code-block { border-color: var(--chat-line); border-radius: 10px; background: var(--chat-surface); box-shadow: none; }
-.product-v3 .codex-conversation .modern-code-header { background: var(--chat-surface); border-color: var(--chat-line); }
-.product-v3 .codex-conversation .code-dot { display: none; }
-.product-v3 .codex-conversation .file-link-chip { padding: 0 2px; border: 0; background: transparent; box-shadow: none; font: inherit; color: inherit; }
-.product-v3 .codex-conversation .file-chip-main { font: inherit; text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 3px; }
+.product-v3 .codex-conversation .file-link-chip { padding: 0; border: 0; background: transparent; box-shadow: none; font: inherit; color: inherit; }
+.product-v3 .codex-conversation .file-link-chip:is(.is-dir, .is-file):hover { background: transparent; border-color: transparent; color: inherit; }
+.product-v3 .codex-conversation .file-chip-main { padding: 0; font: inherit; text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 3px; }
 .product-v3 .codex-conversation .file-chip-name { max-width: 100%; font-weight: 400; }
+.product-v3 .codex-conversation .file-chip-main > svg,
 .product-v3 .codex-conversation .file-chip-actions { display: none; }
-.product-v3 .codex-conversation .act-item-title .file-chip-main > svg { display: none; }
-.product-v3 .codex-conversation .file-link-chip:hover .file-chip-actions,
-.product-v3 .codex-conversation .file-link-chip:focus-within .file-chip-actions { display: inline-flex; }
+.product-v3 .codex-conversation .message-content .modern-inline-code {
+  padding: 0 2px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font-size: .92em;
+  font-weight: 400;
+}
+.product-v3 .codex-conversation .transcript-file-link { color: inherit; text-decoration: underline; text-decoration-color: var(--chat-muted); text-underline-offset: 3px; }
+.product-v3 .codex-conversation .modern-artifact-card { margin: 16px 0; padding: 10px 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+.product-v3 .codex-conversation .modern-artifact-card summary { justify-content: flex-start; gap: 12px; color: var(--chat-text); }
+.product-v3 .codex-conversation .modern-artifact-card .artifact-title strong { font-size: 13px; font-weight: 400; }
+.product-v3 .codex-conversation .modern-artifact-card .artifact-actions button { color: var(--chat-text); background: transparent; border: 1px solid var(--chat-line); box-shadow: none; }
 @media (max-width: 720px) {
   .product-v3 .codex-conversation .conversation { padding: 24px 20px; }
   .product-v3 .codex-conversation .message.human { max-width: 86%; }
