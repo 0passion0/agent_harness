@@ -139,6 +139,19 @@ async function start(): Promise<void> {
   // ===== 3. 交付成果与技能导入路由 =====
   handle('artifact:open', async file => open(desktop.storage().resolveArtifact(text(file))))
   handle('artifact:read', file => desktop.storage().readArtifact(text(file)))
+  // 3.3 技能 ZIP 归档导入原生对话框路由
+  handle('skills:import', async (scope, projectId) => {
+    // 第一步：确保主状态处于空闲（idle）状态，断言校验作用域与项目参数合法性
+    idle()
+    if (scope !== 'global' && scope !== 'project') throw new Error('配置范围无效')
+    if (typeof projectId !== 'string') throw new Error('项目参数无效')
+    // 第二步：调起系统原生单选文件选择器，筛选 .zip 归档文件
+    const result = await dialog.showOpenDialog(window, {
+      properties: ['openFile'], filters: [{ name: 'Skill ZIP', extensions: ['zip'] }]
+    })
+    // 第三步：若用户取消则返回 null，否则调用 application.importSkills 执行解压与归档导入
+    return result.canceled ? null : desktop.importSkills(scope, projectId, result.filePaths[0])
+  })
 
   // ===== 4. 附件导入、拖拽与读取路由 =====
   handle('attachment:import', async () => {

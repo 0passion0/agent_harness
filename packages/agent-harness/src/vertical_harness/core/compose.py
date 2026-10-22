@@ -1,13 +1,19 @@
-"""组装具备工作区文件系统、网络检索与受控 Python 脚本执行能力的单一智能体核心编排模块。"""
+"""组装具备工作区文件系统、网络检索与受控 Python 脚本执行能力的单一智能体核心编排模块。
+
+:author: tongliga
+:date: 2026-10-22
+"""
 
 from __future__ import annotations
 
 import logging
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager, contextmanager
+from pathlib import Path
 from typing import Any
 
 from deepagents import FilesystemPermission, create_deep_agent
+from deepagents.backends import CompositeBackend, FilesystemBackend
 from deepagents.backends.protocol import BackendProtocol
 from deepagents.middleware.summarization import SummarizationMiddleware
 from langchain.agents.middleware import TodoListMiddleware
@@ -64,7 +70,7 @@ class AgentComposer:
     """智能体核心编排器，负责装配中间件栈、存储后端、工具及编译原生 LangGraph 图。
 
     :author: tongliga
-    :date: 2026-10-21
+    :date: 2026-10-22
     """
 
     @staticmethod
@@ -84,7 +90,7 @@ class AgentComposer:
         :return: 配置完成的 DeepAgents 原生 SummarizationMiddleware 中间件实例。
         :rtype: deepagents.middleware.summarization.SummarizationMiddleware
         :author: tongliga
-        :date: 2026-10-21
+        :date: 2026-10-22
         """
         # 第一步：读取模型 profile 中声明的最大输入 Token 上限
         max_input_tokens = (model.profile or {}).get("max_input_tokens")
@@ -132,25 +138,46 @@ class AgentComposer:
         :type checkpointer: typing.Any
         :param options: 可选的桌面与运行参数字典（如 max_context_tokens、permission_mode、agent_content 等）。
         :type options: dict[str, typing.Any] | None
+        :param shell_execution: 可选的 Shell 外部命令执行引擎。
+        :type shell_execution: vertical_harness.tools.shell_execution.ShellExecution | None
         :return: 编译完成的原生 CompiledStateGraph 智能体对象。
         :rtype: typing.Any
         :author: tongliga
-        :date: 2026-10-21
+        :date: 2026-10-22
         """
-        # 第一步：解析并创建工作区物理根路径，挂载虚拟文件系统后端
+        # 第一步：解析并创建工作区物理根路径，挂载虚拟文件系统与系统级技能存储后端
         options = options or {}
         root = settings.resolved_workspace_root
         root.mkdir(parents=True, exist_ok=True)
         backend = DocumentFilesystemBackend(
             root_dir=root, virtual_mode=True, formatter=CodeFormatter(root, settings.formatter)
         )
+        system_root = Path.home() / ".agent-harness"
+        system_skills = FilesystemBackend(root_dir=system_root / "skills")
+        skill_backend = CompositeBackend(
+            default=backend,
+            routes={"/.agent-harness/skills/": system_skills},
+        )
+        skills = [
+            source
+            for path, source in (
+                (system_root / "skills", "/.agent-harness/skills/"),
+                (root / ".agents" / "skills", "/.agents/skills/"),
+            )
+            if path.is_dir()
+        ]
         model = ModelRouting.init_configured_model(settings)
 
-        # 第二步：配置敏感文件防访问安全沙箱规则（严格拒绝访问 .env 与数据库文件）
+        # 第二步：配置敏感文件防访问安全沙箱规则（严格拒绝访问 .env、持久化数据库文件及系统级技能写保护）
         permissions = [
             FilesystemPermission(
                 operations=["read", "write"], paths=["/**/.env", "/**/.env.*"], mode="deny"
-            )
+            ),
+            FilesystemPermission(
+                operations=["write"],
+                paths=["/.agent-harness/skills", "/.agent-harness/skills/**"],
+                mode="deny",
+            ),
         ]
         for target in (
                 settings.resolved_store_target,
@@ -177,7 +204,7 @@ class AgentComposer:
                 )
             )
 
-        # 第三步：配置原生中间件及宿主的路由、预算、权限与审批。
+        # 第三步：配置原生中间件及宿主的路由、预算、权限与审批
         maximum = options.get("max_context_tokens", 475_000)
         middleware = []
         if settings.enable_planning:
@@ -186,7 +213,9 @@ class AgentComposer:
             middleware.append(router)
         middleware.extend(
             [
-                ProjectInstructionsMiddleware(backend, permissions),
+                ProjectInstructionsMiddleware(
+                    backend, permissions, system_instructions=system_root / "AGENTS.md"
+                ),
                 ExecutionLimitsMiddleware(settings.max_steps),
                 cls._summarization_middleware(model, backend, maximum),
                 ContextLimitMiddleware(maximum),
@@ -199,6 +228,7 @@ class AgentComposer:
         middleware.append(
             HarnessFilesystemMiddleware(
                 backend=backend,
+                skill_backend=system_skills,
                 tools=["ls", "read_file", "write_file", "edit_file", "delete", "glob", "grep"],
                 tool_token_limit_before_evict=3000,
                 grep_max_count=100,
@@ -206,7 +236,7 @@ class AgentComposer:
             )
         )
 
-        # 子智能体复用同一组权限、审批与预算限制，避免委派绕过宿主约束。
+        # 第四步：编译并组装底层 Deep Agent（包含宿主与通用子智能体统一技能与权限约束）
         system_prompt = BASE_PROMPT + "\n" + options.get("agent_content", "")
         agent = create_deep_agent(
             name="vertical-agent",
@@ -218,7 +248,8 @@ class AgentComposer:
                 UserInteraction.ask_user,
             ],
             system_prompt=system_prompt,
-            backend=backend,
+            backend=skill_backend,
+            skills=skills,
             permissions=permissions,
             middleware=middleware,
             subagents=[
@@ -227,11 +258,14 @@ class AgentComposer:
                     "description": "Delegate a scoped task to an agent with the same workspace and permissions.",
                     "system_prompt": system_prompt,
                     "middleware": middleware,
+                    "skills": skills,
                 }
             ],
             context_schema=RunContext,
             checkpointer=checkpointer if checkpointer is not None else InMemorySaver(),
         )
+
+        # 第五步：覆写运行时递归上限与执行超时元数据配置
         agent.config = {
             **(agent.config or {}),
             "recursion_limit": 9999,
@@ -256,10 +290,12 @@ class AgentComposer:
         :type settings: vertical_harness.config.settings.HarnessSettings
         :param options: 可选的桌面端运行控制参数字典。
         :type options: dict[str, typing.Any] | None
+        :param shell_execution: 可选的外部 Shell 执行器。
+        :type shell_execution: vertical_harness.tools.shell_execution.ShellExecution | None
         :return: 产生已挂载同步检查点的 CompiledStateGraph 智能体实例迭代器。
         :rtype: collections.abc.Iterator[typing.Any]
         :author: tongliga
-        :date: 2026-10-21
+        :date: 2026-10-22
         """
         # 第一步：打开链路追踪会话与同步检查点管理器并构建智能体
         with TracingSession.tracing_session(), CheckpointFactory.open_checkpointer(settings) as checkpointer:
@@ -282,10 +318,12 @@ class AgentComposer:
         :type settings: vertical_harness.config.settings.HarnessSettings
         :param options: 可选的桌面端运行控制参数字典。
         :type options: dict[str, typing.Any] | None
+        :param shell_execution: 可选的外部 Shell 执行器。
+        :type shell_execution: vertical_harness.tools.shell_execution.ShellExecution | None
         :return: 产生已挂载异步检查点的 CompiledStateGraph 智能体实例异步迭代器。
         :rtype: collections.abc.AsyncIterator[typing.Any]
         :author: tongliga
-        :date: 2026-10-21
+        :date: 2026-10-22
         """
         # 第一步：打开链路追踪会话与异步检查点管理器并构建智能体
         with TracingSession.tracing_session():

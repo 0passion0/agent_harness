@@ -10,6 +10,17 @@ function directory() { const value = mkdtempSync(path.join(tmpdir(), 'harness-de
 afterEach(() => { vi.unstubAllGlobals(); for (const value of directories.splice(0)) rmSync(value, { recursive: true }) })
 
 describe('desktop trust boundaries', () => {
+  it('validates scoped harness resource commands and keeps archive paths out of renderer commands', () => {
+    const save = { id: '1', method: 'harness.save', params: { scope: 'global', project_id: '', kind: 'skill', name: 'example', content: 'body' } }
+    expect(validateCommand(save)).toEqual(save)
+    expect(validateCommand({ id: '2', method: 'harness.remove', params: { scope: 'project', project_id: 'selected-project', kind: 'agent', name: '' } }).method).toBe('harness.remove')
+    for (const raw of [
+      { ...save, params: { ...save.params, scope: 'other' } },
+      { ...save, params: { ...save.params, kind: 'other' } },
+      { ...save, params: { ...save.params, workspace_root: 'C:/' } },
+      { id: '3', method: 'harness.import', params: { scope: 'global', archive_path: 'C:/arbitrary.zip' } }
+    ]) expect(() => validateCommand(raw)).toThrow()
+  })
   it('requires the exact renderer document URL for IPC', () => {
     const trusted = 'http://localhost:5173/'
     expect(() => assertSender(trusted, trusted)).not.toThrow()

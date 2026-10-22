@@ -351,6 +351,25 @@ export type ConfigView = {
 export type ConfigScope = 'global' | 'project'
 
 /**
+ * Harness 资源配置检查响应契约，包含指令与技能元数据。
+ */
+export type HarnessConfig = {
+  /** 配置生效范围：全局系统或项目级别 */
+  scope: ConfigScope
+  /** 资源物理存储根目录 */
+  root: string
+  /** AGENTS.md 规范指令文件状态 */
+  agent: { content: string; source: string; exists: boolean }
+  /** 当前作用域下已挂载的所有技能列表 */
+  skills: { name: string; description: string; directory: string; content: string }[]
+}
+
+/**
+ * 桌面端可用项目摘要信息契约。
+ */
+export type HarnessProject = { id: string; name: string; path: string }
+
+/**
  * 渲染进程向主进程发起的全部 JSON-RPC 指令契约联合类型。
  */
 export type Command =
@@ -372,6 +391,14 @@ export type Command =
   | { id: string; method: 'config.inspect'; params: { scope: ConfigScope } }
   | { id: string; method: 'config.save'; params: { scope: ConfigScope; kind: 'agent'; content: string } }
   | { id: string; method: 'config.remove'; params: { kind: 'agent' } }
+  /** 获取当前所有已注册且物理路径存在的项目列表 */
+  | { id: string; method: 'harness.projects'; params: Record<string, never> }
+  /** 巡检指定范围与项目下的 Harness 指令与技能配置 */
+  | { id: string; method: 'harness.inspect'; params: { scope: ConfigScope; project_id: string } }
+  /** 保存或更新 Harness 指令或技能内容 */
+  | { id: string; method: 'harness.save'; params: { scope: ConfigScope; project_id: string; kind: 'agent' | 'skill'; name: string; content: string } }
+  /** 删除指定的 Harness 指令或技能目录 */
+  | { id: string; method: 'harness.remove'; params: { scope: ConfigScope; project_id: string; kind: 'agent' | 'skill'; name: string } }
   | { id: string; method: 'session.rename'; params: { session_id: string; title: string } }
   | { id: string; method: 'session.delete'; params: { session_id: string } }
   | { id: string; method: 'session.export'; params: { session_id: string } }
@@ -391,6 +418,8 @@ export type EventFrame =
  * 通过 Electron preload contextBridge 向渲染进程暴露的原生能力 API 契约。
  */
 export type DesktopAPI = {
+  /** 调起原生文件选择框并导入 ZIP 技能归档至指定作用域 */
+  importSkills(scope: ConfigScope, projectId: string): Promise<HarnessConfig | null>
   /** 打开系统文件管理器并定位到数据或日志目录 */
   openDataDirectory(kind: 'data' | 'logs'): Promise<void>
   /** 弹出系统原生文件夹选择对话框以绑定工作区目录 */

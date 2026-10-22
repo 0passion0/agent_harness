@@ -83,6 +83,32 @@ def test_read_deny_prevents_instruction_access(tmp_path, monkeypatch):
     read.assert_not_called()
 
 
+def test_system_instructions_precede_project_and_refresh_each_request(tmp_path):
+    system = tmp_path / "system" / "AGENTS.md"
+    system.parent.mkdir()
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    (workspace / "AGENTS.md").write_text("project rules", encoding="utf-8")
+    middleware = ProjectInstructionsMiddleware(
+        DocumentFilesystemBackend(root_dir=workspace), system_instructions=system
+    )
+    original = request(SystemMessage(content="base"))
+    handler = Mock()
+    for content in [None, "system rules", "updated system rules", "", None]:
+        if content is not None:
+            system.write_text(content, encoding="utf-8")
+        elif system.exists():
+            system.unlink()
+        middleware.wrap_model_call(original, handler)
+        blocks = handler.call_args.args[0].system_message.content_blocks
+        assert blocks[0]["text"] == "base"
+        assert blocks[-1]["text"].endswith("project rules")
+        assert len(blocks) == (3 if content else 2)
+        if content:
+            assert blocks[1]["text"] == f"Instructions from: {system}\n{content}"
+        assert original.system_message.content == "base"
+
+
 def test_async_reads_off_event_loop_and_preserves_handler_result(tmp_path, monkeypatch):
     (tmp_path / "AGENTS.md").write_text("async instructions", encoding="utf-8")
     middleware = ProjectInstructionsMiddleware(

@@ -24,6 +24,7 @@ class ProjectInstructionsMiddleware(AgentMiddleware):
 
     backend: DocumentFilesystemBackend
     permissions: list[FilesystemPermission] = field(default_factory=list)
+    system_instructions: Path | None = None
 
     def _read(self, file_path: str, *, encoding: str = "utf-8") -> tuple[Path, str] | None:
         """受控尝试读取指定相对路径文件的文本内容，无权限或不存在时返回 None。
@@ -106,27 +107,41 @@ class ProjectInstructionsMiddleware(AgentMiddleware):
         return request.override(messages=messages) if changed else request
 
     def _prepare(self, request: ModelRequest[Any]) -> ModelRequest[Any]:
-        """准备模型请求，将根目录 AGENTS.md 规范以系统消息内容块形式注入。
+        """准备模型请求，将系统全局指令及工作区 AGENTS.md 规范以系统消息内容块形式注入。
 
         :param request: 原始请求。
         :type request: langchain.agents.middleware.ModelRequest[typing.Any]
         :return: 注入系统指令后的请求。
         :rtype: langchain.agents.middleware.ModelRequest[typing.Any]
         :author: tongliga
-        :date: 2026-10-21
+        :date: 2026-10-22
         """
+        # 第一步：刷新请求中的消息队列
         request = self._refresh_messages(request)
+        files = []
+
+        # 第二步：依次收集系统全局指令与项目工作区 AGENTS.md 规范内容
+        if self.system_instructions is not None and self.system_instructions.is_file():
+            content = self.system_instructions.read_text(encoding="utf-8")
+            if content:
+                files.append((self.system_instructions, content))
         loaded = self._read("/AGENTS.md")
-        if loaded is None:
+        if loaded is not None:
+            files.append(loaded)
+        if not files:
             return request
-        path, content = loaded
-        instructions = {"type": "text", "text": f"Instructions from: {path}\n{content}"}
+
+        # 第三步：构建格式化指令块并注入系统消息中
+        instructions = [
+            {"type": "text", "text": f"Instructions from: {path}\n{content}"}
+            for path, content in files
+        ]
         system_message = request.system_message
         if system_message is None:
-            system_message = SystemMessage(content=[instructions])
+            system_message = SystemMessage(content=instructions)
         else:
             system_message = system_message.model_copy(
-                update={"content": [*system_message.content_blocks, instructions]}
+                update={"content": [*system_message.content_blocks, *instructions]}
             )
         return request.override(system_message=system_message)
 

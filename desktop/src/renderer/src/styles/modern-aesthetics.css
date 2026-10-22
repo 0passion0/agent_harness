@@ -1348,3 +1348,37 @@
 .product-v3.dark .html-preview-frame {
   background: #0f1020;
 }
+
+.product-v3 .task-composer { border-radius: 24px; }
+.product-v3 .starter-card { border-radius: 20px; }
+.product-v3 .settings-card,
+.product-v3 .welcome .prompt-card,
+.product-v3 .inline-activity-card,
+.product-v3 .plugin-card,
+.product-v3 .approval-operation { border-radius: 18px; }
+.product-v2.product-v3 .decision { border-radius: 20px; }
+.product-v3 .workflow-card,
+.product-v3 .inline-activity-list .workflow-card { border-radius: 16px; }
+.product-v3 .message.human { border-radius: 20px; }
+
+.product-v3 .app-rail button,
+.product-v3 .sidebar .new-chat,
+.product-v3 .search-wrap,
+.product-v3 .settings-nav-item,
+.product-v3 .pref-form input,
+.product-v3 .pref-form select,
+.product-v3 .pref-actions button,
+.product-v3 .pref-setting-row button,
+.product-v3 .pref-section-heading button,
+.product-v3 .pref-setting-row select,
+.product-v3 .pref-toolbar select,
+.product-v3 .conv-toolbar-btn,
+.product-v3 .attachment-chip,
+.product-v3 .file-link-chip,
+.product-v2.product-v3 .decision-actions button { border-radius: 12px; }
+
+.product-v3 .sidebar .session-item,
+.product-v3 .session-row { border-radius: 10px; }
+.product-v3 .message-table-scroll,
+.product-v3 .message-content pre,
+.product-v3 .artifact-card { border-radius: 14px; }

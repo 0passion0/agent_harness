@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import type { ApplicationState, ConfigScope, ConfigView } from '../../../../shared/protocol'
+import { HarnessSettings } from './HarnessSettings'
 import { UsageSettings } from './UsageSettings'
 
-type Tab = 'models' | 'agent' | 'permissions' | 'usage'
+type Tab = 'models' | 'agent' | 'skills' | 'permissions' | 'usage'
 export type UserSettingsPageProps = {
   initialTab?: Tab
   application: ApplicationState | null
@@ -18,32 +19,30 @@ export type UserSettingsPageProps = {
   testProfile(): Promise<string>
 }
 
-export function UserConfig({ initialTab = 'models', application, config, busy, apply, inspect, save, remove, testProfile }: UserSettingsPageProps) {
+export function UserConfig({ initialTab = 'models', application, busy, apply, testProfile }: UserSettingsPageProps) {
   const [tab, setTab] = useState<Tab>(initialTab)
-  const [scope, setScope] = useState<ConfigScope>('global')
   const [model, setModel] = useState(application?.model?.model ?? '')
   const [maximum, setMaximum] = useState(String(application?.max_context_tokens ?? 475000))
-  const [content, setContent] = useState('')
   const [python, setPython] = useState(application?.runtimes.python ?? '')
   const [feedback, setFeedback] = useState('')
-  useEffect(() => { if (tab === 'agent') void inspect(scope) }, [tab, scope])
-  useEffect(() => { setContent(config?.agent.content ?? '') }, [config])
   useEffect(() => { setTab(initialTab) }, [initialTab])
   async function run(action: () => Promise<unknown>) {
     setFeedback('')
     try { const result = await action(); setFeedback(typeof result === 'string' ? result : '已保存') }
     catch (reason) { setFeedback(String(reason)) }
   }
-  const titles = { models: '模型与运行环境', agent: '用户指令', permissions: '执行权限', usage: 'Token 消耗' }
+  const titles = { models: '模型与运行环境', agent: '用户指令', skills: '技能', permissions: '执行权限', usage: 'Token 消耗' }
   const descriptions = {
     models: '配置当前使用的模型、上下文容量和本机运行环境。',
     agent: '管理桌面端提供给 Agent 的补充指令。',
+    skills: '分别管理系统与各项目目录下的 Agent 技能。',
     permissions: '控制 Agent 调用工具和执行操作时需要的授权。',
     usage: '查看本机各项目的 Token 使用情况。'
   }
   const navigation = [
     { id: 'models', title: '模型与运行环境', group: '通用' },
     { id: 'agent', title: '用户指令', group: '通用' },
+    { id: 'skills', title: '技能', group: '通用' },
     { id: 'permissions', title: '执行权限', group: '安全' },
     { id: 'usage', title: 'Token 消耗', group: '数据' }
   ] as const
@@ -99,18 +98,10 @@ export function UserConfig({ initialTab = 'models', application, config, busy, a
           </div>
         </section>
       </>}
-      {tab === 'agent' && <>
-        <section className="pref-section">
-          <div className="pref-section-heading"><div><h2>指令范围</h2><p>全局指令适用于所有项目，项目指令仅作用于当前项目。</p></div></div>
-          <div className="pref-toolbar"><label>应用范围<select value={scope} onChange={e => setScope(e.target.value as ConfigScope)}><option value="global">全局</option><option value="project">当前项目</option></select></label></div>
-          <p className="pref-desc">这些内容会作为补充说明提供给 Agent。</p>
-          <textarea className="pref-editor" aria-label="用户指令" rows={20} value={content} onChange={e => setContent(e.target.value)} />
-          <div className="pref-actions">
-            <button className="pref-primary" disabled={busy} onClick={() => void run(() => save(scope, 'agent', content))}>保存指令</button>
-            <button disabled={busy || scope !== 'project' || !config?.overrides.agent} onClick={() => void run(() => remove('agent'))}>移除项目覆盖</button>
-          </div>
-        </section>
-      </>}
+      {/* 用户指令配置标签页 */}
+      {tab === 'agent' && <HarnessSettings kind="agent" application={application} busy={busy} />}
+      {/* 扩展技能管理标签页 */}
+      {tab === 'skills' && <HarnessSettings kind="skills" application={application} busy={busy} />}
       {tab === 'permissions' && <section className="pref-section">
         <h2>工具权限</h2>
         <p className="pref-desc">选择 Agent 执行工具操作时使用的授权级别。</p>

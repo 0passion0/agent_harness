@@ -12,6 +12,7 @@ from collections.abc import AsyncIterator
 from contextlib import aclosing, asynccontextmanager
 from dataclasses import dataclass, field
 from functools import partial
+from pathlib import Path
 from typing import Any
 from uuid import UUID
 
@@ -19,6 +20,7 @@ from langchain_core.messages import HumanMessage
 from langgraph.types import Command
 
 from vertical_harness.bridge.messages import DesktopMessages
+from vertical_harness.bridge.resources import HarnessResources
 from vertical_harness.bridge.runtime import DesktopRuntime
 from vertical_harness.config.checkpoint_config import CheckpointConfig
 from vertical_harness.config.langsmith_settings import LangSmithSettings
@@ -43,7 +45,7 @@ class AgentLoop:
     维护当前配置、可信身份、活跃异步任务及并发输出锁。
 
     :author: tongliga
-    :date: 2026-10-21
+    :date: 2026-10-22
     """
 
     settings: HarnessSettings | None = field(default=None, init=False)
@@ -70,7 +72,7 @@ class AgentLoop:
         :return: 包含租户、用户与会话 ID 的分层命名空间元组。
         :rtype: tuple[str, ...]
         :author: tongliga
-        :date: 2026-10-21
+        :date: 2026-10-22
         """
         assert self.identity is not None
         return (
@@ -91,7 +93,7 @@ class AgentLoop:
         :return: 包含用量明细与比率的字典报告。
         :rtype: dict[str, typing.Any]
         :author: tongliga
-        :date: 2026-10-21
+        :date: 2026-10-22
         """
         # 第一步：断言配置已初始化并获取上下文上限
         assert self.settings is not None
@@ -123,7 +125,7 @@ class AgentLoop:
     async def dispatch(self, method: str, params: dict[str, Any]) -> Any:
         """分发处理桌面端 JSON-RPC 请求方法。
 
-        :param method: JSON-RPC 方法名（如 'configure', 'run.start', 'run.resume' 等）。
+        :param method: JSON-RPC 方法名（如 'configure', 'harness.inspect', 'run.start', 'run.resume' 等）。
         :type method: str
         :param params: 方法调用的参数字典。
         :type params: dict[str, typing.Any]
@@ -132,7 +134,7 @@ class AgentLoop:
         :raises ValueError: 当参数缺失、类型错误或方法未知时抛出。
         :raises RuntimeError: 当状态机违规（如已在运行时重复配置）时抛出。
         :author: tongliga
-        :date: 2026-10-21
+        :date: 2026-10-22
         """
         # 第一步：处理配置 configure 方法
         if method == "configure":
@@ -161,20 +163,39 @@ class AgentLoop:
             await self.aclose()
             return {}
 
-        # 第四步：断言后端已被正确配置
+        # 第四步：处理 Harness 资源管理指令（harness.inspect, harness.save, harness.remove, harness.import）
+        if method in {"harness.inspect", "harness.save", "harness.remove", "harness.import"}:
+            self.require(params, "scope", "workspace_root")
+            if method != "harness.inspect" and self.active:
+                raise RuntimeError("Cannot edit agent resources while a run is active")
+            resources = HarnessResources(
+                Path(params["workspace_root"]) if params["workspace_root"] is not None else None
+            )
+            if method == "harness.inspect":
+                return resources.inspect(params["scope"])
+            if method == "harness.import":
+                self.require(params, "archive_path")
+                return resources.import_archive(params["scope"], Path(params["archive_path"]))
+            self.require(params, "kind", "name")
+            if method == "harness.remove":
+                return resources.remove(params["scope"], params["kind"], params["name"])
+            self.require(params, "content")
+            return resources.save(params["scope"], params["kind"], params["name"], params["content"])
+
+        # 第五步：断言后端已被正确配置
         if self.settings is None or self.identity is None:
             raise RuntimeError("Backend is not configured")
 
-        # 第五步：模型连接测试 model.test 方法
+        # 第六步：模型连接测试 model.test 方法
         if method == "model.test":
             response = await ModelRouting.init_configured_model(self.settings).ainvoke("Reply with the word OK.")
             return {"ok": True, "model": self.settings.model, "response": response.content}
 
-        # 第六步：校验会话线程 thread_id 必填
+        # 第七步：校验会话线程 thread_id 必填
         self.require(params, "thread_id")
         thread_id = self.require_uuid(params["thread_id"], "thread_id")
 
-        # 第七步：会话删除 session.delete 方法
+        # 第八步：会话删除 session.delete 方法
         if method == "session.delete":
             tasks = [task for active_thread, task in self.active.values() if active_thread == thread_id]
             for task in tasks:
@@ -188,7 +209,7 @@ class AgentLoop:
                 await store.adelete(self._context_namespace(thread_id), "usage")
             return {"thread_id": thread_id, "deleted": True}
 
-        # 第八步：会话快照 snapshot 与 Token 用量 session.token_usage 方法
+        # 第九步：会话快照 snapshot 与 Token 用量 session.token_usage 方法
         if method in {"snapshot", "session.token_usage"}:
             async with self.open_configured_agent() as agent:
                 state = await agent.aget_state(CheckpointConfig.make_checkpoint_config(thread_id))
@@ -216,7 +237,7 @@ class AgentLoop:
                 "token_usage": usage,
             }
 
-        # 第九步：启动运行 run.start 或恢复执行 run.resume 方法
+        # 第十步：启动运行 run.start 或恢复执行 run.resume 方法
         if method in {"run.start", "run.resume"}:
             self.require(params, "run_id")
             run_id = self.require_uuid(params["run_id"], "run_id")
@@ -231,7 +252,7 @@ class AgentLoop:
                     params["text"],
                     params.get("attachments", []),
                 )
-                inputs: Any = {"messages": [HumanMessage(content=message)]}
+                inputs: Any = {"messages": [HumanMessage(content=message)], "skills_metadata": None}
             else:
                 self.require(params, "decisions")
                 async with self.open_configured_agent() as agent:
@@ -275,7 +296,7 @@ class AgentLoop:
             task.add_done_callback(partial(self._finished, run_id))
             return {"run_id": run_id}
 
-        # 第十步：中止正在运行或恢复挂起的执行 run.stop 方法
+        # 第十一步：中止正在运行或恢复挂起的执行 run.stop 方法
         if method == "run.stop":
             self.require(params, "run_id")
             run_id = self.require_uuid(params["run_id"], "run_id")
@@ -315,7 +336,7 @@ class AgentLoop:
         :return: 无返回值。
         :rtype: None
         :author: tongliga
-        :date: 2026-10-21
+        :date: 2026-10-22
         """
         terminal: dict[str, Any] | None = None
         cancelled = False
@@ -422,7 +443,7 @@ class AgentLoop:
         :return: 异步编译状态图智能体实例迭代器。
         :rtype: collections.abc.AsyncIterator[typing.Any]
         :author: tongliga
-        :date: 2026-10-21
+        :date: 2026-10-22
         """
         async with AgentComposer.aopen_agent(
             self.settings, options=self.desktop_options, shell_execution=self.shell_execution,
@@ -438,7 +459,7 @@ class AgentLoop:
         :return: 无返回值。
         :rtype: None
         :author: tongliga
-        :date: 2026-10-21
+        :date: 2026-10-22
         """
         print(json.dumps(frame, ensure_ascii=False, default=str), flush=True)
 
@@ -454,7 +475,7 @@ class AgentLoop:
         :return: 无返回值。
         :rtype: None
         :author: tongliga
-        :date: 2026-10-21
+        :date: 2026-10-22
         """
         async with self.output_lock:
             self.emit({"jsonrpc": "2.0", "method": method, "params": params})
@@ -471,7 +492,7 @@ class AgentLoop:
         :rtype: None
         :raises ValueError: 当缺少任何必填键时抛出。
         :author: tongliga
-        :date: 2026-10-21
+        :date: 2026-10-22
         """
         for name in fields:
             if name not in params:
@@ -489,7 +510,7 @@ class AgentLoop:
         :rtype: str
         :raises ValueError: 当值非字符串或无法解析为 UUID 时抛出。
         :author: tongliga
-        :date: 2026-10-21
+        :date: 2026-10-22
         """
         if not isinstance(value, str):
             raise ValueError(f"{field} must be a UUID string")
@@ -502,7 +523,7 @@ class AgentLoop:
         :return: 无返回值。
         :rtype: None
         :author: tongliga
-        :date: 2026-10-21
+        :date: 2026-10-22
         """
         # 第一步：若启用 LangSmith 追踪，预热探测 Git 版本以防 SDK 自动探测阻塞 stdin
         if LangSmithSettings().tracing and not (

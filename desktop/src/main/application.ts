@@ -9,7 +9,7 @@
 
 import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs'
 import path from 'node:path'
-import type { ApplicationState, Command, ConfigScope, EventFrame, Json, Question, RunRecord, SessionTokenReport, Snapshot } from '../shared/protocol'
+import type { ApplicationState, Command, ConfigScope, EventFrame, HarnessConfig, Json, Question, RunRecord, SessionTokenReport, Snapshot } from '../shared/protocol'
 import type { Backend, EngineFrame, EngineEvent, Interrupt } from './backend'
 import { DesktopStore } from './desktop-store'
 import { LocalStore, writeAtomic } from './local-store'
@@ -133,6 +133,48 @@ export class DesktopApplication {
    */
   workspace(): string {
     return this.storage().workspace
+  }
+
+  /**
+   * 根据配置生效范围与项目 ID 解析出对应的物理工作区目录绝对路径。
+   *
+   * @param scope 配置生效范围（'global' 或 'project'）。
+   * @param projectId 项目唯一标识 ID，全局作用域下必须为空字符串。
+   * @returns 目标物理工作区目录路径；全局作用域下返回 null。
+   * @throws {Error} 当配置范围无效、系统配置指定了非空项目、或指定项目不存在时抛出。
+   * @author tongliga
+   * @date 2026-10-22
+   */
+  private resourceWorkspace(scope: ConfigScope, projectId: string): string | null {
+    // 第一步：校验作用域合法性与系统作用域的项目参数约束
+    if (scope !== 'global' && scope !== 'project') throw new Error('配置范围无效')
+    if (scope === 'global') {
+      if (projectId !== '') throw new Error('系统配置不能指定项目')
+      return null
+    }
+    // 第二步：查找并定位本地项目工作区物理根路径
+    const project = this.local.projects.find(item => item.id === projectId)
+    if (!project) throw new Error('项目不存在')
+    return project.path ?? path.join(this.directory, 'projects', project.id, 'workspace')
+  }
+
+  /**
+   * 将外部 ZIP 技能归档解压并导入至指定的全局或项目技能存储目录中。
+   *
+   * @param scope 配置生效范围（'global' 或 'project'）。
+   * @param projectId 目标项目标识 ID（全局时为空字符串）。
+   * @param archive ZIP 归档文件的物理绝对路径。
+   * @returns 导入并同步后的 Harness 完整配置视图契约。
+   * @author tongliga
+   * @date 2026-10-22
+   */
+  async importSkills(scope: ConfigScope, projectId: string, archive: string): Promise<HarnessConfig> {
+    // 第一步：确保主状态处于空闲（idle）状态
+    this.idle()
+    // 第二步：解析工作区根路径并向后端引擎发起 harness.import 请求
+    return this.backend.request('harness.import', {
+      scope, archive_path: archive, workspace_root: this.resourceWorkspace(scope, projectId)
+    })
   }
 
   /**
@@ -592,6 +634,19 @@ export class DesktopApplication {
         break
       case 'config.inspect':
         return files.inspectConfig(params.scope)
+      case 'harness.inspect':
+      case 'harness.save':
+      case 'harness.remove':
+        // 第一步：修改类指令要求主应用处于空闲状态
+        if (method !== 'harness.inspect') this.idle()
+        // 第二步：解析目标工作区根路径并转发后端 RPC 执行
+        return this.backend.request(method, { ...params, workspace_root: this.resourceWorkspace(params.scope, params.project_id) })
+      case 'harness.projects':
+        // 第一步：枚举所有本地项目并筛选实际物理路径存在的项目有效摘要
+        return local.projects.map(project => {
+          const directory = this.resourceWorkspace('project', project.id)!
+          return { id: project.id, name: path.basename(directory), path: directory }
+        }).filter(project => existsSync(project.path))
       case 'config.save':
         this.idle()
         return files.saveConfig(params.scope, params.kind, params.content)

@@ -79,6 +79,126 @@ def test_deepagents_delegates_with_the_existing_tool_set(tmp_path, monkeypatch):
     assert "write_file" in model.bound_tools[1]
 
 
+@pytest.mark.parametrize("asynchronous", [False, True])
+def test_global_and_project_instructions_and_skills_reach_child(
+    tmp_path, monkeypatch, asynchronous
+):
+    home = tmp_path / "home"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    system = home / ".agent-harness"
+    for root, name, description in [
+        (system, "shared", "global shared skill"),
+        (system, "global-only", "global unique skill"),
+        (workspace / ".agents", "shared", "project shared skill"),
+    ]:
+        skill = root / "skills" / name / "SKILL.md"
+        skill.parent.mkdir(parents=True)
+        skill.write_text(
+            f"---\nname: {name}\ndescription: {description}\n---\n{description} body",
+            encoding="utf-8",
+        )
+    (system / "AGENTS.md").write_text("global instruction marker", encoding="utf-8")
+    (workspace / "AGENTS.md").write_text("project instruction marker", encoding="utf-8")
+    monkeypatch.setattr(compose.Path, "home", lambda: home)
+    agent, model = make_agent(
+        workspace,
+        monkeypatch,
+        "full",
+        tool_name="read_file",
+        args={"file_path": "/.agent-harness/skills/global-only/SKILL.md"},
+    )
+    inputs = {"messages": [HumanMessage(content="Use the global skill in a child task")]}
+    config = {"configurable": {"thread_id": "skills"}}
+    result = (
+        asyncio.run(agent.ainvoke(inputs, config))
+        if asynchronous
+        else agent.invoke(inputs, config)
+    )
+    assert result["messages"][-1].content == "All done"
+    skills = {
+        skill["name"]: skill for skill in agent.get_state(config).values["skills_metadata"]
+    }
+    assert skills["shared"]["path"] == "/.agents/skills/shared/SKILL.md"
+    assert skills["shared"]["description"] == "project shared skill"
+    assert skills["global-only"]["path"] == "/.agent-harness/skills/global-only/SKILL.md"
+    for messages in model.seen_messages:
+        prompt = messages[0].text
+        assert "global instruction marker" in prompt
+        assert "project instruction marker" in prompt
+        assert "global unique skill" in prompt
+        assert "project shared skill" in prompt
+        assert "global shared skill" not in prompt
+    assert any(
+        message.type == "tool" and "global unique skill body" in message.text
+        for messages in model.seen_messages
+        for message in messages
+    )
+
+
+@pytest.mark.parametrize("asynchronous", [False, True])
+def test_global_skills_are_read_only(tmp_path, monkeypatch, asynchronous):
+    home = tmp_path / "home"
+    skill = home / ".agent-harness" / "skills" / "example" / "SKILL.md"
+    skill.parent.mkdir(parents=True)
+    content = "---\nname: example\ndescription: Example skill\n---\nOriginal skill"
+    skill.write_text(content, encoding="utf-8")
+    monkeypatch.setattr(compose.Path, "home", lambda: home)
+    workspace = tmp_path / "workspace"
+    agent, model = make_agent(
+        workspace,
+        monkeypatch,
+        "full",
+        args={"file_path": "/.agent-harness/skills/example/SKILL.md", "content": "changed"},
+    )
+    inputs = {"messages": [HumanMessage(content="Try writing a global skill")]}
+    config = {"configurable": {"thread_id": "skills-read-only"}}
+    if asynchronous:
+        asyncio.run(agent.ainvoke(inputs, config))
+    else:
+        agent.invoke(inputs, config)
+    assert skill.read_text(encoding="utf-8") == content
+    assert not (workspace / ".agent-harness").exists()
+    assert any(
+        message.type == "tool" and "permission denied" in message.text
+        for messages in model.seen_messages
+        for message in messages
+    )
+
+
+@pytest.mark.parametrize(
+    "file_path",
+    ["/.agent-harness/skills/example/.env", "/.agent-harness/skills/../private.txt"],
+)
+def test_global_skill_reads_reject_sensitive_files_and_traversal(tmp_path, monkeypatch, file_path):
+    home = tmp_path / "home"
+    system = home / ".agent-harness"
+    skill = system / "skills" / "example"
+    skill.mkdir(parents=True)
+    (skill / ".env").write_text("sensitive marker", encoding="utf-8")
+    (system / "private.txt").write_text("sensitive marker", encoding="utf-8")
+    monkeypatch.setattr(compose.Path, "home", lambda: home)
+    agent, model = make_agent(
+        tmp_path / "workspace",
+        monkeypatch,
+        "full",
+        tool_name="read_file",
+        args={"file_path": file_path},
+    )
+    agent.invoke(
+        {"messages": [HumanMessage(content="Try reading a restricted global file")]},
+        {"configurable": {"thread_id": "skill-read-denied"}},
+    )
+    reads = [
+        message
+        for messages in model.seen_messages
+        for message in messages
+        if message.type == "tool" and message.name == "read_file"
+    ]
+    assert reads and all(message.status == "error" for message in reads)
+    assert all("sensitive marker" not in message.text for message in reads)
+
+
 @pytest.mark.parametrize("decision", ["approve", "reject"])
 def test_delegated_writes_require_and_resume_desktop_approval(tmp_path, monkeypatch, decision):
     agent, _model = make_agent(tmp_path, monkeypatch, "ask")

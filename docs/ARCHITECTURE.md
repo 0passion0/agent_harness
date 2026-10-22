@@ -9,6 +9,7 @@
 | Agent Loop | `core/compose.py` 装配 Deep Agents；`cli.py` 和 `desktop.py` 负责宿主入口。 |
 | Model Adapter | `core/routing.py` 配置 LangChain Provider，`middleware/routing.py` 按可信上下文选择模型。 |
 | Prompt Builder | `core/compose.py` 组合基础提示与 `agent_content`，工具 schema 由框架生成。 |
+| Instructions / Skills | 每次模型请求加载 `~/.agent-harness/AGENTS.md`，随后加载工作区 `AGENTS.md`；保留已发现子目录指令的刷新。原生 `skills` 加载 `~/.agent-harness/skills/` 和工作区 `.agents/skills/`，同名时项目覆盖全局；主 agent 和通用子 agent 共用。 |
 | Context Manager | Deep Agents 摘要中间件在有效容量的 90% 压缩；`middleware/context_limit.py` 检查完整请求预算。 |
 | Tool Registry / Executor | Deep Agents 注册和执行文件工具；`tools/` 提供检索、Python 脚本和用户交互。 |
 | Session / State Store | `storage/checkpoint.py`、`storage/store.py` 管理检查点和状态存储的生命周期。 |
@@ -20,6 +21,10 @@
 | Observability / Evaluation | `log/`、`langchain/callbacks.py`、`utils/usage.py` 提供日志、Trace 和用量统计；没有独立评估平台。 |
 
 文件系统适配位于 `storage/document_backend.py`。Office/PDF 使用 MarkItDown 阅读，编辑和精确读取使用保存的 Python 脚本。敏感路径拒绝、工作区边界、身份、审批、超时和取消继续保留；文件工具权限不构成 Python 进程沙箱。
+
+每个 skill 位于 `<skills>/<name>/SKILL.md`，使用包含 `name` 和 `description` 的 YAML frontmatter。技能元数据由 Deep Agents 读取并缓存在会话状态中，正文通过 `read_file` 按需加载；桌面端每条新用户消息会刷新元数据，审批恢复沿用原运行状态。全局技能映射为 `/.agent-harness/skills/`，该映射仅供文件工具读取，不开放全局目录的写入。缺失的指令文件和技能目录可省略。
+
+桌面设置中的指令和技能管理直接读写上述目录，系统与具体项目分别展示；项目选择项使用实际目录名与完整路径，管理操作不切换聊天项目。技能 ZIP 包支持根目录 `SKILL.md` 或单层技能目录，保留附带文件，最多 512 个条目、解压总量 10 MiB，重名拒绝覆盖。导入完成全部路径和内容校验后才发布技能目录，编辑只修改 `SKILL.md`，删除移除整个所选技能目录。原有 `config/agent.md` 补充指令仍按原逻辑提供给 `agent_content`，不自动迁移。
 
 业务接口直接通过类调用，`__all__` 只在 `__init__.py` 声明类导出。不保留 `engine/` 转发包、未接入运行链路的 `aop/`、类方法别名或 `sys.modules` 旧路径映射。四个独立 middleware 直接放在 `middleware/` 下。
 

@@ -45,6 +45,9 @@
 .skill-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 15px 0; border-top: 1px solid var(--line); font-size: 11px; }
 .skill-row > div { display: grid; gap: 5px; min-width: 0; }
 .skill-row small { color: var(--muted); overflow-wrap: anywhere; }
+.codex-settings .skill-row { flex-wrap: wrap; }
+.codex-settings .skill-row > .pref-actions { display: flex; }
+.codex-settings .skill-row > .skill-editor-box { flex-basis: 100%; }
 .settings-card .switch-row { margin-bottom: 13px; font-size: 11px; }
 .plugin-item-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .plugin-status.enabled { color: var(--accent); }

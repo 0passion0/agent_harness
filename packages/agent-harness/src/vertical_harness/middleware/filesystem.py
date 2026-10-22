@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from typing import Any, Literal
 
-from deepagents.backends.protocol import GlobResult, GrepResult
+from deepagents.backends.protocol import BackendProtocol, GlobResult, GrepResult
 from deepagents.backends.utils import validate_path
 from deepagents.middleware.filesystem import (
     FilesystemMiddleware,
@@ -34,15 +34,27 @@ class HarnessFilesystemMiddleware(FilesystemMiddleware):
     :date: 2026-10-21
     """
 
-    def __init__(self, **kwargs: Any) -> None:
-        """初始化 HarnessFilesystemMiddleware，附加原子多文件补丁工具。
+    def __init__(self, *, skill_backend: BackendProtocol | None = None, **kwargs: Any) -> None:
+        """初始化 HarnessFilesystemMiddleware，附加原子多文件补丁工具与全局技能只读后端。
 
+        :param skill_backend: 可选的全局系统级技能存储后端实例，用于支持跨工作区只读访问全局 Skills。
+        :type skill_backend: deepagents.backends.protocol.BackendProtocol | None
         :param kwargs: 透传给父类 FilesystemMiddleware 的参数字典。
         :type kwargs: typing.Any
         :author: tongliga
-        :date: 2026-10-21
+        :date: 2026-10-22
         """
         super().__init__(**kwargs)
+        self._skills_read_tool = (
+            FilesystemMiddleware(
+                backend=skill_backend,
+                tools=["read_file"],
+                _permissions=self._permissions,
+                tool_token_limit_before_evict=self._tool_token_limit_before_evict,
+            ).tools[0]
+            if skill_backend is not None
+            else None
+        )
         self.tools.append(self._create_patch_tool())
 
     def _authorize(self, operation: Literal["read", "write"], path: str) -> str | None:
@@ -205,6 +217,12 @@ class HarnessFilesystemMiddleware(FilesystemMiddleware):
         :author: tongliga
         :date: 2026-10-21
         """
+        # 第一步：若请求路径命中全局系统级技能只读路由，则委派给专属技能只读工具处理
+        if self._skills_read_tool is not None and file_path.startswith("/.agent-harness/skills/"):
+            return self._skills_read_tool.func(
+                file_path.removeprefix("/.agent-harness/skills"), runtime, offset, limit
+            )
+        # 第二步：校验行数限制并解析目标文件路径
         if limit <= 0:
             return self._original_read_tool.func(file_path, runtime, offset, limit)
         file_path, error = self._read_path(file_path)
@@ -246,6 +264,12 @@ class HarnessFilesystemMiddleware(FilesystemMiddleware):
         :author: tongliga
         :date: 2026-10-21
         """
+        # 第一步：若请求路径命中全局系统级技能只读路由，则委派给专属技能只读工具异步处理
+        if self._skills_read_tool is not None and file_path.startswith("/.agent-harness/skills/"):
+            return await self._skills_read_tool.coroutine(
+                file_path.removeprefix("/.agent-harness/skills"), runtime, offset, limit
+            )
+        # 第二步：异步校验行数限制并解析目标文件路径
         if limit <= 0:
             return await self._original_read_tool.coroutine(file_path, runtime, offset, limit)
         file_path, error = await asyncio.to_thread(self._read_path, file_path)

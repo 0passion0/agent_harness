@@ -23,6 +23,8 @@ const methods: Record<string, string[]> = {
   'runtime.configure': ['python', 'node'],
   'permission.set': ['mode'], 'config.inspect': ['scope'], 'config.save': ['scope', 'kind', 'content'],
   'config.remove': ['kind'],
+  'harness.projects': [], 'harness.inspect': ['scope', 'project_id'], 'harness.save': ['scope', 'project_id', 'kind', 'name', 'content'],
+  'harness.remove': ['scope', 'project_id', 'kind', 'name'],
   'session.rename': ['session_id', 'title'], 'session.delete': ['session_id'], 'session.export': ['session_id']
 }
 
@@ -44,9 +46,12 @@ export function assertSender(actual: string, trusted: string): void {
  * 第二步：验证方法名是否在 methods 白名单中，且 params 为纯键值对象。
  * 第三步：比对参数键集合与白名单的一致性，校验各参数的数据类型。
  * 第四步：针对特殊方法（如 run.start、run.attachments）执行业务级约束校验。
+ * 第五步：针对 Harness 资源管理指令执行配置范围与资源种类的严格枚举断言。
  *
  * @param value - 待校验的原始命令对象
  * @throws Error 当命令结构非法、方法未注册或参数不符合规则时抛出
+ * @author tongliga
+ * @date 2026-10-22
  */
 export function assertCommand(value: unknown): asserts value is Command {
   // 第一步：校验对象容器与顶层键
@@ -70,6 +75,12 @@ export function assertCommand(value: unknown): asserts value is Command {
     } else if (typeof value !== 'string') throw new Error('Invalid command params')
   }
   if (command.method === 'run.start' && !(params.text as string).trim()) throw new Error('Text required')
+
+  // 第五步：针对 Harness 资源管理指令校验配置作用域与资源种类合法性
+  if (command.method.startsWith('harness.') && command.method !== 'harness.projects') {
+    if (params.scope !== 'global' && params.scope !== 'project') throw new Error('Invalid config scope')
+    if (command.method !== 'harness.inspect' && params.kind !== 'agent' && params.kind !== 'skill') throw new Error('Invalid resource kind')
+  }
 }
 
 /**

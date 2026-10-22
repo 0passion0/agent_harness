@@ -26,7 +26,7 @@ const api: DesktopAPI = {
   /** 使用系统默认程序打开生成的交付物成果文件 */
   openArtifact: (path: string) => ipcRenderer.invoke('artifact:open', path),
 
-  /** 弹出目录选择框并导入技能目录 */
+  importSkills: (scope, projectId) => ipcRenderer.invoke('skills:import', scope, projectId),
 
   /** 弹出系统文件选择框导入对话附件 */
   importAttachments: () => ipcRenderer.invoke('attachment:import'),

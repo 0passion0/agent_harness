@@ -28,6 +28,30 @@ function setup() {
 }
 function event(run: string, thread: string, type: string, data = {}): EngineEvent { return { run_id: run, thread_id: thread, type, data, operation_id: 'call', name: 'test', agent_name: null } }
 
+it('manages resources by explicit project without switching chats and blocks edits during runs', async () => {
+  const s = setup(); await s.application.initialize()
+  await expect(s.command('harness.inspect', { scope: 'project', project_id: 'unknown' })).rejects.toThrow('项目')
+  s.request.mockResolvedValueOnce({} as any)
+  await s.command('harness.inspect', { scope: 'global', project_id: '' })
+  expect(s.request).toHaveBeenLastCalledWith('harness.inspect', { scope: 'global', project_id: '', workspace_root: null })
+  await s.command('project.create', { name: '技能项目' })
+  const firstPath = path.join(s.directory, 'real-project-folder'); mkdirSync(firstPath)
+  await s.application.bindWorkspace(firstPath)
+  const firstProject = s.application.state().active_project_id!
+  await s.command('project.create', { name: '另一个项目' })
+  expect(await s.command('harness.projects')).toContainEqual({ id: firstProject, name: 'real-project-folder', path: firstPath })
+  s.request.mockResolvedValueOnce({} as any)
+  await s.command('harness.save', { scope: 'project', project_id: firstProject, kind: 'agent', name: '', content: 'constraints' })
+  expect(s.request).toHaveBeenLastCalledWith('harness.save', { scope: 'project', project_id: firstProject, kind: 'agent', name: '', content: 'constraints', workspace_root: firstPath })
+  expect(s.application.state().active_project_id).not.toBe(firstProject)
+  s.request.mockResolvedValueOnce({} as any)
+  await s.application.importSkills('global', '', 'C:/skill.zip')
+  expect(s.request).toHaveBeenLastCalledWith('harness.import', { scope: 'global', archive_path: 'C:/skill.zip', workspace_root: null })
+  await s.command('run.start', { text: 'run' })
+  await expect(s.command('harness.remove', { scope: 'global', project_id: '', kind: 'skill', name: 'example' })).rejects.toThrow('任务')
+  await expect(s.application.importSkills('global', '', 'C:/skill.zip')).rejects.toThrow('任务')
+})
+
 it('creates projects and restores isolated sessions from disk', async () => {
   const t = setup(); await t.application.initialize()
   await expect(t.command('project.create', { name: ' ' })).rejects.toThrow('名称')
