@@ -632,8 +632,6 @@ export class DesktopApplication {
         if (!['read_only', 'ask', 'full'].includes(params.mode)) throw new Error('权限模式无效')
         files.saveSettings({ permission_mode: params.mode })
         break
-      case 'config.inspect':
-        return files.inspectConfig(params.scope)
       case 'harness.inspect':
       case 'harness.save':
       case 'harness.remove':
@@ -647,12 +645,6 @@ export class DesktopApplication {
           const directory = this.resourceWorkspace('project', project.id)!
           return { id: project.id, name: path.basename(directory), path: directory }
         }).filter(project => existsSync(project.path))
-      case 'config.save':
-        this.idle()
-        return files.saveConfig(params.scope, params.kind, params.content)
-      case 'config.remove':
-        this.idle()
-        return files.removeConfig(params.kind)
       case 'usage.stats':
         return files.usageStats(params.period, params.model)
       default:

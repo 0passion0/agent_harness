@@ -21,7 +21,7 @@ import { SessionSidebar } from './components/SessionSidebar'
 import { RunDetails } from './components/RunDetails'
 import { ToolCard } from './components/ToolCard'
 import { WorkspaceDirectory } from './components/WorkspaceDirectory'
-import { UserConfig } from './plugins/user_config'
+import { UserConfig, type Tab as SettingsTab } from './plugins/user_config'
 import { AttachmentChips } from './components/AttachmentChips'
 import { TokenWindowPopup } from './components/TokenWindowPopup'
 import { LoadingScreen } from './features/boot/LoadingScreen'
@@ -36,9 +36,6 @@ type Theme = 'light' | 'dark'
 
 /** 右侧详情抽屉标签页类别 */
 type DetailTab = 'activity' | 'directory' | 'files'
-
-/** 设置面板标签页类别 */
-type SettingsTab = 'models' | 'agent' | 'permissions' | 'usage'
 
 /**
  * 首次进入或空任务时的引导快捷模板列表。
@@ -70,7 +67,7 @@ export default function App() {
   const c = useAgentController()
   const {
     state, application, project, workspace, draft, setDraft, attachments, setAttachments, sessions,
-    sessionSearch, searchSessions, config, error, clearError, busy,
+    sessionSearch, searchSessions, error, clearError, busy,
     chooseWorkspace, loadSession, send, stop, answer, openArtifact
   } = c
 
@@ -347,12 +344,8 @@ export default function App() {
           key={settingsTab}
           initialTab={settingsTab}
           application={application}
-          config={config}
           busy={busy}
           apply={c.applyApplication}
-          inspect={c.inspectConfig}
-          save={c.saveConfig}
-          remove={c.removeConfig}
           testProfile={c.testProfile}
         /> : <>
           {/* 对话列表或空任务引导卡片 */}

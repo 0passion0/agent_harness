@@ -9,8 +9,7 @@ const props: UserSettingsPageProps = {
   initialTab: 'usage', application: {
     build_mode: 'production', projects: [], active_project_id: null, model: null,
     runtimes: { python: '', node: '' }, permission_mode: 'ask', data_dir: 'data'
-  }, config: null, busy: false, apply: noop, inspect: noop, save: noop, remove: noop,
-  testProfile: async () => ''
+  }, busy: false, apply: noop, testProfile: async () => ''
 }
 
 const priced: UsageModel = {

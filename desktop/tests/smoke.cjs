@@ -22,7 +22,6 @@ contextBridge.exposeInMainWorld('medpeer', {
       case 'app.snapshot': return application
       case 'session.snapshot': case 'protocol.hello': return snapshot
       case 'session.search': case 'session.list': return [{id:'chat',title:'测试任务',updated:'2026-10-20'}]
-      case 'config.inspect': return {agent:{content:'',source:''},overrides:{agent:''}}
       case 'harness.projects': return projects
       case 'usage.stats': return {today:'2026-10-22',tracking_since:null,dates:[],model_names:[],models:[],daily:[],totals:{total_tokens:0,input_tokens:0,output_tokens:0,requests:0,reported_requests:0,cache_read:0,reasoning:0,jev_requests:0}}
       case 'harness.inspect': return resources[command.params.project_id]

@@ -8,7 +8,7 @@
  */
 
 import { useEffect, useReducer, useRef, useState } from 'react'
-import type { ApplicationState, AttachmentRef, ConfigScope, ConfigView, EventFrame, SessionItem, Snapshot } from '../../../shared/protocol'
+import type { ApplicationState, AttachmentRef, EventFrame, SessionItem, Snapshot } from '../../../shared/protocol'
 import { initialState, reduceAgent } from './agent-state'
 
 /**
@@ -35,7 +35,6 @@ export function useAgentController() {
   const [attachments, setAttachments] = useState<AttachmentRef[]>([])
   const [sessions, setSessions] = useState<SessionItem[]>([])
   const [sessionSearch, setSessionSearch] = useState('')
-  const [config, setConfig] = useState<ConfigView | null>(null)
   const [error, setError] = useState('')
 
   // 引用计数与竞态保护控制器
@@ -285,39 +284,6 @@ export function useAgentController() {
   }
 
   /**
-   * 检查并拉取智能体规则、技能及 MCP 配置。
-   */
-  async function inspectConfig(scope: ConfigScope): Promise<void> {
-    try {
-      setConfig(await window.medpeer.command({ id: requestId(), method: 'config.inspect', params: { scope } }) as ConfigView)
-    } catch (reason) {
-      setError(String(reason))
-    }
-  }
-
-  /**
-   * 保存智能体指令或 MCP 配置。
-   */
-  async function saveConfig(scope: ConfigScope, kind: 'agent', content: string): Promise<void> {
-    try {
-      setConfig(await window.medpeer.command({ id: requestId(), method: 'config.save', params: { scope, kind, content } }) as ConfigView)
-    } catch (reason) {
-      setError(String(reason))
-    }
-  }
-
-  /**
-   * 移除当前项目的指令或 MCP 局部覆盖项。
-   */
-  async function removeConfig(kind: 'agent'): Promise<void> {
-    try {
-      setConfig(await window.medpeer.command({ id: requestId(), method: 'config.remove', params: { kind } }) as ConfigView)
-    } catch (reason) {
-      setError(String(reason))
-    }
-  }
-
-  /**
    * 测试当前绑定模型的连通性与可用性。
    */
   async function testProfile(): Promise<string> {
@@ -413,7 +379,6 @@ export function useAgentController() {
     attachments,
     setAttachments,
     sessions,
-    config,
     error,
     clearError: () => { setError(''); dispatch({ event: 'error.clear' }) },
     reportError: (message: string) => setError(message),
@@ -425,9 +390,6 @@ export function useAgentController() {
     answer,
     openArtifact,
     applyApplication,
-    inspectConfig,
-    saveConfig,
-    removeConfig,
     testProfile,
     importAttachments,
     importDroppedFiles,

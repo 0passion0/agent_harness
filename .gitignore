@@ -82,6 +82,10 @@ venv.bak/
 openwiki/.run.json
 openwiki/.run.*
 
+# Agent tool scratch scripts and captured command output
+runs/
+large_tool_results/
+
 # IDE & Editors
 .idea/
 .vscode/

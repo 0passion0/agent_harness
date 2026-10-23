@@ -66,6 +66,41 @@ function getToolIcon(name?: string) {
 }
 
 /**
+ * 结构化 JSON 区块展示与一键复制子组件。
+ */
+function ToolDataSection({ title, data, paths }: { title: string; data: unknown; paths: string[] }) {
+  const [copied, setCopied] = useState(false)
+  const json = JSON.stringify(data, null, 2)
+  return (
+    <>
+      <div className="tool-section-head">
+        <b>{title}</b>
+        <button
+          type="button"
+          className="tool-copy-json"
+          onClick={e => {
+            e.stopPropagation()
+            void navigator.clipboard.writeText(json)
+            setCopied(true)
+            setTimeout(() => setCopied(false), 1600)
+          }}
+        >
+          {copied ? <Check size={11} /> : <Copy size={11} />}
+          <span>{copied ? '已复制' : '复制'}</span>
+        </button>
+      </div>
+      {paths.length > 0 && (
+        <div className="tool-linked-files">
+          <span className="tool-linked-label">直接跳转：</span>
+          {paths.map((p, i) => <FileLink key={i} path={p} />)}
+        </div>
+      )}
+      <pre>{json}</pre>
+    </>
+  )
+}
+
+/**
  * 工具执行细节折叠卡片组件。
  *
  * 第一步：解析工具执行记录。
@@ -76,13 +111,6 @@ function getToolIcon(name?: string) {
  */
 export function ToolCard({ callId, record }: ToolCardProps) {
   const output = record.output
-  const [copiedArg, setCopiedArg] = useState(false)
-  const [copiedRes, setCopiedRes] = useState(false)
-
-  const argPaths = extractPaths(record.arguments)
-  const outPaths = extractPaths(output)
-
-  const isSuccess = record.status === 'success' || record.kind === 'tool_end'
   const isFailed = record.status === 'failed' || record.kind === 'tool_error'
   const isRunning = record.status === 'running' || record.kind === 'tool_start'
 
@@ -112,58 +140,8 @@ export function ToolCard({ callId, record }: ToolCardProps) {
         {record.elapsed != null && (
           <p className="tool-elapsed-line">耗时：{(record.elapsed as number).toFixed(2)} 秒</p>
         )}
-
-        <div className="tool-section-head">
-          <b>参数</b>
-          <button
-            type="button"
-            className="tool-copy-json"
-            onClick={e => {
-              e.stopPropagation()
-              void navigator.clipboard.writeText(JSON.stringify(record.arguments, null, 2))
-              setCopiedArg(true)
-              setTimeout(() => setCopiedArg(false), 1600)
-            }}
-          >
-            {copiedArg ? <Check size={11} /> : <Copy size={11} />}
-            <span>{copiedArg ? '已复制' : '复制'}</span>
-          </button>
-        </div>
-        {argPaths.length > 0 && (
-          <div className="tool-linked-files">
-            <span className="tool-linked-label">直接跳转：</span>
-            {argPaths.map((p, i) => (
-              <FileLink key={i} path={p} />
-            ))}
-          </div>
-        )}
-        <pre>{JSON.stringify(record.arguments, null, 2)}</pre>
-
-        <div className="tool-section-head">
-          <b>结果</b>
-          <button
-            type="button"
-            className="tool-copy-json"
-            onClick={e => {
-              e.stopPropagation()
-              void navigator.clipboard.writeText(JSON.stringify(output, null, 2))
-              setCopiedRes(true)
-              setTimeout(() => setCopiedRes(false), 1600)
-            }}
-          >
-            {copiedRes ? <Check size={11} /> : <Copy size={11} />}
-            <span>{copiedRes ? '已复制' : '复制'}</span>
-          </button>
-        </div>
-        {outPaths.length > 0 && (
-          <div className="tool-linked-files">
-            <span className="tool-linked-label">直接跳转：</span>
-            {outPaths.map((p, i) => (
-              <FileLink key={i} path={p} />
-            ))}
-          </div>
-        )}
-        <pre>{JSON.stringify(output, null, 2)}</pre>
+        <ToolDataSection title="参数" data={record.arguments} paths={extractPaths(record.arguments)} />
+        <ToolDataSection title="结果" data={output} paths={extractPaths(output)} />
       </div>
     </details>
   )
