@@ -7,35 +7,22 @@ from typing import Any
 
 
 class DesktopMessages:
-    """桌面端消息解析与格式化工具类。
-
-    :author: tongliga
-    :date: 2026-10-21
-    """
+    """桌面端消息解析与格式化工具类。"""
 
     @staticmethod
     def attachment_message(
         workspace_root: Path, text: str, attachments: list[dict[str, str]]
-    ) -> str | list[dict[str, Any]]:
-        """校验附件安全性（必须在工作区物理边界内）并生成多模态消息内容块。
-
-        :param workspace_root: 当前工作区的物理根目录 Path 对象。
-        :type workspace_root: pathlib.Path
-        :param text: 用户输入的原始提示词。
-        :type text: str
-        :param attachments: 附件字典列表，每项必须包含 name、path 与 media_type 字段。
-        :type attachments: list[dict[str, str]]
-        :return: 原样文本字符串或多模态消息块列表。
-        :rtype: str | list[dict[str, typing.Any]]
-        :raises ValueError: 当附件缺少必填字段、路径非绝对、文件不存在或超出工作区时抛出。
-        :author: tongliga
-        :date: 2026-10-21
-        """
+    ) -> str | list[str | dict[str, Any]]:
+        """校验附件安全性（必须在工作区物理边界内）并生成多模态消息内容块。"""
         root = workspace_root.expanduser().resolve()
         sources = []
 
         for attachment in attachments:
-            if not isinstance(attachment, dict) or set(attachment) != {"name", "path", "media_type"}:
+            if not isinstance(attachment, dict) or set(attachment) != {
+                "name",
+                "path",
+                "media_type",
+            }:
                 raise ValueError("attachments must contain name, path, and media_type")
             if any(not isinstance(attachment[key], str) for key in attachment):
                 raise ValueError("attachment fields must be strings")
@@ -60,13 +47,5 @@ class DesktopMessages:
 
     @staticmethod
     def raw_message(message: Any) -> dict[str, Any]:
-        """将 LangChain 消息对象导出为排除空字段的标准 JSON 字典。
-
-        :param message: LangChain 消息对象（如 HumanMessage、AIMessage 等）。
-        :type message: typing.Any
-        :return: 序列化后的消息字典。
-        :rtype: dict[str, typing.Any]
-        :author: tongliga
-        :date: 2026-10-21
-        """
+        """将 LangChain 消息对象导出为排除空字段的标准 JSON 字典。"""
         return message.model_dump(mode="json", exclude_none=True)

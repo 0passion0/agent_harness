@@ -1,8 +1,4 @@
-"""Serializable public event model emitted by AgentStreaming.
-
-:author: tongliga
-:date: 2026-10-21
-"""
+"""Serializable public event model emitted by AgentStreaming."""
 
 from __future__ import annotations
 
@@ -10,32 +6,30 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, JsonValue
 
+StreamEventType = Literal[
+    "run.started",
+    "run.completed",
+    "run.interrupted",
+    "run.failed",
+    "chain.started",
+    "chain.completed",
+    "chain.failed",
+    "model.started",
+    "model.delta",
+    "model.completed",
+    "tool.started",
+    "tool.completed",
+    "tool.failed",
+    "custom.progress",
+]
+
 
 class StreamEvent(BaseModel):
-    """一次执行内 seq 递增；operation_id / parent_ids 标识并行、嵌套调用。
-
-    :author: tongliga
-    :date: 2026-10-21
-    """
+    """一次执行内 seq 递增；operation_id / parent_ids 标识并行、嵌套调用。"""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    type: Literal[
-        "run.started",
-        "run.completed",
-        "run.interrupted",
-        "run.failed",
-        "chain.started",
-        "chain.completed",
-        "chain.failed",
-        "model.started",
-        "model.delta",
-        "model.completed",
-        "tool.started",
-        "tool.completed",
-        "tool.failed",
-        "custom.progress",
-    ]
+    type: StreamEventType
     run_id: str
     thread_id: str
     seq: int

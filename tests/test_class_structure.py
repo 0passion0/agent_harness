@@ -59,8 +59,8 @@ def test_backend_logic_is_in_methods_with_one_class_per_module():
 
 def test_sessions_and_callbacks_keep_independent_mutable_state():
     first, second = AgentLoop(), AgentLoop()
-    assert first.active is not second.active
-    assert first.output_lock is not second.output_lock
+    assert first.server is not second.server
+    assert first.server._output_lock is not second.server._output_lock
     left, right = ToolDetails(), ToolDetails()
     for name in ("records", "started", "context_requests", "context_reports"):
         assert getattr(left, name) is not getattr(right, name)

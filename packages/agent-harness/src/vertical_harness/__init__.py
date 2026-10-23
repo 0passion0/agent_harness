@@ -10,7 +10,10 @@ from vertical_harness.config import (
 )
 from vertical_harness.core import AgentComposer, ModelRouting, RunContext
 from vertical_harness.desktop import AgentLoop
+from vertical_harness.execution import PythonExecution
+from vertical_harness.filesystem import DocumentFilesystemBackend
 from vertical_harness.langchain import AgentStreaming, StreamEvent, WorkflowLoggingHandler
+from vertical_harness.langchain.tool_details import ToolDetails
 from vertical_harness.log import HarnessLogging, TracingSession
 from vertical_harness.middleware import (
     ContextLimitMiddleware,
@@ -19,9 +22,6 @@ from vertical_harness.middleware import (
     ModelRouterMiddleware,
 )
 from vertical_harness.storage import CheckpointFactory, StoreFactory
-from vertical_harness.filesystem import DocumentFilesystemBackend
-from vertical_harness.execution import PythonExecution
-from vertical_harness.langchain.tool_details import ToolDetails
 from vertical_harness.tools import UserInteraction, WebSearch
 from vertical_harness.utils import StructuredFormatter, UsageEstimator
 

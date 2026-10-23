@@ -46,17 +46,21 @@ def test_native_overflow_compacts_a_smaller_request_and_keeps_raw_history(tmp_pa
     )
     backend = FilesystemBackend(root_dir=tmp_path)
     agent = create_deep_agent(
-        model=model, backend=backend,
+        model=model,
+        backend=backend,
         middleware=[AgentComposer._summarization_middleware(model, backend)],
         checkpointer=InMemorySaver(),
     )
     config = {"configurable": {"thread_id": "provider-overflow"}}
     history = [
-        HumanMessage(content=f"Document comparison {index}: " + "x" * 12_000)
-        for index in range(6)
+        HumanMessage(content=f"Document comparison {index}: " + "x" * 12_000) for index in range(6)
     ]
     payload = {"messages": history}
-    result = asyncio.run(agent.ainvoke(payload, config)) if asynchronous else agent.invoke(payload, config)
+    result = (
+        asyncio.run(agent.ainvoke(payload, config))
+        if asynchronous
+        else agent.invoke(payload, config)
+    )
 
     assert result["messages"][-1].content == "Done."
     assert len(model.seen_messages) == 3
@@ -323,5 +327,3 @@ def test_compaction_logs_structured_fields_without_content(tmp_path, caplog) -> 
     assert fields["file_path"]
     assert fields["summary_chars"] > 0
     assert "Private request 0" not in str(fields)
-
-

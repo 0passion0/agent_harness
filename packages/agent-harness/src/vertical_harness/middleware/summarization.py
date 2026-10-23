@@ -2,7 +2,6 @@
 
 import logging
 from collections.abc import Sequence
-from functools import partial
 from typing import Any
 
 from deepagents.middleware.summarization import (
@@ -10,8 +9,12 @@ from deepagents.middleware.summarization import (
     SUMMARIZATION_EVENT_KEY,
     SummarizationMiddleware,
 )
-from langchain.agents.middleware import AgentMiddleware, ModelRequest
+from langchain.agents.middleware import ModelRequest
 from langchain.agents.middleware.types import ExtendedModelResponse
+
+from vertical_harness.middleware.context_pruning import ContextPruningMiddleware
+from vertical_harness.middleware.project_instructions import ProjectInstructionsMiddleware
+from vertical_harness.middleware.routing import ModelRouterMiddleware
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +39,12 @@ class HarnessSummarizationMiddleware(SummarizationMiddleware):
         return "SummarizationMiddleware"
 
     def __init__(
-        self, *, request_middleware: Sequence[AgentMiddleware] = (), **kwargs: Any
+        self,
+        *,
+        request_middleware: Sequence[
+            ModelRouterMiddleware | ProjectInstructionsMiddleware | ContextPruningMiddleware
+        ] = (),
+        **kwargs: Any,
     ) -> None:
         # 默认追加不可信历史约束；调用方显式传入提示词时保持其原样。
         kwargs.setdefault("summary_prompt", HARNESS_SUMMARY_PROMPT)
@@ -44,17 +52,13 @@ class HarnessSummarizationMiddleware(SummarizationMiddleware):
         self._request_middleware = tuple(request_middleware)
 
     def _record(self, response: Any) -> Any:
-        """记录一次历史摘要压缩的结构化字段，不写入任何消息正文。
-
-        :param response: 原生摘要返回的模型响应或扩展响应。
-        :type response: typing.Any
-        :return: 原样返回的响应对象。
-        :rtype: typing.Any
-        """
+        """记录一次历史摘要压缩的结构化字段，不写入任何消息正文。"""
         if not isinstance(response, ExtendedModelResponse):
             return response
         update = response.command.update if response.command is not None else None
-        event = update.get(SUMMARIZATION_EVENT_KEY) if isinstance(update, dict) else None
+        if not isinstance(update, dict):
+            return response
+        event = update.get(SUMMARIZATION_EVENT_KEY)
         if not isinstance(event, dict):
             return response
         logger.info(
@@ -73,14 +77,12 @@ class HarnessSummarizationMiddleware(SummarizationMiddleware):
 
     def wrap_model_call(self, request: ModelRequest, handler: Any) -> Any:
         """准备完整请求，再交给原生摘要与后续预算检查。"""
-        prepared = partial(super().wrap_model_call, handler=handler)
-        for middleware in reversed(self._request_middleware):
-            prepared = partial(middleware.wrap_model_call, handler=prepared)
-        return self._record(prepared(request))
+        for middleware in self._request_middleware:
+            request = middleware.prepare(request)
+        return self._record(super().wrap_model_call(request, handler))
 
     async def awrap_model_call(self, request: ModelRequest, handler: Any) -> Any:
         """异步请求使用相同顺序，保留指令读取与摘要的异步实现。"""
-        prepared = partial(super().awrap_model_call, handler=handler)
-        for middleware in reversed(self._request_middleware):
-            prepared = partial(middleware.awrap_model_call, handler=prepared)
-        return self._record(await prepared(request))
+        for middleware in self._request_middleware:
+            request = await middleware.aprepare(request)
+        return self._record(await super().awrap_model_call(request, handler))

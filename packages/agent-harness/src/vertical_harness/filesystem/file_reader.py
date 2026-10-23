@@ -18,43 +18,18 @@ MAX_MEDIA_INGEST_BYTES = 20 * 1024 * 1024
 
 
 class FileReader:
-    """工作区文件分页读取器，支持受限文本切片、路径歧义容错与原生多模态媒体嗅探。
-
-    :author: tongliga
-    :date: 2026-10-21
-    """
+    """工作区文件分页读取器，支持受限文本切片、路径歧义容错与原生多模态媒体嗅探。"""
 
     @staticmethod
     def canonical(name: str) -> str:
-        """对文件名执行 Unicode NFC 归一化并替换常见特殊空白与弯引号。
-
-        :param name: 原始文件名字符串。
-        :type name: str
-        :return: 规范化后的统一文件名。
-        :rtype: str
-        :author: tongliga
-        :date: 2026-10-21
-        """
-        # 第一步：NFC 规范化并映射特殊空白与单引号
+        """对文件名执行 Unicode NFC 归一化并替换常见特殊空白与弯引号。"""
         return unicodedata.normalize("NFC", name).translate(
-            str.maketrans({"\u00a0": " ", "\u202f": " ", "\u2018": "'", "\u2019": "'"})
+            {ord("\u00a0"): " ", ord("\u202f"): " ", ord("\u2018"): "'", ord("\u2019"): "'"}
         )
 
     @staticmethod
     def read_supported_media(path: Path, *, pdf: bool = False) -> tuple[str, str] | None:
-        """检查文件二进制魔数并提取支持的图片或 PDF 数据为 Base64 编码。
-
-        :param path: 本地文件物理 Path 对象。
-        :type path: pathlib.Path
-        :param pdf: 是否启用 PDF 文档直接读取模式（默认 False）。
-        :type pdf: bool
-        :return: (MIME 类型, Base64 字符串) 元组，非受支持多模态格式时返回 None。
-        :rtype: tuple[str, str] | None
-        :raises ValueError: 当媒体文件大小超出单文件最大字节阈值时抛出。
-        :author: tongliga
-        :date: 2026-10-21
-        """
-        # 第一步：读取头部魔数判断 MIME 类型
+        """检查文件二进制魔数并提取支持的图片或 PDF 数据为 Base64 编码。"""
         with path.open("rb") as stream:
             prefix = stream.read(12)
             if prefix.startswith(b"\x89PNG\r\n\x1a\n"):
@@ -69,35 +44,19 @@ class FileReader:
                 mime = "application/pdf"
             else:
                 return None
-
-            # 第二步：大小超限防御性校验
             if os.fstat(stream.fileno()).st_size > MAX_MEDIA_INGEST_BYTES:
                 raise ValueError(f"Media exceeds {MAX_MEDIA_INGEST_BYTES} byte limit")
             stream.seek(0)
             content = stream.read(MAX_MEDIA_INGEST_BYTES + 1)
             if len(content) > MAX_MEDIA_INGEST_BYTES:
                 raise ValueError(f"Media exceeds {MAX_MEDIA_INGEST_BYTES} byte limit")
-
-        # 第三步：编码为 Base64 字符串并返回
         return mime, base64.b64encode(content).decode("ascii")
 
     @staticmethod
     def recover_read_path(root: Path, requested: Path) -> Path | None:
-        """当指定文件不存在时，在同目录下尝试通过 Unicode 规范化名称寻址唯一匹配文件。
-
-        :param root: 当前工作区物理根路径。
-        :type root: pathlib.Path
-        :param requested: 用户请求的目标物理文件路径。
-        :type requested: pathlib.Path
-        :return: 恢复出的有效绝对路径，无匹配或存在歧义多匹配时返回 None。
-        :rtype: pathlib.Path | None
-        :author: tongliga
-        :date: 2026-10-21
-        """
-        # 第一步：计算目标名称的规范化键
+        """当指定文件不存在时，在同目录下尝试通过 Unicode 规范化名称寻址唯一匹配文件。"""
         base = FileReader.canonical(requested.name)
         try:
-            # 第二步：遍历父级目录探查唯一对应候选
             with os.scandir(requested.parent) as entries:
                 matches = [
                     requested.parent / entry.name
@@ -108,7 +67,6 @@ class FileReader:
             if len(matches) != 1:
                 return None
             candidate = matches[0].resolve()
-            # 第三步：确保解析后的候选路径未逃逸工作区
             return candidate if candidate.is_relative_to(root.resolve()) else None
         except OSError:
             return None
@@ -119,20 +77,7 @@ class FileReader:
         requested: Path,
         authorize: Callable[[str], str | None] | None = None,
     ) -> str:
-        """生成友好的文件未找到提示信息，并在同目录下附带最多 3 个模糊建议路径。
-
-        :param requested_virtual: 请求的虚拟文件路径（如 '/docs/spec.md'）。
-        :type requested_virtual: str
-        :param requested: 解析后的本地物理路径。
-        :type requested: pathlib.Path
-        :param authorize: 权限校验回调函数，过滤无权限访问的建议文件。
-        :type authorize: collections.abc.Callable[[str], str | None] | None
-        :return: 包含未找到说明及候选建议的友好诊断文本。
-        :rtype: str
-        :author: tongliga
-        :date: 2026-10-21
-        """
-        # 第一步：在同级目录查找子串模糊匹配候选
+        """生成友好的文件未找到提示信息，并在同目录下附带最多 3 个模糊建议路径。"""
         base = posixpath.basename(requested_virtual).lower()
         try:
             suggestions = [
@@ -144,8 +89,6 @@ class FileReader:
             ][:3]
         except OSError:
             suggestions = []
-
-        # 第二步：格式化提示消息
         message = f"File not found: {requested_virtual}"
         if suggestions:
             message += "\n\nDid you mean one of these?\n" + "\n".join(suggestions)
@@ -153,15 +96,7 @@ class FileReader:
 
     @staticmethod
     def directory_entries(path: Path) -> list[tuple[str, bool]]:
-        """列出指定目录下的可见条目名称与其是否为目录的布尔标记，保证确定性排序。
-
-        :param path: 本地目录 Path 对象。
-        :type path: pathlib.Path
-        :return: 元素为 (条目名, 是否为目录) 的元组列表。
-        :rtype: list[tuple[str, bool]]
-        :author: tongliga
-        :date: 2026-10-21
-        """
+        """列出指定目录下的可见条目名称与其是否为目录的布尔标记，保证确定性排序。"""
         with os.scandir(path) as entries:
             visible = [
                 (entry.name, entry.is_dir(follow_symlinks=False))
@@ -175,20 +110,7 @@ class FileReader:
 
     @staticmethod
     def read_text_page(path: Path, offset: int = 0, limit: int = 2000) -> ReadResult:
-        """分页受控读取文本文件切片，严格限制最大行数、最大字节数与超长单行截断。
-
-        :param path: 待读取的文件物理路径。
-        :type path: pathlib.Path
-        :param offset: 起始行偏移量（0-based，默认为 0）。
-        :type offset: int
-        :param limit: 请求读取的最大行数（默认 2000，上限 2000）。
-        :type limit: int
-        :return: 结构化分页读取结果对象 ReadResult。
-        :rtype: deepagents.backends.protocol.ReadResult
-        :author: tongliga
-        :date: 2026-10-21
-        """
-        # 第一步：入参边界规整
+        """分页受控读取文本文件切片，严格限制最大行数、最大字节数与超长单行截断。"""
         offset, limit = max(0, offset), min(MAX_READ_LINES, max(0, limit))
         if not limit:
             return ReadResult(
@@ -199,8 +121,6 @@ class FileReader:
         size = 0
         index = 0
         more = False
-
-        # 第二步：流式读取并检测二进制控制符与 UTF-8 BOM
         with path.open(encoding="utf-8-sig") as stream:
             while True:
                 prefix = b""
@@ -224,8 +144,6 @@ class FileReader:
                     break
                 if binary and index < offset:
                     return ReadResult(error="Binary file: use a suitable Python library.")
-
-                # 第三步：按分页偏移收集行，并执行 2000 字符行截断与 50KB 字节预算截断
                 if index >= offset:
                     line = (
                         prefix.decode("utf-16-le", errors="surrogatepass")
@@ -241,13 +159,9 @@ class FileReader:
                     selected.append(line)
                     size += line_size
                 index += 1
-
-        # 第四步：空读或越界校验
         if not selected and offset and not more:
             return ReadResult(error=f"Line offset {offset} exceeds file length")
         end = offset + len(selected)
-
-        # 第五步：组装并返回 ReadResult 结果契约
         return ReadResult(
             file_data=FileData(content="".join(selected), encoding="utf-8"),
             start_line=offset + 1 if selected else None,

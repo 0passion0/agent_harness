@@ -6,10 +6,6 @@ from pydantic import BaseModel, Field
 
 
 class PatchSchema(BaseModel):
-    """补丁工具参数模型，接收标准的复合多文件差异更新文本。
-
-    :author: tongliga
-    :date: 2026-10-21
-    """
+    """补丁工具参数模型，接收标准的复合多文件差异更新文本。"""
 
     patch_text: str = Field(description="Complete *** Begin Patch / *** End Patch text.")

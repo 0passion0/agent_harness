@@ -1,8 +1,4 @@
-"""组装具备工作区文件系统、网络检索与受控 Python 脚本执行能力的单一智能体核心编排模块。
-
-:author: tongliga
-:date: 2026-10-22
-"""
+"""组装具备工作区文件系统、网络检索与受控 Python 脚本执行能力的单一智能体核心编排模块。"""
 
 from __future__ import annotations
 
@@ -18,10 +14,15 @@ from deepagents.backends.protocol import BackendProtocol
 from deepagents.middleware.summarization import SummarizationMiddleware
 from langchain.agents.middleware import AgentMiddleware, TodoListMiddleware
 from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.graph.state import CompiledStateGraph
 
 from vertical_harness.config.settings import HarnessSettings
 from vertical_harness.core.context import RunContext
 from vertical_harness.core.routing import ModelRouting
+from vertical_harness.execution.python_execution import PythonExecution
+from vertical_harness.execution.shell_execution import ShellExecution
+from vertical_harness.filesystem.code_formatter import CodeFormatter
+from vertical_harness.filesystem.document_backend import DocumentFilesystemBackend
 from vertical_harness.log.observability import TracingSession
 from vertical_harness.middleware.approval import DesktopApprovalMiddleware
 from vertical_harness.middleware.context_limit import ContextLimitMiddleware
@@ -31,13 +32,10 @@ from vertical_harness.middleware.filesystem import HarnessFilesystemMiddleware
 from vertical_harness.middleware.model_retry import ModelRetryMiddleware
 from vertical_harness.middleware.permission import DesktopPermissionMiddleware
 from vertical_harness.middleware.project_instructions import ProjectInstructionsMiddleware
+from vertical_harness.middleware.routing import ModelRouterMiddleware
 from vertical_harness.middleware.summarization import HarnessSummarizationMiddleware
 from vertical_harness.storage.checkpoint import CheckpointFactory
-from vertical_harness.filesystem.document_backend import DocumentFilesystemBackend
-from vertical_harness.filesystem.code_formatter import CodeFormatter
-from vertical_harness.execution.python_execution import PythonExecution
 from vertical_harness.tools.search import WebSearch
-from vertical_harness.execution.shell_execution import ShellExecution
 from vertical_harness.tools.user_interaction import UserInteraction
 
 logger = logging.getLogger(__name__)
@@ -69,38 +67,20 @@ BASE_PROMPT = (
 
 
 class AgentComposer:
-    """智能体核心编排器，负责装配中间件栈、存储后端、工具及编译原生 LangGraph 图。
-
-    :author: tongliga
-    :date: 2026-10-22
-    """
+    """智能体核心编排器，负责装配中间件栈、存储后端、工具及编译原生 LangGraph 图。"""
 
     @staticmethod
     def _summarization_middleware(
-            model: Any, backend: BackendProtocol, max_context_tokens: int = 475_000,
-            *, request_middleware: Sequence[AgentMiddleware] = (),
+        model: Any,
+        backend: BackendProtocol,
+        max_context_tokens: int = 475_000,
+        *,
+        request_middleware: Sequence[
+            ModelRouterMiddleware | ProjectInstructionsMiddleware | ContextPruningMiddleware
+        ] = (),
     ) -> SummarizationMiddleware:
-        """构建自动上下文摘要压缩中间件。
-
-        在达到上下文预算 90% 阈值时触发历史对话修剪与摘要生成，严格遵循底层大模型的输入容量限制。
-
-        :param model: 绑定的聊天模型实例，用于提供 profile 容量元数据及执行摘要生成。
-        :type model: typing.Any
-        :param backend: 用于持久化或读取上下文的底层文件后端协议实现。
-        :type backend: deepagents.backends.protocol.BackendProtocol
-        :param max_context_tokens: 允许的最大上下文 Token 上限阈值，默认为 475,000。
-        :type max_context_tokens: int
-        :param request_middleware: 摘要前执行的无状态请求准备中间件，不承载工具或生命周期钩子。
-        :type request_middleware: collections.abc.Sequence[AgentMiddleware]
-        :return: 配置完成的 DeepAgents 原生 SummarizationMiddleware 中间件实例。
-        :rtype: deepagents.middleware.summarization.SummarizationMiddleware
-        :author: tongliga
-        :date: 2026-10-22
-        """
-        # 第一步：读取模型 profile 中声明的最大输入 Token 上限
+        """构建自动上下文摘要压缩中间件。"""
         max_input_tokens = (model.profile or {}).get("max_input_tokens")
-
-        # 第二步：计算上下文硬上限（取配置上限与模型容量上限较小值）
         if isinstance(max_input_tokens, int) and not isinstance(max_input_tokens, bool):
             context_limit = min(max_input_tokens, max_context_tokens)
         else:
@@ -110,14 +90,10 @@ class AgentComposer:
                 "model_profile_missing",
                 extra={"event_fields": {"configured_limit": max_context_tokens}},
             )
-
-        # 第三步：设定触发摘要的 90% 阈值与保留的核心上下文
         # shortcut: 保留量沿用构建时模型，跨模型窗口差异频繁触顶时改为按请求预算计算。
         token_trigger = max(1, int(context_limit * 0.90))
         keep_tokens = max(1, min(int(context_limit * 0.10), 16_000))
         arg_trigger = min(8_000, token_trigger)
-
-        # 第四步：实例化并返回摘要中间件
         return HarnessSummarizationMiddleware(
             request_middleware=request_middleware,
             model=model,
@@ -132,34 +108,105 @@ class AgentComposer:
             },
         )
 
+    @staticmethod
+    def _permissions(settings: HarnessSettings) -> list[FilesystemPermission]:
+        root = settings.resolved_workspace_root
+        permissions = [
+            FilesystemPermission(
+                operations=["read", "write"], paths=["/**/.env", "/**/.env.*"], mode="deny"
+            ),
+            FilesystemPermission(
+                operations=["write"],
+                paths=["/.agent-harness/skills", "/.agent-harness/skills/**"],
+                mode="deny",
+            ),
+        ]
+        for target in (
+            settings.resolved_store_target,
+            settings.resolved_checkpoint_target,
+            settings.log_file,
+        ):
+            if not isinstance(target, Path):
+                continue
+            try:
+                relative = "/" + target.expanduser().resolve().relative_to(root).as_posix()
+            except ValueError:
+                continue
+            permissions.append(
+                FilesystemPermission(
+                    operations=["read", "write"],
+                    paths=[
+                        relative,
+                        relative + "-wal",
+                        relative + "-shm",
+                        relative + "-journal",
+                        relative + ".*",
+                    ],
+                    mode="deny",
+                )
+            )
+        return permissions
+
+    @classmethod
+    def _middleware(
+        cls,
+        settings: HarnessSettings,
+        model: Any,
+        backend: DocumentFilesystemBackend,
+        system_skills: FilesystemBackend,
+        permissions: list[FilesystemPermission],
+    ) -> list[AgentMiddleware[Any, Any, Any]]:
+        system_root = Path.home() / ".agent-harness"
+        maximum = settings.max_context_tokens
+        middleware: list[AgentMiddleware[Any, Any, Any]] = []
+        if settings.enable_planning:
+            middleware.append(TodoListMiddleware())
+        request_middleware: list[
+            ModelRouterMiddleware | ProjectInstructionsMiddleware | ContextPruningMiddleware
+        ] = []
+        if router := ModelRouting.make_router(settings):
+            request_middleware.append(router)
+        request_middleware.append(
+            ProjectInstructionsMiddleware(
+                backend, permissions, system_instructions=system_root / "AGENTS.md"
+            )
+        )
+        # 指令注入后再做确定性裁剪，让摘要看到的是已落盘、可恢复的历史视图。
+        request_middleware.append(ContextPruningMiddleware(backend, maximum))
+        middleware.extend(
+            [
+                ExecutionLimitsMiddleware(settings.max_steps),
+                cls._summarization_middleware(
+                    model, backend, maximum, request_middleware=request_middleware
+                ),
+                DesktopPermissionMiddleware(settings.permission_mode),
+                ContextLimitMiddleware(maximum),
+                ModelRetryMiddleware(),
+            ]
+        )
+        if settings.permission_mode == "ask":
+            middleware.append(DesktopApprovalMiddleware())
+        middleware.append(
+            HarnessFilesystemMiddleware(
+                backend=backend,
+                skill_backend=system_skills,
+                tools=["ls", "read_file", "write_file", "edit_file", "delete", "glob", "grep"],
+                tool_token_limit_before_evict=3000,
+                grep_max_count=100,
+                _permissions=permissions,
+            )
+        )
+        return middleware
+
     @classmethod
     def build_agent(
-            cls,
-            settings: HarnessSettings,
-            *,
-            checkpointer: Any = None,
-            options: dict[str, Any] | None = None,
-            shell_execution: ShellExecution | None = None,
-    ) -> Any:
-        """构建组装挂载了文件系统、网页检索与受控 Python 脚本工具的原生 LangGraph 智能体状态图。
-
-        无外部插件注册机制或自研工作流，直接组装文件权限、上下文限制、交互审批及动态模型路由中间件。
-
-        :param settings: 经校验的宿主配置对象。
-        :type settings: vertical_harness.config.settings.HarnessSettings
-        :param checkpointer: 可选的 LangGraph 检查点保存器实例，未提供时默认使用 InMemorySaver。
-        :type checkpointer: typing.Any
-        :param options: 可选的桌面与运行参数字典（如 max_context_tokens、permission_mode、agent_content 等）。
-        :type options: dict[str, typing.Any] | None
-        :param shell_execution: 可选的 Shell 外部命令执行引擎。
-        :type shell_execution: vertical_harness.execution.shell_execution.ShellExecution | None
-        :return: 编译完成的原生 CompiledStateGraph 智能体对象。
-        :rtype: typing.Any
-        :author: tongliga
-        :date: 2026-10-22
-        """
-        # 第一步：解析并创建工作区物理根路径，挂载虚拟文件系统与系统级技能存储后端
-        options = options or {}
+        cls,
+        settings: HarnessSettings,
+        *,
+        checkpointer: Any = None,
+        shell_execution: ShellExecution | None = None,
+    ) -> CompiledStateGraph[Any, RunContext, Any, Any]:
+        """构建组装挂载了文件系统、网页检索与受控 Python 脚本工具的原生 LangGraph 智能体状态图。"""
         root = settings.resolved_workspace_root
         root.mkdir(parents=True, exist_ok=True)
         backend = DocumentFilesystemBackend(
@@ -180,84 +227,9 @@ class AgentComposer:
             if path.is_dir()
         ]
         model = ModelRouting.init_configured_model(settings)
-
-        # 第二步：配置敏感文件防访问安全沙箱规则（严格拒绝访问 .env、持久化数据库文件及系统级技能写保护）
-        permissions = [
-            FilesystemPermission(
-                operations=["read", "write"], paths=["/**/.env", "/**/.env.*"], mode="deny"
-            ),
-            FilesystemPermission(
-                operations=["write"],
-                paths=["/.agent-harness/skills", "/.agent-harness/skills/**"],
-                mode="deny",
-            ),
-        ]
-        for target in (
-                settings.resolved_store_target,
-                settings.resolved_checkpoint_target,
-                settings.log_file,
-        ):
-            if target is None or str(target) == ":memory:":
-                continue
-            try:
-                relative = "/" + target.expanduser().resolve().relative_to(root).as_posix()
-            except ValueError:
-                continue
-            permissions.append(
-                FilesystemPermission(
-                    operations=["read", "write"],
-                    paths=[
-                        relative,
-                        relative + "-wal",
-                        relative + "-shm",
-                        relative + "-journal",
-                        relative + ".*",
-                    ],
-                    mode="deny",
-                )
-            )
-
-        # 第三步：配置原生中间件及宿主的路由、预算、权限与审批
-        maximum = options.get("max_context_tokens", 475_000)
-        middleware = []
-        if settings.enable_planning:
-            middleware.append(TodoListMiddleware())
-        request_middleware = []
-        if router := ModelRouting.make_router(settings):
-            request_middleware.append(router)
-        request_middleware.append(
-            ProjectInstructionsMiddleware(
-                backend, permissions, system_instructions=system_root / "AGENTS.md"
-            )
-        )
-        # 指令注入后再做确定性裁剪，让摘要看到的是已落盘、可恢复的历史视图。
-        request_middleware.append(ContextPruningMiddleware(backend, maximum))
-        middleware.extend(
-            [
-                ExecutionLimitsMiddleware(settings.max_steps),
-                cls._summarization_middleware(
-                    model, backend, maximum, request_middleware=request_middleware
-                ),
-                DesktopPermissionMiddleware(options.get("permission_mode", "full")),
-                ContextLimitMiddleware(maximum),
-                ModelRetryMiddleware(),
-            ]
-        )
-        if options.get("permission_mode") == "ask":
-            middleware.append(DesktopApprovalMiddleware())
-        middleware.append(
-            HarnessFilesystemMiddleware(
-                backend=backend,
-                skill_backend=system_skills,
-                tools=["ls", "read_file", "write_file", "edit_file", "delete", "glob", "grep"],
-                tool_token_limit_before_evict=3000,
-                grep_max_count=100,
-                _permissions=permissions,
-            )
-        )
-
-        # 第四步：编译并组装底层 Deep Agent（包含宿主与通用子智能体统一技能与权限约束）
-        system_prompt = BASE_PROMPT + "\n" + options.get("agent_content", "")
+        permissions = cls._permissions(settings)
+        middleware = cls._middleware(settings, model, backend, system_skills, permissions)
+        system_prompt = BASE_PROMPT + "\n" + settings.agent_content
         agent = create_deep_agent(
             name="vertical-agent",
             model=model,
@@ -284,13 +256,11 @@ class AgentComposer:
             context_schema=RunContext,
             checkpointer=checkpointer if checkpointer is not None else InMemorySaver(),
         )
-
-        # 第五步：覆写运行时递归上限与执行超时元数据配置
         agent.config = {
             **(agent.config or {}),
             "recursion_limit": 9999,
             "metadata": {
-                **agent.config["metadata"],
+                **(agent.config or {}).get("metadata", {}),
                 "harness_run_timeout_seconds": settings.run_timeout_seconds,
                 "lc_agent_name": "vertical-agent",
             },
@@ -301,27 +271,21 @@ class AgentComposer:
     @classmethod
     @contextmanager
     def open_agent(
-            cls, settings: HarnessSettings, *, options: dict[str, Any] | None = None,
-            shell_execution: ShellExecution | None = None,
-    ) -> Iterator[Any]:
-        """通过同步上下文管理器保持检查点生命周期并创建可用智能体实例。
-
-        :param settings: 经校验的宿主配置对象。
-        :type settings: vertical_harness.config.settings.HarnessSettings
-        :param options: 可选的桌面端运行控制参数字典。
-        :type options: dict[str, typing.Any] | None
-        :param shell_execution: 可选的外部 Shell 执行器。
-        :type shell_execution: vertical_harness.execution.shell_execution.ShellExecution | None
-        :return: 产生已挂载同步检查点的 CompiledStateGraph 智能体实例迭代器。
-        :rtype: collections.abc.Iterator[typing.Any]
-        :author: tongliga
-        :date: 2026-10-22
-        """
-        # 第一步：打开链路追踪会话与同步检查点管理器并构建智能体
-        with TracingSession.tracing_session(), CheckpointFactory.open_checkpointer(settings) as checkpointer:
+        cls,
+        settings: HarnessSettings,
+        *,
+        shell_execution: ShellExecution | None = None,
+    ) -> Iterator[CompiledStateGraph[Any, RunContext, Any, Any]]:
+        """通过同步上下文管理器保持检查点生命周期并创建可用智能体实例。"""
+        with (
+            TracingSession.tracing_session(),
+            CheckpointFactory.open_checkpointer(settings) as checkpointer,
+        ):
             execution = shell_execution or ShellExecution(settings.resolved_workspace_root)
             try:
-                yield cls.build_agent(settings, checkpointer=checkpointer, options=options, shell_execution=execution)
+                yield cls.build_agent(
+                    settings, checkpointer=checkpointer, shell_execution=execution
+                )
             finally:
                 if shell_execution is None:
                     execution.close()
@@ -329,28 +293,19 @@ class AgentComposer:
     @classmethod
     @asynccontextmanager
     async def aopen_agent(
-            cls, settings: HarnessSettings, *, options: dict[str, Any] | None = None,
-            shell_execution: ShellExecution | None = None,
-    ) -> AsyncIterator[Any]:
-        """通过异步上下文管理器保持检查点生命周期并创建可用智能体实例。
-
-        :param settings: 经校验的宿主配置对象。
-        :type settings: vertical_harness.config.settings.HarnessSettings
-        :param options: 可选的桌面端运行控制参数字典。
-        :type options: dict[str, typing.Any] | None
-        :param shell_execution: 可选的外部 Shell 执行器。
-        :type shell_execution: vertical_harness.execution.shell_execution.ShellExecution | None
-        :return: 产生已挂载异步检查点的 CompiledStateGraph 智能体实例异步迭代器。
-        :rtype: collections.abc.AsyncIterator[typing.Any]
-        :author: tongliga
-        :date: 2026-10-22
-        """
-        # 第一步：打开链路追踪会话与异步检查点管理器并构建智能体
+        cls,
+        settings: HarnessSettings,
+        *,
+        shell_execution: ShellExecution | None = None,
+    ) -> AsyncIterator[CompiledStateGraph[Any, RunContext, Any, Any]]:
+        """通过异步上下文管理器保持检查点生命周期并创建可用智能体实例。"""
         with TracingSession.tracing_session():
             async with CheckpointFactory.aopen_checkpointer(settings) as checkpointer:
                 execution = shell_execution or ShellExecution(settings.resolved_workspace_root)
                 try:
-                    yield cls.build_agent(settings, checkpointer=checkpointer, options=options, shell_execution=execution)
+                    yield cls.build_agent(
+                        settings, checkpointer=checkpointer, shell_execution=execution
+                    )
                 finally:
                     if shell_execution is None:
                         await execution.aclose()

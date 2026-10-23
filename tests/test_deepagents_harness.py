@@ -35,7 +35,10 @@ def make_agent(tmp_path, monkeypatch, mode, tool_name="write_file", args=None):
                     {
                         "id": "delegate",
                         "name": "task",
-                        "args": {"description": "Check the workspace", "subagent_type": "general-purpose"},
+                        "args": {
+                            "description": "Check the workspace",
+                            "subagent_type": "general-purpose",
+                        },
                     }
                 ],
             ),
@@ -45,7 +48,9 @@ def make_agent(tmp_path, monkeypatch, mode, tool_name="write_file", args=None):
                     {
                         "id": "child-tool",
                         "name": tool_name,
-                        "args": args if args is not None else {"file_path": "/result.txt", "content": "verified"},
+                        "args": args
+                        if args is not None
+                        else {"file_path": "/result.txt", "content": "verified"},
                     }
                 ],
             ),
@@ -62,7 +67,9 @@ def make_agent(tmp_path, monkeypatch, mode, tool_name="write_file", args=None):
         enable_memory=False,
         enable_planning=False,
     )
-    return AgentComposer.build_agent(settings, options={"permission_mode": mode}), model
+    return AgentComposer.build_agent(
+        HarnessSettings.model_validate({**(settings).model_dump(), **{"permission_mode": mode}})
+    ), model
 
 
 def test_deepagents_delegates_with_the_existing_tool_set(tmp_path, monkeypatch):
@@ -111,14 +118,10 @@ def test_global_and_project_instructions_and_skills_reach_child(
     inputs = {"messages": [HumanMessage(content="Use the global skill in a child task")]}
     config = {"configurable": {"thread_id": "skills"}}
     result = (
-        asyncio.run(agent.ainvoke(inputs, config))
-        if asynchronous
-        else agent.invoke(inputs, config)
+        asyncio.run(agent.ainvoke(inputs, config)) if asynchronous else agent.invoke(inputs, config)
     )
     assert result["messages"][-1].content == "All done"
-    skills = {
-        skill["name"]: skill for skill in agent.get_state(config).values["skills_metadata"]
-    }
+    skills = {skill["name"]: skill for skill in agent.get_state(config).values["skills_metadata"]}
     assert skills["shared"]["path"] == "/.agents/skills/shared/SKILL.md"
     assert skills["shared"]["description"] == "project shared skill"
     assert skills["global-only"]["path"] == "/.agent-harness/skills/global-only/SKILL.md"
@@ -206,7 +209,9 @@ def test_delegated_writes_require_and_resume_desktop_approval(tmp_path, monkeypa
     pending = agent.invoke({"messages": [HumanMessage(content="Delegate a file update")]}, config)
     assert pending["__interrupt__"][0].value == {
         "kind": "approval",
-        "action_requests": [{"name": "write_file", "args": {"file_path": "/result.txt", "content": "verified"}}],
+        "action_requests": [
+            {"name": "write_file", "args": {"file_path": "/result.txt", "content": "verified"}}
+        ],
     }
     assert not (tmp_path / "result.txt").exists()
     resumed = agent.invoke(Command(resume={"decisions": [{"type": decision}]}), config)
@@ -242,21 +247,27 @@ def test_delegated_approval_streams_to_desktop_and_resumes(tmp_path, monkeypatch
     config = {"configurable": {"thread_id": "streaming-delegation"}, "callbacks": [details]}
 
     async def run():
-        async with aclosing(AgentStreaming.astream_agent(
-            agent, {"messages": [HumanMessage(content="Delegate a file update")]}, config=config
-        )) as events:
+        async with aclosing(
+            AgentStreaming.astream_agent(
+                agent, {"messages": [HumanMessage(content="Delegate a file update")]}, config=config
+            )
+        ) as events:
             pending = [event async for event in events]
         assert pending[-1].type == "run.interrupted"
         assert pending[-1].data["interrupts"][0]["value"]["kind"] == "approval"
         assert not (tmp_path / "result.txt").exists()
-        async with aclosing(AgentStreaming.astream_agent(
-            agent, Command(resume={"decisions": [{"type": "approve"}]}), config=config
-        )) as events:
+        async with aclosing(
+            AgentStreaming.astream_agent(
+                agent, Command(resume={"decisions": [{"type": "approve"}]}), config=config
+            )
+        ) as events:
             resumed = [event async for event in events]
         assert resumed[-1].type == "run.completed"
         assert resumed[-1].data["output"] == "All done"
         assert (tmp_path / "result.txt").read_text() == "verified"
-        task = next(event for event in resumed if event.type == "tool.completed" and event.name == "task")
+        task = next(
+            event for event in resumed if event.type == "tool.completed" and event.name == "task"
+        )
         assert details.records[task.operation_id]["output"] == "Child finished"
 
     asyncio.run(run())

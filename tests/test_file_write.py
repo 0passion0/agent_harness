@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from vertical_harness.filesystem import document_backend
+from vertical_harness.filesystem import file_mutation
 from vertical_harness.filesystem.document_backend import DocumentFilesystemBackend
 
 _REFERENCE_COMMIT = "7d3752c14ce8dd03cfaac03ee4062a877808a69c"
@@ -108,7 +108,7 @@ def test_write_failure_keeps_original_and_removes_temporary(
     def fail(*args):
         raise OSError("injected write failure")
 
-    monkeypatch.setattr(document_backend.os, failure_stage, fail)
+    monkeypatch.setattr(file_mutation.os, failure_stage, fail)
     result = backend.write("/file.txt", "\ufeffreplacement\n")
     assert result.error == "Write failed: injected write failure"
     assert result.path is None

@@ -74,10 +74,12 @@ def test_streamed_tool_details_reach_the_original_cards(monkeypatch, tmp_path):
                 },
             },
         )
-        monkeypatch.setattr(bridge.AgentLoop, "open_configured_agent", open_agent)
-        monkeypatch.setattr(bridge.AgentLoop, "notify", capture)
+        monkeypatch.setattr(bridge.AgentRuntime, "open_agent", open_agent)
+        monkeypatch.setattr(bridge.StdioServer, "notify", capture)
+        if agent_loop.runs is not None:
+            monkeypatch.setattr(agent_loop.runs, "notify", agent_loop.server.notify)
         thread_id, run_id = str(uuid4()), str(uuid4())
-        await agent_loop._run(thread_id, run_id, {"messages": [HumanMessage(content="write")]})
+        await agent_loop.runs._run(thread_id, run_id, {"messages": [HumanMessage(content="write")]})
 
     asyncio.run(scenario())
     start = next(frame for frame in frames if frame["type"] == "tool.started")

@@ -10,11 +10,7 @@ from langchain.agents.middleware import AgentMiddleware, ModelRequest
 
 @dataclass(eq=False)
 class DesktopPermissionMiddleware(AgentMiddleware):
-    """在只读模式（read_only）下强制禁用所有具副作用工具的权限中间件。
-
-    :author: tongliga
-    :date: 2026-10-21
-    """
+    """在只读模式（read_only）下强制禁用所有具副作用工具的权限中间件。"""
 
     _READ_ONLY_TOOLS = frozenset(
         {"read_file", "ls", "glob", "grep", "ask_user", "web_search", "write_todos"}
@@ -27,11 +23,14 @@ class DesktopPermissionMiddleware(AgentMiddleware):
         """只向模型公开当前权限允许的工具，执行入口仍独立强制校验。"""
         if self.mode != "read_only":
             return request
-        return request.override(tools=[
-            tool for tool in request.tools
-            if (tool.get("function", tool).get("name") if isinstance(tool, dict) else tool.name)
-            in self._READ_ONLY_TOOLS
-        ])
+        return request.override(
+            tools=[
+                tool
+                for tool in request.tools
+                if (tool.get("function", tool).get("name") if isinstance(tool, dict) else tool.name)
+                in self._READ_ONLY_TOOLS
+            ]
+        )
 
     def wrap_model_call(self, request: ModelRequest, handler: Any) -> Any:
         """同步过滤工具描述。"""
@@ -42,35 +41,11 @@ class DesktopPermissionMiddleware(AgentMiddleware):
         return await handler(self._prepare(request))
 
     def wrap_tool_call(self, request: Any, handler: Any) -> Any:
-        """同步拦截工具调用，若在只读模式下尝试执行白名单外工具则抛出权限错误。
-
-        :param request: 工具调用请求对象。
-        :type request: typing.Any
-        :param handler: 下游工具调用处理器。
-        :type handler: typing.Any
-        :return: 工具调用结果。
-        :rtype: typing.Any
-        :raises PermissionError: 当只读模式下调用非只读工具时抛出。
-        :author: tongliga
-        :date: 2026-10-21
-        """
-        # 第一步：校验只读模式下工具是否属于允许的白名单集
+        """同步拦截工具调用，若在只读模式下尝试执行白名单外工具则抛出权限错误。"""
         if self.mode == "read_only" and request.tool.name not in self._READ_ONLY_TOOLS:
             raise PermissionError(f"Tool {request.tool.name} is disabled in read_only mode")
-        # 第二步：通过权限检查，放行至下游执行
         return handler(request)
 
     async def awrap_tool_call(self, request: Any, handler: Any) -> Any:
-        """异步拦截工具调用，若在只读模式下尝试执行白名单外工具则抛出权限错误。
-
-        :param request: 工具调用请求对象。
-        :type request: typing.Any
-        :param handler: 下游异步工具调用处理器。
-        :type handler: typing.Any
-        :return: 工具调用结果。
-        :rtype: typing.Any
-        :raises PermissionError: 当只读模式下调用非只读工具时抛出。
-        :author: tongliga
-        :date: 2026-10-21
-        """
+        """异步拦截工具调用，若在只读模式下尝试执行白名单外工具则抛出权限错误。"""
         return await self.wrap_tool_call(request, handler)

@@ -1,6 +1,7 @@
 import base64
 
 from vertical_harness.bridge.attachments import AttachmentContent
+from vertical_harness.filesystem.document_text import DocumentText
 
 
 def test_table_attachments_request_local_summary_without_loading_rows(tmp_path):
@@ -21,21 +22,21 @@ def test_extracts_csv_xlsx_docx_and_pdf(tmp_path):
 
     csv = tmp_path / "data.csv"
     csv.write_text("value\n12\n", encoding="utf-8")
-    assert "12" in AttachmentContent.extract_text(csv)
+    assert "12" in DocumentText.extract_text(csv)
     xlsx = tmp_path / "data.xlsx"
     pd.DataFrame({"value": [12]}).to_excel(xlsx, index=False)
-    assert "12" in AttachmentContent.extract_text(xlsx)
+    assert "12" in DocumentText.extract_text(xlsx)
     docx = tmp_path / "document.docx"
     document = Document()
     document.add_paragraph("research text")
     document.save(docx)
-    assert AttachmentContent.extract_text(docx) == "research text"
+    assert DocumentText.extract_text(docx) == "research text"
     pdf = tmp_path / "blank.pdf"
     writer = PdfWriter()
     writer.add_blank_page(width=100, height=100)
     with pdf.open("wb") as file:
         writer.write(file)
-    assert AttachmentContent.extract_text(pdf) == "无可提取文字"
+    assert DocumentText.extract_text(pdf) == "无可提取文字"
 
 
 def test_limits_text_and_preserves_image_content(tmp_path):

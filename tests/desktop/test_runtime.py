@@ -103,7 +103,10 @@ def test_composed_desktop_agent_can_ask_questions_in_every_permission_mode(
         store_backend="memory",
         enable_memory=False,
     )
-    app = AgentComposer.build_agent(settings, checkpointer=InMemorySaver(), options=selected)
+    app = AgentComposer.build_agent(
+        HarnessSettings.model_validate({**(settings).model_dump(), **selected}),
+        checkpointer=InMemorySaver(),
+    )
 
     async def run():
         config = {"configurable": {"thread_id": "questions"}}
@@ -121,7 +124,7 @@ def test_composed_desktop_agent_can_ask_questions_in_every_permission_mode(
 
 def test_configured_settings_preserve_provider_model_and_runtime_paths(monkeypatch, tmp_path):
     monkeypatch.setenv("VA_MODEL", "deepseek:configured")
-    settings, desktop = DesktopRuntime.configured_settings(
+    settings = DesktopRuntime.configured_settings(
         {
             "workspace_root": str(tmp_path / "workspace"),
             "runtime_data_dir": str(tmp_path / "runtime"),
@@ -130,7 +133,8 @@ def test_configured_settings_preserve_provider_model_and_runtime_paths(monkeypat
     )
     assert settings.model == "deepseek:deepseek-chat"
     assert settings.resolved_workspace_root == (tmp_path / "workspace").resolve()
-    assert desktop["runtimes"] == {"python": "python.exe", "node": "node.exe"}
+    assert settings.python_executable == "python.exe"
+    assert settings.node_executable == "node.exe"
 
 
 @pytest.mark.parametrize("maximum", [0, 475001])
@@ -171,7 +175,9 @@ def test_attachments_inside_workspace_are_referenced_in_place(tmp_path):
         ("outside", ValueError, "must be inside the workspace"),
     ],
 )
-def test_all_attachments_are_validated_before_content_conversion(tmp_path, monkeypatch, case, error, message):
+def test_all_attachments_are_validated_before_content_conversion(
+    tmp_path, monkeypatch, case, error, message
+):
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     image = workspace / "image.png"
@@ -262,7 +268,9 @@ def test_context_limit_uses_the_routed_model_capacity():
     )
     middleware = ContextLimitMiddleware(475_000)
     with pytest.raises(ContextOverflowError, match=r"max_context_tokens \(1000\)"):
-        middleware.wrap_model_call(request, lambda _request: pytest.fail("must not reach the model"))
+        middleware.wrap_model_call(
+            request, lambda _request: pytest.fail("must not reach the model")
+        )
 
 
 def test_context_limit_rejects_oversized_history():
@@ -373,7 +381,9 @@ def test_desktop_context_limit_checks_compacted_model_request(
     config = {"configurable": {"thread_id": f"context-limit-{use_async}"}}
 
     async def scenario():
-        async with AgentComposer.aopen_agent(settings, options=selected) as app:
+        async with AgentComposer.aopen_agent(
+            HarnessSettings.model_validate({**(settings).model_dump(), **selected})
+        ) as app:
             if use_async:
                 result = await app.ainvoke({"messages": history}, config)
                 snapshot = await app.aget_state(config)
@@ -436,7 +446,9 @@ def test_read_only_real_graph_blocks_builtin_write_file(tmp_path, monkeypatch):
     )
 
     async def invoke():
-        async with AgentComposer.aopen_agent(settings, options=selected) as app:
+        async with AgentComposer.aopen_agent(
+            HarnessSettings.model_validate({**(settings).model_dump(), **selected})
+        ) as app:
             assert app.config["recursion_limit"] == 9999
             await app.ainvoke(
                 {"messages": [HumanMessage(content="write blocked.txt")]},
@@ -488,7 +500,9 @@ def test_ask_rejection_returns_tool_error_and_allows_model_to_continue(tmp_path,
     )
 
     async def scenario():
-        async with AgentComposer.aopen_agent(settings, options=selected) as app:
+        async with AgentComposer.aopen_agent(
+            HarnessSettings.model_validate({**(settings).model_dump(), **selected})
+        ) as app:
             config = {"configurable": {"thread_id": "ask-reject-check"}}
             await app.ainvoke({"messages": [HumanMessage(content="write rejected.txt")]}, config)
             paused = await app.aget_state(config)
@@ -539,7 +553,9 @@ def test_streaming_six_tool_calls_keeps_agent_recursion_limit(tmp_path, monkeypa
     )
 
     async def scenario():
-        async with AgentComposer.aopen_agent(settings, options=selected) as app:
+        async with AgentComposer.aopen_agent(
+            HarnessSettings.model_validate({**(settings).model_dump(), **selected})
+        ) as app:
             assert app.config["recursion_limit"] == 9999
             config = {
                 **CheckpointConfig.make_checkpoint_config("six-tool-call-check"),

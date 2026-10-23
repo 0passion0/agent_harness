@@ -4,7 +4,25 @@ from pathlib import Path
 
 import pytest
 
+from vertical_harness.filesystem import file_mutation
 from vertical_harness.filesystem.resources import HarnessResources
+
+
+def test_failed_atomic_save_preserves_existing_resource_and_removes_temporary(
+    tmp_path, monkeypatch
+):
+    resources = HarnessResources(tmp_path)
+    resources.save("project", "agent", "", "original")
+    before = set(tmp_path.iterdir())
+
+    def fail_replace(*_args):
+        raise PermissionError("target is locked")
+
+    monkeypatch.setattr(file_mutation.os, "replace", fail_replace)
+    with pytest.raises(PermissionError, match="locked"):
+        resources.save("project", "agent", "", "replacement")
+    assert (tmp_path / "AGENTS.md").read_text(encoding="utf-8") == "original"
+    assert set(tmp_path.iterdir()) == before
 
 
 def skill(name="demo", description="A demo skill", body="Use this skill."):

@@ -8,8 +8,8 @@ from deepagents.middleware.filesystem import FilesystemPermission
 from langchain.agents.middleware import ModelRequest
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from vertical_harness.middleware.project_instructions import ProjectInstructionsMiddleware
 from vertical_harness.filesystem.document_backend import DocumentFilesystemBackend
+from vertical_harness.middleware.project_instructions import ProjectInstructionsMiddleware
 
 
 def request(system_message=None):

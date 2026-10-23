@@ -30,9 +30,7 @@ def history(results: int = 6, size: int = 20_000) -> list:
             )
         )
         messages.append(
-            ToolMessage(
-                content=f"RESULT-{index} " + "x" * size, tool_call_id=f"call-{index}"
-            )
+            ToolMessage(content=f"RESULT-{index} " + "x" * size, tool_call_id=f"call-{index}")
         )
     return messages
 
@@ -40,9 +38,7 @@ def history(results: int = 6, size: int = 20_000) -> list:
 def request_for(messages: list) -> ModelRequest:
     """Wrap messages in a request whose model advertises a large context window."""
     return ModelRequest(
-        model=FakeMessagesListChatModel(
-            responses=[], profile={"max_input_tokens": 1_000_000}
-        ),
+        model=FakeMessagesListChatModel(responses=[], profile={"max_input_tokens": 1_000_000}),
         messages=messages,
         tools=[],
     )
@@ -116,14 +112,20 @@ def test_pruning_keeps_checkpoint_history_intact(tmp_path, monkeypatch) -> None:
     )
     monkeypatch.setattr(compose.ModelRouting, "init_configured_model", lambda _settings: model)
     agent = compose.AgentComposer.build_agent(
-        HarnessSettings(
-            _env_file=None,
-            model="test:pruning",
-            workspace_root=tmp_path,
-            store_backend="memory",
-            enable_planning=False,
+        HarnessSettings.model_validate(
+            {
+                **(
+                    HarnessSettings(
+                        _env_file=None,
+                        model="test:pruning",
+                        workspace_root=tmp_path,
+                        store_backend="memory",
+                        enable_planning=False,
+                    )
+                ).model_dump(),
+                **{"max_context_tokens": 20_000},
+            }
         ),
-        options={"max_context_tokens": 20_000},
     )
     config = {"configurable": {"thread_id": "pruning-checkpoint"}}
 
@@ -133,4 +135,3 @@ def test_pruning_keeps_checkpoint_history_intact(tmp_path, monkeypatch) -> None:
     assert "/large_tool_results/call-0" in repr(model.seen[0])
     checkpoint = agent.get_state(config).values["messages"]
     assert checkpoint[2].content.startswith("RESULT-0 ")
-

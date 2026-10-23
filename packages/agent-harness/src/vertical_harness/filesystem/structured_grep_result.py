@@ -10,12 +10,6 @@ from deepagents.backends.protocol import GrepResult
 
 @dataclass
 class StructuredGrepResult(GrepResult):
-    """扩展 Grep 结果数据模型，保留行号、字节偏移量与子匹配高亮等结构化元数据。
-
-    :param source_matches: 结构化匹配结果列表，包含条目路径、行号、偏移量及子匹配元数据。
-    :type source_matches: list[dict[str, typing.Any]]
-    :author: tongliga
-    :date: 2026-10-21
-    """
+    """扩展 Grep 结果数据模型，保留行号、字节偏移量与子匹配高亮等结构化元数据。"""
 
     source_matches: list[dict[str, Any]] = field(default_factory=list)

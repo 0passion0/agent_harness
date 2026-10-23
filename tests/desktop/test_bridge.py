@@ -122,9 +122,12 @@ def test_configure_isolates_store_and_checkpoint_paths(monkeypatch, tmp_path):
     result = asyncio.run(configure(monkeypatch, tmp_path, agent_loop))
     assert result["model"] == "test:fake"
     assert "environment" in result
-    assert agent_loop.settings.store_db_path == tmp_path / "runtime" / "store.sqlite"
-    assert agent_loop.settings.checkpoint_db_path == tmp_path / "runtime" / "checkpoints.sqlite"
-    assert agent_loop.settings.resolved_workspace_root == (tmp_path / "workspace").resolve()
+    assert agent_loop.runtime.settings.store_db_path == tmp_path / "runtime" / "store.sqlite"
+    assert (
+        agent_loop.runtime.settings.checkpoint_db_path
+        == tmp_path / "runtime" / "checkpoints.sqlite"
+    )
+    assert agent_loop.runtime.settings.resolved_workspace_root == (tmp_path / "workspace").resolve()
 
 
 def test_snapshot_of_new_sqlite_thread_has_no_run(monkeypatch, tmp_path):
@@ -137,10 +140,10 @@ def test_snapshot_of_new_sqlite_thread_has_no_run(monkeypatch, tmp_path):
 
         @asynccontextmanager
         async def open_agent(_state):
-            async with CheckpointFactory.aopen_checkpointer(agent_loop.settings) as saver:
+            async with CheckpointFactory.aopen_checkpointer(agent_loop.runtime.settings) as saver:
                 yield agent(saver)
 
-        monkeypatch.setattr(bridge.AgentLoop, "open_configured_agent", open_agent)
+        monkeypatch.setattr(bridge.AgentRuntime, "open_agent", open_agent)
         snapshot = await agent_loop.dispatch("snapshot", {"thread_id": thread_id})
         assert snapshot["thread_id"] == thread_id
         assert snapshot["run_id"] is None
@@ -179,7 +182,10 @@ def test_actual_model_context_is_streamed_persisted_and_isolated_by_chat(monkeyp
     async def capture(state, method, params):
         frames.append(params)
 
-    monkeypatch.setattr(bridge.AgentLoop, "notify", capture)
+    monkeypatch.setattr(bridge.StdioServer, "notify", capture)
+
+    if agent_loop.runs is not None:
+        monkeypatch.setattr(agent_loop.runs, "notify", agent_loop.server.notify)
 
     async def scenario():
         await configure(monkeypatch, tmp_path, agent_loop)
@@ -188,20 +194,20 @@ def test_actual_model_context_is_streamed_persisted_and_isolated_by_chat(monkeyp
         await agent_loop.dispatch(
             "run.start", {"thread_id": thread_id, "run_id": run_id, "text": "Hello"}
         )
-        task = agent_loop.active[run_id][1]
+        task = agent_loop.runs.active.task
         await task
         completed = next(frame for frame in frames if frame["type"] == "model.completed")
         assert completed["data"]["token_usage"]["used_tokens"] == 820
-        report = await agent_loop.context_usage(thread_id, [])
+        report = await agent_loop.sessions.context_usage(thread_id, [])
         assert report["used_tokens"] == 820
         assert report["sections"]["system_prompt"]["tokens"] > 0
-        assert (await agent_loop.context_usage(str(uuid4()), []))["used_tokens"] == 0
-        agent_loop.desktop_options["max_context_tokens"] = 400
-        resized = await agent_loop.context_usage(thread_id, [])
+        assert (await agent_loop.sessions.context_usage(str(uuid4()), []))["used_tokens"] == 0
+        agent_loop.runtime.settings.max_context_tokens = 400
+        resized = await agent_loop.sessions.context_usage(thread_id, [])
         assert resized["used_ratio"] == 2.05
         assert resized["remaining_tokens"] == 0
         await agent_loop.dispatch("session.delete", {"thread_id": thread_id})
-        assert (await agent_loop.context_usage(thread_id, []))["used_tokens"] == 0
+        assert (await agent_loop.sessions.context_usage(thread_id, []))["used_tokens"] == 0
 
     asyncio.run(scenario())
 
@@ -214,7 +220,7 @@ def test_snapshot_reopens_sqlite_checkpoint_with_messages_and_interrupt(monkeypa
         await configure(monkeypatch, tmp_path, agent_loop)
         thread_id = str(uuid4())
         run_id = str(uuid4())
-        async with CheckpointFactory.aopen_checkpointer(agent_loop.settings) as saver:
+        async with CheckpointFactory.aopen_checkpointer(agent_loop.runtime.settings) as saver:
             graph = agent(saver)
             await graph.ainvoke(
                 {"messages": [HumanMessage(content="hello")]},
@@ -226,10 +232,10 @@ def test_snapshot_reopens_sqlite_checkpoint_with_messages_and_interrupt(monkeypa
 
         @asynccontextmanager
         async def open_agent(_state):
-            async with CheckpointFactory.aopen_checkpointer(agent_loop.settings) as saver:
+            async with CheckpointFactory.aopen_checkpointer(agent_loop.runtime.settings) as saver:
                 yield agent(saver)
 
-        monkeypatch.setattr(bridge.AgentLoop, "open_configured_agent", open_agent)
+        monkeypatch.setattr(bridge.AgentRuntime, "open_agent", open_agent)
         snapshot = await agent_loop.dispatch("snapshot", {"thread_id": thread_id})
         assert snapshot["run_id"] == run_id
         assert snapshot["messages"][0]["data"]["content"] == "hello"
@@ -256,12 +262,14 @@ def test_stream_resumes_by_real_interrupt_id_and_cleans_up_before_terminal(monke
         async def open_agent(_state):
             nonlocal context_exited
             try:
-                async with CheckpointFactory.aopen_checkpointer(agent_loop.settings) as saver:
+                async with CheckpointFactory.aopen_checkpointer(
+                    agent_loop.runtime.settings
+                ) as saver:
                     yield agent(saver, body_calls=body_calls)
             finally:
                 context_exited = True
 
-        monkeypatch.setattr(bridge.AgentLoop, "open_configured_agent", open_agent)
+        monkeypatch.setattr(bridge.AgentRuntime, "open_agent", open_agent)
         events = []
 
         async def capture(_state, method, params):
@@ -270,16 +278,19 @@ def test_stream_resumes_by_real_interrupt_id_and_cleans_up_before_terminal(monke
                 "run.interrupted",
                 "run.failed",
             }:
-                assert params["run_id"] not in agent_loop.active
+                assert agent_loop.runs.active is None
                 assert context_exited
             events.append((method, params))
 
-        monkeypatch.setattr(bridge.AgentLoop, "notify", capture)
+        monkeypatch.setattr(bridge.StdioServer, "notify", capture)
+
+        if agent_loop.runs is not None:
+            monkeypatch.setattr(agent_loop.runs, "notify", agent_loop.server.notify)
         thread_id, run_id = (str(uuid4()), str(uuid4()))
         await agent_loop.dispatch(
             "run.start", {"thread_id": thread_id, "run_id": run_id, "text": "hello"}
         )
-        await agent_loop.active[run_id][1]
+        await agent_loop.runs.active.task
         interrupted = next(
             (p for m, p in events if m == "agent.event" and p["type"] == "run.interrupted")
         )
@@ -288,7 +299,7 @@ def test_stream_resumes_by_real_interrupt_id_and_cleans_up_before_terminal(monke
             "run.resume",
             {"thread_id": thread_id, "run_id": run_id, "decisions": {interrupt_id: APPROVAL}},
         )
-        await agent_loop.active[run_id][1]
+        await agent_loop.runs.active.task
         assert body_calls == [APPROVAL]
         assert any((m == "agent.event" and p["type"] == "run.completed" for m, p in events))
 
@@ -309,13 +320,16 @@ def test_stop_cancels_active_run(monkeypatch, tmp_path):
             await asyncio.Event().wait()
             yield None
 
-        monkeypatch.setattr(bridge.AgentLoop, "open_configured_agent", slow_open)
+        monkeypatch.setattr(bridge.AgentRuntime, "open_agent", slow_open)
         events = []
 
         async def capture(_state, method, params):
             events.append((method, params))
 
-        monkeypatch.setattr(bridge.AgentLoop, "notify", capture)
+        monkeypatch.setattr(bridge.StdioServer, "notify", capture)
+
+        if agent_loop.runs is not None:
+            monkeypatch.setattr(agent_loop.runs, "notify", agent_loop.server.notify)
         thread_id, run_id = (str(uuid4()), str(uuid4()))
         await agent_loop.dispatch(
             "run.start", {"thread_id": thread_id, "run_id": run_id, "text": "cancel"}
@@ -341,13 +355,15 @@ def test_stop_paused_run_checks_identity_and_clears_current_run(monkeypatch, tmp
         async def open_agent(_state):
             yield agent(saver)
 
-        monkeypatch.setattr(bridge.AgentLoop, "open_configured_agent", open_agent)
-        monkeypatch.setattr(bridge.AgentLoop, "notify", lambda *_args: asyncio.sleep(0))
+        monkeypatch.setattr(bridge.AgentRuntime, "open_agent", open_agent)
+        monkeypatch.setattr(bridge.StdioServer, "notify", lambda *_args: asyncio.sleep(0))
+        if agent_loop.runs is not None:
+            monkeypatch.setattr(agent_loop.runs, "notify", agent_loop.server.notify)
         thread_id, run_id = (str(uuid4()), str(uuid4()))
         await agent_loop.dispatch(
             "run.start", {"thread_id": thread_id, "run_id": run_id, "text": "pause and stop"}
         )
-        await agent_loop.active[run_id][1]
+        await agent_loop.runs.active.task
         with pytest.raises(ValueError, match="run_id does not match"):
             await agent_loop.dispatch("run.stop", {"run_id": str(uuid4()), "thread_id": thread_id})
         async with open_agent(agent_loop) as state:

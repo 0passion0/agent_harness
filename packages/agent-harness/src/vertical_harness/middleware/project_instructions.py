@@ -16,31 +16,17 @@ from vertical_harness.filesystem.document_backend import DocumentFilesystemBacke
 
 @dataclass(eq=False)
 class ProjectInstructionsMiddleware(AgentMiddleware):
-    """项目级规范指令注入中间件，自动加载根目录与活跃文件作用域的 AGENTS.md。
-
-    :author: tongliga
-    :date: 2026-10-21
-    """
+    """项目级规范指令注入中间件，自动加载根目录与活跃文件作用域的 AGENTS.md。"""
 
     backend: DocumentFilesystemBackend
     permissions: list[FilesystemPermission] = field(default_factory=list)
     system_instructions: Path | None = None
 
     def _read(self, file_path: str, *, encoding: str = "utf-8") -> tuple[Path, str] | None:
-        """受控尝试读取指定相对路径文件的文本内容，无权限或不存在时返回 None。
-
-        :param file_path: 工作区相对或虚拟路径。
-        :type file_path: str
-        :param encoding: 文件读取编码格式（默认 'utf-8'）。
-        :type encoding: str
-        :return: (物理路径, 文件内容) 元组，读取失败返回 None。
-        :rtype: tuple[pathlib.Path, str] | None
-        :author: tongliga
-        :date: 2026-10-21
-        """
+        """受控尝试读取指定相对路径文件的文本内容，无权限或不存在时返回 None。"""
         if _permission_error(self.permissions, "read", self.backend, file_path):
             return None
-        path = self.backend._resolve_path(file_path)
+        path = self.backend.resolve_path(file_path)
         try:
             content = path.read_text(encoding=encoding)
         except (FileNotFoundError, PermissionError):
@@ -50,15 +36,7 @@ class ProjectInstructionsMiddleware(AgentMiddleware):
         return path, content
 
     def _refresh_messages(self, request: ModelRequest[Any]) -> ModelRequest[Any]:
-        """重新校验并刷新请求历史中由之前回合注入的动态指令内容。
-
-        :param request: 原始模型请求对象。
-        :type request: langchain.agents.middleware.ModelRequest[typing.Any]
-        :return: 刷新指令后的模型请求对象。
-        :rtype: langchain.agents.middleware.ModelRequest[typing.Any]
-        :author: tongliga
-        :date: 2026-10-21
-        """
+        """重新校验并刷新请求历史中由之前回合注入的动态指令内容。"""
         messages = []
         changed = False
         for message in request.messages:
@@ -87,8 +65,11 @@ class ProjectInstructionsMiddleware(AgentMiddleware):
                 messages.append(message)
                 continue
             changed = True
-            kwargs_update = {}
-            if "harness_instructions" in message.additional_kwargs or "opencode_instructions" not in message.additional_kwargs:
+            kwargs_update: dict[str, object] = {}
+            if (
+                "harness_instructions" in message.additional_kwargs
+                or "opencode_instructions" not in message.additional_kwargs
+            ):
                 kwargs_update["harness_instructions"] = list(files)
             if "opencode_instructions" in message.additional_kwargs:
                 kwargs_update["opencode_instructions"] = list(files)
@@ -98,7 +79,8 @@ class ProjectInstructionsMiddleware(AgentMiddleware):
             messages.append(
                 message.model_copy(
                     update={
-                        "content": content or "Previously loaded project instructions are no longer available.",
+                        "content": content
+                        or "Previously loaded project instructions are no longer available.",
                         "additional_kwargs": {
                             **message.additional_kwargs,
                             **kwargs_update,
@@ -108,21 +90,10 @@ class ProjectInstructionsMiddleware(AgentMiddleware):
             )
         return request.override(messages=messages) if changed else request
 
-    def _prepare(self, request: ModelRequest[Any]) -> ModelRequest[Any]:
-        """准备模型请求，将系统全局指令及工作区 AGENTS.md 规范以系统消息内容块形式注入。
-
-        :param request: 原始请求。
-        :type request: langchain.agents.middleware.ModelRequest[typing.Any]
-        :return: 注入系统指令后的请求。
-        :rtype: langchain.agents.middleware.ModelRequest[typing.Any]
-        :author: tongliga
-        :date: 2026-10-22
-        """
-        # 第一步：刷新请求中的消息队列
+    def prepare(self, request: ModelRequest[Any]) -> ModelRequest[Any]:
+        """准备模型请求，将系统全局指令及工作区 AGENTS.md 规范以系统消息内容块形式注入。"""
         request = self._refresh_messages(request)
         files = []
-
-        # 第二步：依次收集系统全局指令与项目工作区 AGENTS.md 规范内容
         if self.system_instructions is not None and self.system_instructions.is_file():
             content = self.system_instructions.read_text(encoding="utf-8")
             if content:
@@ -132,9 +103,7 @@ class ProjectInstructionsMiddleware(AgentMiddleware):
             files.append(loaded)
         if not files:
             return request
-
-        # 第三步：构建格式化指令块并注入系统消息中
-        instructions = [
+        instructions: list[str | dict[str, Any]] = [
             {"type": "text", "text": f"Instructions from: {path}\n{content}"}
             for path, content in files
         ]
@@ -147,30 +116,13 @@ class ProjectInstructionsMiddleware(AgentMiddleware):
             )
         return request.override(system_message=system_message)
 
-    def wrap_model_call(self, request: ModelRequest[Any], handler: Any) -> Any:
-        """同步包装模型调用，注入项目全局规范指令。
+    async def aprepare(self, request: ModelRequest[Any]) -> ModelRequest[Any]:
+        return await asyncio.to_thread(self.prepare, request)
 
-        :param request: 模型请求。
-        :type request: langchain.agents.middleware.ModelRequest[typing.Any]
-        :param handler: 下游调用器。
-        :type handler: typing.Any
-        :return: 调用响应。
-        :rtype: typing.Any
-        :author: tongliga
-        :date: 2026-10-21
-        """
-        return handler(self._prepare(request))
+    def wrap_model_call(self, request: ModelRequest[Any], handler: Any) -> Any:
+        """同步包装模型调用，注入项目全局规范指令。"""
+        return handler(self.prepare(request))
 
     async def awrap_model_call(self, request: ModelRequest[Any], handler: Any) -> Any:
-        """异步包装模型调用，注入项目全局规范指令。
-
-        :param request: 模型请求。
-        :type request: langchain.agents.middleware.ModelRequest[typing.Any]
-        :param handler: 异步下游调用器。
-        :type handler: typing.Any
-        :return: 调用响应。
-        :rtype: typing.Any
-        :author: tongliga
-        :date: 2026-10-21
-        """
-        return await handler(await asyncio.to_thread(self._prepare, request))
+        """异步包装模型调用，注入项目全局规范指令。"""
+        return await handler(await self.aprepare(request))

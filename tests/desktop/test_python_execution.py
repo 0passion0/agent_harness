@@ -10,7 +10,73 @@ from langgraph.types import Command
 
 from vertical_harness import HarnessSettings
 from vertical_harness.core.compose import AgentComposer
+from vertical_harness.execution.process_control import ProcessControl
 from vertical_harness.execution.python_execution import PythonExecution
+
+
+@pytest.mark.parametrize("stop", ["cancel", "timeout"])
+def test_python_stops_descendants_before_returning(tmp_path, monkeypatch, stop):
+    (tmp_path / "child.py").write_text(
+        "from pathlib import Path; import time; "
+        "Path('ready').touch(); time.sleep(1); Path('escaped').touch()",
+        encoding="utf-8",
+    )
+    (tmp_path / "parent.py").write_text(
+        "import subprocess, sys, time; "
+        "subprocess.Popen([sys.executable, 'child.py']); time.sleep(60)",
+        encoding="utf-8",
+    )
+    wait_for = asyncio.wait_for
+
+    async def bounded_wait(awaitable, timeout):
+        if timeout == 120:
+            async with asyncio.timeout(10):
+                while not (tmp_path / "ready").exists():
+                    await asyncio.sleep(0.01)
+            timeout = 0.01
+        return await wait_for(awaitable, timeout)
+
+    async def run():
+        cleanup_started, cleanup_release = asyncio.Event(), asyncio.Event()
+        terminate = ProcessControl._terminate_async
+
+        async def delayed_terminate(process):
+            cleanup_started.set()
+            await cleanup_release.wait()
+            await terminate(process)
+
+        if stop == "timeout":
+            monkeypatch.setattr(asyncio, "wait_for", bounded_wait)
+            cleanup_release.set()
+        monkeypatch.setattr(ProcessControl, "_terminate_async", delayed_terminate)
+        task = asyncio.create_task(
+            PythonExecution(tmp_path, sys.executable).execute_python_file("parent.py")
+        )
+        try:
+            async with asyncio.timeout(10):
+                while not (tmp_path / "ready").exists():
+                    await asyncio.sleep(0.01)
+            if stop == "cancel":
+                task.cancel()
+                await wait_for(cleanup_started.wait(), 10)
+                task.cancel()
+                await asyncio.sleep(0)
+                assert not task.done()
+                cleanup_release.set()
+                with pytest.raises(asyncio.CancelledError):
+                    await task
+            else:
+                result = await task
+                assert result["timed_out"] and result["exit_code"] != 0
+            await asyncio.sleep(1.1)
+            assert not (tmp_path / "escaped").exists()
+        finally:
+            cleanup_release.set()
+            if not task.done():
+                task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+
+    asyncio.run(run())
 
 
 def test_python_uses_workspace_and_configured_interpreter_without_agent_secrets(
@@ -147,7 +213,9 @@ def test_python_permission_modes_in_composed_graph(tmp_path, monkeypatch, mode, 
 
     class Model(FakeMessagesListChatModel):
         def bind_tools(self, tools, **kwargs):
-            assert any(getattr(item, "name", None) == "execute_python_file" for item in tools) == (mode != "read_only")
+            assert any(getattr(item, "name", None) == "execute_python_file" for item in tools) == (
+                mode != "read_only"
+            )
             assert not any(getattr(item, "name", None) == "run_python" for item in tools)
             return self
 
@@ -183,7 +251,10 @@ def test_python_permission_modes_in_composed_graph(tmp_path, monkeypatch, mode, 
         "max_context_tokens": 128000,
         "agent_content": "",
     }
-    agent = AgentComposer.build_agent(settings, checkpointer=InMemorySaver(), options=options)
+    agent = AgentComposer.build_agent(
+        HarnessSettings.model_validate({**(settings).model_dump(), **options}),
+        checkpointer=InMemorySaver(),
+    )
 
     async def run():
         config = {"configurable": {"thread_id": "python"}}

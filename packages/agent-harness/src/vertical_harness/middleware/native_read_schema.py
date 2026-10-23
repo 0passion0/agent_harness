@@ -7,11 +7,7 @@ from pydantic import Field
 
 
 class NativeReadSchema(ReadFileSchema):
-    """文件读取扩展参数模型，支持原生多模态（PDF/图片）直传大模型控制。
-
-    :author: tongliga
-    :date: 2026-10-21
-    """
+    """文件读取扩展参数模型，支持原生多模态（PDF/图片）直传大模型控制。"""
 
     native_media: bool = Field(
         default=False,

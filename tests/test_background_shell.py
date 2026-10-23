@@ -16,6 +16,7 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.tools import ToolException
 
 from vertical_harness.core.context import RunContext
+from vertical_harness.execution.process_control import ProcessControl
 from vertical_harness.execution.shell_execution import ShellExecution
 
 
@@ -26,9 +27,12 @@ def command(script):
 
 def runtime(thread="session", tenant="tenant", user="user"):
     return ToolRuntime(
-        state={}, context=RunContext(tenant, user),
+        state={},
+        context=RunContext(tenant, user),
         config={"configurable": {"thread_id": thread}},
-        stream_writer=lambda event: None, tool_call_id="shell-call", store=None,
+        stream_writer=lambda event: None,
+        tool_call_id="shell-call",
+        store=None,
     )
 
 
@@ -41,7 +45,9 @@ def test_background_returns_immediately_and_survives_invocation_loop(tmp_path):
     execution = ShellExecution(tmp_path)
     try:
         started = time.monotonic()
-        result = asyncio.run(execution.aexecute(command("aggregate.py"), background=True, runtime=runtime()))
+        result = asyncio.run(
+            execution.aexecute(command("aggregate.py"), background=True, runtime=runtime())
+        )
         assert time.monotonic() - started < 0.6
         assert result["status"] == "running"
         assert (tmp_path / result["output_path"].removeprefix("/")).exists()
@@ -55,7 +61,9 @@ def test_background_returns_immediately_and_survives_invocation_loop(tmp_path):
         execution.close()
 
 
-@pytest.mark.parametrize("other", [runtime(thread="other"), runtime(tenant="other"), runtime(user="other")])
+@pytest.mark.parametrize(
+    "other", [runtime(thread="other"), runtime(tenant="other"), runtime(user="other")]
+)
 def test_background_rejects_other_sessions_and_identities(tmp_path, other):
     execution = ShellExecution(tmp_path)
     try:
@@ -86,7 +94,9 @@ def test_background_timeout_keeps_output_and_nonzero_exit(tmp_path):
     (tmp_path / "slow.py").write_text("import time; print('started'); time.sleep(60)")
     execution = ShellExecution(tmp_path)
     try:
-        result = execution.execute(command("slow.py"), timeout=500, background=True, runtime=runtime())
+        result = execution.execute(
+            command("slow.py"), timeout=500, background=True, runtime=runtime()
+        )
         done = execution.status(result["shell_id"], runtime(), "wait")
         assert done["status"] == "completed"
         assert done["timed_out"]
@@ -135,10 +145,16 @@ def test_background_graph_tools_use_injected_owner_for_ordinary_task(tmp_path):
         def _generate(self, messages, **kwargs):
             if isinstance(messages[-1], ToolMessage) and messages[-1].name == "shell":
                 result = json.loads(messages[-1].content)
-                self.responses[1] = AIMessage(content="", tool_calls=[{
-                    "id": "wait", "name": "shell_status",
-                    "args": {"shell_id": result["shell_id"], "action": "wait"},
-                }])
+                self.responses[1] = AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "id": "wait",
+                            "name": "shell_status",
+                            "args": {"shell_id": result["shell_id"], "action": "wait"},
+                        }
+                    ],
+                )
             return super()._generate(messages, **kwargs)
 
     (tmp_path / "report.py").write_text("print('Meeting attendance: 42')")
@@ -147,14 +163,27 @@ def test_background_graph_tools_use_injected_owner_for_ordinary_task(tmp_path):
         tools = execution.tools()
         assert "runtime" not in tools[0].tool_call_schema.model_fields
         agent = create_agent(
-            model=Model(responses=[
-                AIMessage(content="", tool_calls=[{
-                    "id": "launch", "name": "shell", "args": {
-                        "command": command("report.py"), "background": True,
-                    },
-                }]),
-                AIMessage(content="placeholder"), AIMessage(content="Attendance is 42."),
-            ]), tools=tools, context_schema=RunContext,
+            model=Model(
+                responses=[
+                    AIMessage(
+                        content="",
+                        tool_calls=[
+                            {
+                                "id": "launch",
+                                "name": "shell",
+                                "args": {
+                                    "command": command("report.py"),
+                                    "background": True,
+                                },
+                            }
+                        ],
+                    ),
+                    AIMessage(content="placeholder"),
+                    AIMessage(content="Attendance is 42."),
+                ]
+            ),
+            tools=tools,
+            context_schema=RunContext,
         )
         result = agent.invoke(
             {"messages": [HumanMessage(content="Prepare a meeting attendance report.")]},
@@ -214,7 +243,9 @@ def test_background_session_cleanup_leaves_other_session_running(tmp_path):
     execution = ShellExecution(tmp_path)
     try:
         first = execution.execute(command("slow.py"), background=True, runtime=runtime())
-        second = execution.execute(command("slow.py"), background=True, runtime=runtime(thread="other"))
+        second = execution.execute(
+            command("slow.py"), background=True, runtime=runtime(thread="other")
+        )
         asyncio.run(execution.aclose_session("tenant", "user", "session"))
         assert execution.status(first["shell_id"], runtime())["status"] == "cancelled"
         assert execution.status(second["shell_id"], runtime(thread="other"))["status"] == "running"
@@ -235,8 +266,11 @@ def test_background_output_pages_use_bytes_and_independent_utf8_decoding(tmp_pat
         for cursor in range(0, len(data), 2):
             page = execution.status(shell_id, runtime(), "output", cursor=cursor, limit=2)
             assert page == {
-                "shell_id": shell_id, "output": data[cursor:cursor + 2].decode("utf-8", errors="replace"),
-                "cursor": min(cursor + 2, len(data)), "size": len(data), "truncated": False,
+                "shell_id": shell_id,
+                "output": data[cursor : cursor + 2].decode("utf-8", errors="replace"),
+                "cursor": min(cursor + 2, len(data)),
+                "size": len(data),
+                "truncated": False,
             }
         assert execution.status(shell_id, runtime(), "output")["output"] == data.decode()
         assert execution.status(shell_id, runtime(), "output", cursor=1, limit=0)["cursor"] == 1
@@ -251,14 +285,19 @@ def test_background_timeout_can_be_cleared_and_reset_from_now(tmp_path):
     (tmp_path / "slow.py").write_text("import time; print('started'); time.sleep(60)")
     execution = ShellExecution(tmp_path)
     try:
-        started = execution.execute(command("slow.py"), timeout=300, background=True, runtime=runtime())
+        started = execution.execute(
+            command("slow.py"), timeout=300, background=True, runtime=runtime()
+        )
         shell_id = started["shell_id"]
         with pytest.raises(ToolException, match="requires timeout"):
             execution.status(shell_id, runtime(), "timeout")
         execution.status(shell_id, runtime(), "timeout", timeout=0)
         time.sleep(0.4)
         assert execution.status(shell_id, runtime())["status"] == "running"
-        assert [shell["shell_id"] for shell in execution.status(runtime=runtime(), action="list")["shells"]] == [shell_id]
+        assert [
+            shell["shell_id"]
+            for shell in execution.status(runtime=runtime(), action="list")["shells"]
+        ] == [shell_id]
         execution.status(shell_id, runtime(), "timeout", timeout=5000)
         started = time.monotonic()
         execution.status(shell_id, runtime(), "timeout", timeout=100)
@@ -272,7 +311,9 @@ def test_background_timeout_can_be_cleared_and_reset_from_now(tmp_path):
 
 
 @pytest.mark.parametrize("cleanup", ["close", "close_session"])
-def test_background_remove_unblocks_wait_and_can_overlap_owner_cleanup(tmp_path, monkeypatch, cleanup):
+def test_background_remove_unblocks_wait_and_can_overlap_owner_cleanup(
+    tmp_path, monkeypatch, cleanup
+):
     (tmp_path / "slow.py").write_text("import time; print('started'); time.sleep(60)")
     execution = ShellExecution(tmp_path)
     started = execution.execute(command("slow.py"), background=True, runtime=runtime())
@@ -282,8 +323,8 @@ def test_background_remove_unblocks_wait_and_can_overlap_owner_cleanup(tmp_path,
     removing = Event()
     closing = Event()
     release = Event()
-    original_result = job["future"].result
-    original_stop = ShellExecution._stop_background
+    original_result = job.future.result
+    original_stop = ProcessControl.terminate
     original_close_jobs = execution._close_jobs
 
     def wait_result(*args, **kwargs):
@@ -291,7 +332,7 @@ def test_background_remove_unblocks_wait_and_can_overlap_owner_cleanup(tmp_path,
         return original_result(*args, **kwargs)
 
     def stop(target):
-        if target["removed"]:
+        if job.removed:
             removing.set()
             assert release.wait(10)
         original_stop(target)
@@ -300,8 +341,8 @@ def test_background_remove_unblocks_wait_and_can_overlap_owner_cleanup(tmp_path,
         closing.set()
         original_close_jobs(jobs)
 
-    monkeypatch.setattr(job["future"], "result", wait_result)
-    monkeypatch.setattr(ShellExecution, "_stop_background", staticmethod(stop))
+    monkeypatch.setattr(job.future, "result", wait_result)
+    monkeypatch.setattr(ProcessControl, "terminate", staticmethod(stop))
     monkeypatch.setattr(execution, "_close_jobs", close_jobs)
     try:
         with ThreadPoolExecutor(max_workers=3) as pool:
@@ -309,15 +350,18 @@ def test_background_remove_unblocks_wait_and_can_overlap_owner_cleanup(tmp_path,
             assert waiting.wait(10)
             remover = pool.submit(execution.status, shell_id, runtime(), "remove")
             assert removing.wait(10)
-            owner_cleanup = (pool.submit(execution.close) if cleanup == "close" else
-                             pool.submit(execution.close_session, "tenant", "user", "session"))
+            owner_cleanup = (
+                pool.submit(execution.close)
+                if cleanup == "close"
+                else pool.submit(execution.close_session, "tenant", "user", "session")
+            )
             assert closing.wait(10)
             release.set()
             assert remover.result(timeout=10) == {"shell_id": shell_id, "status": "removed"}
             owner_cleanup.result(timeout=10)
             with pytest.raises(ToolException, match="not found"):
                 waiter.result(timeout=10)
-        assert job["process"].poll() is not None
+        assert job.process.poll() is not None
         assert not (tmp_path / started["output_path"].removeprefix("/")).exists()
         assert shell_id not in execution._completed
         with pytest.raises(ToolException, match="not found"):
@@ -355,13 +399,13 @@ def test_background_remove_refuses_capture_outside_its_workspace(tmp_path):
     shell_id = started["shell_id"]
     execution.status(shell_id, runtime(), "wait")
     job = execution._jobs[shell_id]
-    original_path = job["path"]
+    original_path = job.path
     try:
-        job["path"] = outside
+        job.path = outside
         with pytest.raises(ToolException, match="inside the workspace"):
             execution.status(shell_id, runtime(), "remove")
         assert outside.read_text() == "must stay"
-        assert not job["removed"]
+        assert not job.removed
     finally:
-        job["path"] = original_path
+        job.path = original_path
         execution.close()

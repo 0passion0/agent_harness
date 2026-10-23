@@ -11,6 +11,7 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.tools import ToolException
 from pydantic import ValidationError
 
+from vertical_harness.execution.process_control import ProcessControl
 from vertical_harness.execution.shell_execution import ShellExecution
 
 
@@ -129,14 +130,14 @@ def test_shell_repeated_cancellation_stops_descendants(tmp_path, monkeypatch):
     async def run():
         cleanup_started = asyncio.Event()
         cleanup_release = asyncio.Event()
-        terminate = ShellExecution._terminate
+        terminate = ProcessControl._terminate_async
 
         async def delayed_terminate(process):
             cleanup_started.set()
             await cleanup_release.wait()
             await terminate(process)
 
-        monkeypatch.setattr(ShellExecution, "_terminate", staticmethod(delayed_terminate))
+        monkeypatch.setattr(ProcessControl, "_terminate_async", staticmethod(delayed_terminate))
         task = asyncio.create_task(
             ShellExecution.shell_tool(tmp_path).ainvoke(
                 {"command": python_command("parent.py"), "timeout": 0}
@@ -194,17 +195,23 @@ def test_shell_graph_recovers_from_invalid_workdir(tmp_path):
             responses=[
                 AIMessage(
                     content="",
-                    tool_calls=[{
-                        "id": "bad-cwd", "name": "shell",
-                        "args": {"command": command, "workdir": "missing"},
-                    }],
+                    tool_calls=[
+                        {
+                            "id": "bad-cwd",
+                            "name": "shell",
+                            "args": {"command": command, "workdir": "missing"},
+                        }
+                    ],
                 ),
                 AIMessage(
                     content="",
-                    tool_calls=[{
-                        "id": "corrected-cwd", "name": "shell",
-                        "args": {"command": command, "workdir": str(tmp_path)},
-                    }],
+                    tool_calls=[
+                        {
+                            "id": "corrected-cwd",
+                            "name": "shell",
+                            "args": {"command": command, "workdir": str(tmp_path)},
+                        }
+                    ],
                 ),
                 AIMessage(content="done"),
             ]
