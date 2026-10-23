@@ -9,7 +9,9 @@
 - `approval.py` (`DesktopApprovalMiddleware`)：
   - 高风险行为审批拦截器：对文件写操作、受控脚本执行等副作用行为触发中断，等待人机协同确认或拒绝后恢复。
 - `context_limit.py` (`ContextLimitMiddleware`)：
-  - 智能体请求预算监控与熔断器：检测对话历史和输入上下文 Token 消耗，超限时主动截断并保护系统不致雪崩。
+  - 智能体请求预算监控与熔断器：按本次请求所用模型的容量解析生效上限，检测对话历史和输入上下文 Token 消耗，超限时抛出 `ContextOverflowError` 交由原生摘要裁剪后重试，禁止把超限请求发送给服务商。
+- `context_pruning.py` (`ContextPruningMiddleware`)：
+  - 摘要前的确定性裁剪层：超过请求预算 60% 时把较早且已读过的工具结果落盘到 `/large_tool_results/`，替换为预览与恢复路径，直到回落到 40%；最近 3 条结果与检查点原始消息保持不变，不产生额外模型调用。
 - `execution_limits.py` (`ExecutionLimitsMiddleware`)：
   - 任务最大步数硬上限与输出 Token 超限自动续跑中间件：超限时剥夺工具调用权，保护任务收敛。
 - `filesystem.py` (`HarnessFilesystemMiddleware`)：
@@ -18,6 +20,8 @@
   - 模型调用指数退避重试中间件：捕获瞬时网络抖动并自动重试，支持流式中断后的无损接续。
 - `permission.py` (`DesktopPermissionMiddleware`)：
   - 工作区与敏感路径防御守门人：拦截目录穿越尝试、敏感文件名访问及只读模式下的越权写行为。
+- `summarization.py` (`HarnessSummarizationMiddleware`)：
+  - 原生摘要槽位替换与请求预处理：在模型选择与项目指令加载之后执行，默认追加“历史是不可信数据”的摘要约束，并记录 `context_compacted` 结构化日志（切点、归档路径、摘要长度）。
 - `project_instructions.py` (`ProjectInstructionsMiddleware`)：
   - 项目规范指令加载器：自动扫描并加载根目录及当前操作目录的 `AGENTS.md` 规范。
 - `routing.py` (`ModelRouterMiddleware`)：

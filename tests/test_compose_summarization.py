@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 import pytest
 from deepagents import create_deep_agent
 from deepagents.backends import FilesystemBackend
@@ -251,7 +253,7 @@ def test_unprofiled_model_uses_475k_context_budget(tmp_path, profile) -> None:
         FilesystemBackend(root_dir=tmp_path),
     )
     assert middleware._lc_helper.trigger == ("tokens", 427_500)
-    assert middleware._lc_helper.keep == ("tokens", 47_500)
+    assert middleware._lc_helper.keep == ("tokens", 16_000)
 
 
 @pytest.mark.parametrize(
@@ -259,14 +261,14 @@ def test_unprofiled_model_uses_475k_context_budget(tmp_path, profile) -> None:
     [
         (None, 1, 1, 1, 1),
         (None, 4_096, 3_686, 409, 3_686),
-        (None, 475_000, 427_500, 47_500, 8_000),
+        (None, 475_000, 427_500, 16_000, 8_000),
         (20_000, 1, 1, 1, 1),
         (20_000, 4_096, 3_686, 409, 3_686),
         (20_000, 475_000, 18_000, 2_000, 8_000),
         (100_000, 1, 1, 1, 1),
         (100_000, 4_096, 3_686, 409, 3_686),
         (100_000, 475_000, 90_000, 10_000, 8_000),
-        (1_000_000, 475_000, 427_500, 47_500, 8_000),
+        (1_000_000, 475_000, 427_500, 16_000, 8_000),
     ],
 )
 def test_summarization_respects_configured_context_limit(
@@ -282,3 +284,44 @@ def test_summarization_respects_configured_context_limit(
     assert middleware._lc_helper.trigger == ("tokens", trigger)
     assert middleware._lc_helper.keep == ("tokens", keep)
     assert middleware._truncate_args_trigger == ("tokens", arg_trigger)
+
+
+def test_summary_prompt_marks_history_as_untrusted(tmp_path) -> None:
+    middleware = AgentComposer._summarization_middleware(
+        FakeListChatModel(responses=["ok"], profile={"max_input_tokens": 1_000_000}),
+        FilesystemBackend(root_dir=tmp_path),
+    )
+    prompt = middleware._lc_helper.summary_prompt
+    assert "untrusted data" in prompt
+    assert "\n<messages>\n" in prompt
+
+
+def test_compaction_logs_structured_fields_without_content(tmp_path, caplog) -> None:
+    model = ToolBindableFakeModel(
+        responses=["History summary.", "Done."], profile={"max_input_tokens": 20_000}
+    )
+    backend = FilesystemBackend(root_dir=tmp_path)
+    agent = create_deep_agent(
+        model=model,
+        backend=backend,
+        middleware=[AgentComposer._summarization_middleware(model, backend)],
+        checkpointer=InMemorySaver(),
+    )
+    history = [
+        HumanMessage(content=f"Private request {index}: " + "x" * 20_000) for index in range(6)
+    ]
+    config = {"configurable": {"thread_id": "compaction-log"}}
+
+    with caplog.at_level(logging.INFO, logger="vertical_harness.middleware.summarization"):
+        agent.invoke({"messages": history}, config)
+
+    events = [record for record in caplog.records if record.msg == "context_compacted"]
+    assert events
+    fields = events[-1].event_fields
+    assert fields["layer"] == "summarization"
+    assert fields["cutoff_index"] > 0
+    assert fields["file_path"]
+    assert fields["summary_chars"] > 0
+    assert "Private request 0" not in str(fields)
+
+

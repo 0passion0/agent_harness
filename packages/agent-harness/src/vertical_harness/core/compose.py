@@ -25,6 +25,7 @@ from vertical_harness.core.routing import ModelRouting
 from vertical_harness.log.observability import TracingSession
 from vertical_harness.middleware.approval import DesktopApprovalMiddleware
 from vertical_harness.middleware.context_limit import ContextLimitMiddleware
+from vertical_harness.middleware.context_pruning import ContextPruningMiddleware
 from vertical_harness.middleware.execution_limits import ExecutionLimitsMiddleware
 from vertical_harness.middleware.filesystem import HarnessFilesystemMiddleware
 from vertical_harness.middleware.model_retry import ModelRetryMiddleware
@@ -100,14 +101,20 @@ class AgentComposer:
         max_input_tokens = (model.profile or {}).get("max_input_tokens")
 
         # 第二步：计算上下文硬上限（取配置上限与模型容量上限较小值）
-        context_limit = (
-            min(max_input_tokens, max_context_tokens) if max_input_tokens else max_context_tokens
-        )
+        if isinstance(max_input_tokens, int) and not isinstance(max_input_tokens, bool):
+            context_limit = min(max_input_tokens, max_context_tokens)
+        else:
+            # 未声明容量的模型按宿主配置上限处理，由发送前预算检查与实际溢出兜底。
+            context_limit = max_context_tokens
+            logger.warning(
+                "model_profile_missing",
+                extra={"event_fields": {"configured_limit": max_context_tokens}},
+            )
 
-        # 第三步：设定触发摘要的 90% 阈值与保留的 10% 核心上下文
+        # 第三步：设定触发摘要的 90% 阈值与保留的核心上下文
         # shortcut: 保留量沿用构建时模型，跨模型窗口差异频繁触顶时改为按请求预算计算。
         token_trigger = max(1, int(context_limit * 0.90))
-        keep_tokens = max(1, int(context_limit * 0.10))
+        keep_tokens = max(1, min(int(context_limit * 0.10), 16_000))
         arg_trigger = min(8_000, token_trigger)
 
         # 第四步：实例化并返回摘要中间件
@@ -223,6 +230,8 @@ class AgentComposer:
                 backend, permissions, system_instructions=system_root / "AGENTS.md"
             )
         )
+        # 指令注入后再做确定性裁剪，让摘要看到的是已落盘、可恢复的历史视图。
+        request_middleware.append(ContextPruningMiddleware(backend, maximum))
         middleware.extend(
             [
                 ExecutionLimitsMiddleware(settings.max_steps),

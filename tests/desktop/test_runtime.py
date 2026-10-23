@@ -2,6 +2,7 @@ import asyncio
 from unittest.mock import Mock
 
 import pytest
+from langchain_core.exceptions import ContextOverflowError
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, MessagesState, StateGraph
@@ -250,6 +251,20 @@ def test_attachment_rejects_relative_path(tmp_path):
         )
 
 
+def test_context_limit_uses_the_routed_model_capacity():
+    from langchain.agents.middleware import ModelRequest
+    from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
+
+    request = ModelRequest(
+        model=FakeMessagesListChatModel(responses=[], profile={"max_input_tokens": 1000}),
+        messages=[HumanMessage(content="history " * 2000)],
+        tools=[],
+    )
+    middleware = ContextLimitMiddleware(475_000)
+    with pytest.raises(ContextOverflowError, match=r"max_context_tokens \(1000\)"):
+        middleware.wrap_model_call(request, lambda _request: pytest.fail("must not reach the model"))
+
+
 def test_context_limit_rejects_oversized_history():
     from langchain.agents.middleware import ModelRequest
     from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
@@ -260,11 +275,11 @@ def test_context_limit_rejects_oversized_history():
         messages=[HumanMessage(content="too many chars")],
         tools=[],
     )
-    with pytest.raises(ValueError, match="exceeds configured max_context_tokens"):
+    with pytest.raises(ContextOverflowError, match="exceeds configured max_context_tokens"):
         middleware.wrap_model_call(request, lambda _request: None)
 
     async def reject_async_request():
-        with pytest.raises(ValueError, match="exceeds configured max_context_tokens"):
+        with pytest.raises(ContextOverflowError, match="exceeds configured max_context_tokens"):
             await middleware.awrap_model_call(request, lambda _request: None)
 
     asyncio.run(reject_async_request())
@@ -300,7 +315,7 @@ def test_context_limit_counts_actual_system_prompt_and_tool_schemas(use_async, s
     def handler(_request):
         pytest.fail("An oversized request must not reach the model")
 
-    with pytest.raises(ValueError, match="exceeds configured max_context_tokens"):
+    with pytest.raises(ContextOverflowError, match="exceeds configured max_context_tokens"):
         if use_async:
             asyncio.run(middleware.awrap_model_call(request, handler))
         else:

@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from langchain.agents.middleware import AgentMiddleware, ModelRequest
+from langchain_core.exceptions import ContextOverflowError
 from langchain_core.messages.utils import count_tokens_approximately
 
 
@@ -20,6 +21,25 @@ class ContextLimitMiddleware(AgentMiddleware):
     maximum: int
     tools: list[Any] = field(default_factory=list, init=False)
 
+    @classmethod
+    def input_limit(cls, request: ModelRequest[Any], maximum: int) -> int:
+        """按本次请求实际使用的模型容量计算输入 Token 上限。
+
+        :param request: 模型请求对象。
+        :type request: langchain.agents.middleware.ModelRequest[typing.Any]
+        :param maximum: 宿主配置的上下文上限。
+        :type maximum: int
+        :return: 生效的输入 Token 上限。
+        :rtype: int
+        """
+        # 第一步：读取当前请求模型的 profile 容量声明
+        profile = getattr(request.model, "profile", None)
+        limit = profile.get("max_input_tokens") if isinstance(profile, dict) else None
+        # 第二步：取宿主配置上限与模型容量上限的较小值，未声明时沿用宿主配置
+        if isinstance(limit, int) and not isinstance(limit, bool) and limit > 0:
+            return min(limit, maximum)
+        return maximum
+
     def _check(self, request: ModelRequest[Any]) -> None:
         """估算请求包含的所有消息与工具描述 Token 总量，超限则抛出异常。
 
@@ -27,7 +47,7 @@ class ContextLimitMiddleware(AgentMiddleware):
         :type request: langchain.agents.middleware.ModelRequest[typing.Any]
         :return: 无返回值。
         :rtype: None
-        :raises ValueError: 当 Token 估算值超出配置的 maximum 阈值时抛出。
+        :raises ContextOverflowError: 当 Token 估算值超出有效上限阈值时抛出。
         :author: tongliga
         :date: 2026-10-21
         """
@@ -38,12 +58,13 @@ class ContextLimitMiddleware(AgentMiddleware):
 
         # 第二步：调用 LangChain 工具函数近似计算 Token 数量
         estimate = count_tokens_approximately(messages, tools=request.tools)
+        limit = self.input_limit(request, self.maximum)
 
-        # 第三步：超限断言拦截，防止请求发送至模型服务商
-        if estimate > self.maximum:
-            raise ValueError(
+        # 第三步：以原生可识别的溢出异常拒绝，交由摘要中间件裁剪后重试
+        if estimate > limit:
+            raise ContextOverflowError(
                 f"Estimated conversation history ({estimate} tokens) exceeds configured "
-                f"max_context_tokens ({self.maximum}); history was not sent to the model"
+                f"max_context_tokens ({limit}); history was not sent to the model"
             )
 
     def wrap_model_call(self, request: ModelRequest[Any], handler: Any) -> Any:
