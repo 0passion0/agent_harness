@@ -14,3 +14,7 @@ This repository has a generated `openwiki/` evidence index. It is optional just-
 The scheduled OpenWiki GitHub Actions workflow refreshes the repository wiki. Do not hand-edit generated OpenWiki pages unless explicitly asked; prefer updating source code/docs and letting OpenWiki regenerate.
 
 <!-- OPENWIKI:END -->
+
+## Python backend
+
+后端修改遵循 [编码规范](docs/BACKEND_CODING_STANDARD.md) 和 [当前架构](docs/BACKEND_ARCHITECTURE.md)，使用本地 .venv 运行相关测试、Ruff 和全包 mypy。保留当前用户数据与检查点格式。

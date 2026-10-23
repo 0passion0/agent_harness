@@ -2,7 +2,7 @@
 
 以 Deep Agents 的 `create_deep_agent` 为主入口，直接使用网络检索、文件工具、Python 脚本和原生子任务委派。保留模型选择、会话历史、流式输出、取消、审批恢复、上下文压缩和用量统计。子任务继承工作区、敏感路径权限、审批和上下文预算；只读模式禁止委派。
 
-Python 接口统一通过类调用，例如 `AgentComposer.build_agent(settings)`、`AgentStreaming.astream_agent(...)` 和 `StoreFactory.open_store(settings)`。目录职责见 [架构说明](docs/ARCHITECTURE.md)。
+Python 接口统一通过类调用，例如 `AgentComposer.build_agent(settings)`、`AgentStreaming.astream_agent(...)` 和 `StoreFactory.open_store(settings)`。目录职责见 [后端架构](docs/BACKEND_ARCHITECTURE.md)，编码要求见 [后端规范](docs/BACKEND_CODING_STANDARD.md)。
 
 ## 开发
 
@@ -24,7 +24,7 @@ Office/PDF 使用 Microsoft MarkItDown 提取 Markdown，仅用于阅读。修�
 
 ## 数据与升级
 
-数据库默认位于工作区同级的 .runtime 目录，桌面使用应用数据目录。仅支持当前运行格式；不迁移旧对话、工作流和审批状态。升级前清除旧会话索引与检查点；项目文件、附件和产物保留。
+数据库默认位于工作区同级的 .runtime 目录，桌面使用应用数据目录。本次职责重构保留当前数据库结构、检查点和审批格式，不需要清除会话索引或检查点。升级前备份应用数据；项目文件、附件和产物保留。
 
 ## 验证与打包
 

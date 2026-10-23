@@ -34,3 +34,23 @@ jobs:
           uv pip install --python .wheel-env/bin/python --constraint /tmp/wheel-constraints.txt dist/vertical_agent_harness-*.whl
           cd /tmp
           "$GITHUB_WORKSPACE/.wheel-env/bin/python" "$GITHUB_WORKSPACE/scripts/check_wheels.py"
+
+  windows-runtime:
+    runs-on: windows-latest
+    env:
+      LANGSMITH_TRACING: 'false'
+      LANGCHAIN_TRACING_V2: 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: '3.12'
+      - run: uv sync --frozen --all-packages --extra dev --extra desktop
+      - run: uv run --frozen mypy
+      - run: >-
+          uv run --frozen pytest
+          tests/test_file_write.py tests/test_filesystem_integration.py
+          tests/test_harness_resources.py tests/test_permission.py
+          tests/test_shell_execution.py tests/test_background_shell.py
+          tests/desktop/test_python_execution.py tests/desktop/test_background_lifecycle.py
+          tests/desktop/test_bridge.py tests/desktop/test_runtime_ownership.py
