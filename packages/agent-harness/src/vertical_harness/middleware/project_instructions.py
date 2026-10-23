@@ -11,7 +11,7 @@ from deepagents.middleware.filesystem import FilesystemPermission, _permission_e
 from langchain.agents.middleware import AgentMiddleware, ModelRequest
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from vertical_harness.storage.document_backend import DocumentFilesystemBackend
+from vertical_harness.filesystem.document_backend import DocumentFilesystemBackend
 
 
 @dataclass(eq=False)

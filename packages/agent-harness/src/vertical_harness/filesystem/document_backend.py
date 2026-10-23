@@ -17,12 +17,12 @@ from deepagents.backends.protocol import EditResult, FileData, ReadResult, Write
 from deepagents.backends.utils import slice_read_response
 
 from vertical_harness.bridge.attachments import AttachmentContent
-from vertical_harness.storage.file_mutation import FileMutation
-from vertical_harness.tools.code_formatter import CodeFormatter
-from vertical_harness.tools.file_reader import FileReader
-from vertical_harness.tools.patch_editor import PatchEditor
-from vertical_harness.tools.ripgrep_search import RipgrepSearch
-from vertical_harness.tools.text_editor import TextEditor
+from vertical_harness.filesystem.file_mutation import FileMutation
+from vertical_harness.filesystem.code_formatter import CodeFormatter
+from vertical_harness.filesystem.file_reader import FileReader
+from vertical_harness.filesystem.patch_editor import PatchEditor
+from vertical_harness.filesystem.ripgrep_search import RipgrepSearch
+from vertical_harness.filesystem.text_editor import TextEditor
 
 
 class DocumentFilesystemBackend(FilesystemBackend):

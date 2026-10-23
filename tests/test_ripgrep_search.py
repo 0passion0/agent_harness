@@ -3,9 +3,9 @@ import sys
 
 import pytest
 
-from vertical_harness.tools import ripgrep_search
-from vertical_harness.tools.ripgrep_search import RipgrepSearch
-from vertical_harness.tools.structured_grep_result import StructuredGrepResult
+from vertical_harness.filesystem import ripgrep_search
+from vertical_harness.filesystem.ripgrep_search import RipgrepSearch
+from vertical_harness.filesystem.structured_grep_result import StructuredGrepResult
 
 
 @pytest.fixture

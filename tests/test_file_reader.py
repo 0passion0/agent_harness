@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from vertical_harness.tools import file_reader
-from vertical_harness.tools.file_reader import FileReader
+from vertical_harness.filesystem import file_reader
+from vertical_harness.filesystem.file_reader import FileReader
 
 
 @pytest.mark.parametrize(

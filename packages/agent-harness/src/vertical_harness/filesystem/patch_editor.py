@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import re
 
-from vertical_harness.tools.patch_hunk import PatchHunk
-from vertical_harness.tools.update_chunk import UpdateChunk
+from vertical_harness.filesystem.patch_hunk import PatchHunk
+from vertical_harness.filesystem.update_chunk import UpdateChunk
 
 _SPACE = "\u0009\u000b\u000c\u0020\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff\n\r"
 _RIGHT = re.compile(f"[{_SPACE}]+$")
@@ -84,7 +84,7 @@ class PatchEditor:
         :param patch_text: 包含 *** Begin Patch 和 *** End Patch 的补丁完整文本。
         :type patch_text: str
         :return: 解析得到的分块操作对象列表，空补丁返回空列表。
-        :rtype: list[vertical_harness.tools.patch_hunk.PatchHunk]
+        :rtype: list[vertical_harness.filesystem.patch_hunk.PatchHunk]
         :raises ValueError: 当补丁边界缺失、头部非法或分块格式破损时抛出。
         :author: tongliga
         :date: 2026-10-21
@@ -196,7 +196,7 @@ class PatchEditor:
         :param hunk: 该更新块起始头部行索引。
         :type hunk: int
         :return: (UpdateChunk 列表, 下一待解析行索引) 元组。
-        :rtype: tuple[list[vertical_harness.tools.update_chunk.UpdateChunk], int]
+        :rtype: tuple[list[vertical_harness.filesystem.update_chunk.UpdateChunk], int]
         :author: tongliga
         :date: 2026-10-21
         """
@@ -341,7 +341,7 @@ class PatchEditor:
         :param path: 被更新文件的相对路径，用于在查找失败时生成诊断错误信息。
         :type path: str
         :param chunks: 该文件的差异行更新块元组。
-        :type chunks: tuple[vertical_harness.tools.update_chunk.UpdateChunk, ...]
+        :type chunks: tuple[vertical_harness.filesystem.update_chunk.UpdateChunk, ...]
         :param original: 原始文件未修改正文。
         :type original: str
         :return: 应用全部变更后的完整文本内容。

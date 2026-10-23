@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from vertical_harness.storage import document_backend
-from vertical_harness.storage.document_backend import DocumentFilesystemBackend
+from vertical_harness.filesystem import document_backend
+from vertical_harness.filesystem.document_backend import DocumentFilesystemBackend
 
 _REFERENCE_COMMIT = "7d3752c14ce8dd03cfaac03ee4062a877808a69c"
 

@@ -16,7 +16,7 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.tools import ToolException
 
 from vertical_harness.core.context import RunContext
-from vertical_harness.tools.shell_execution import ShellExecution
+from vertical_harness.execution.shell_execution import ShellExecution
 
 
 def command(script):
@@ -192,7 +192,7 @@ def test_background_retains_only_25_completed_shells_but_keeps_logs(tmp_path, mo
             retained_at_completion.append(len(execution._jobs))
             return super().set_result(result)
 
-    monkeypatch.setattr("vertical_harness.tools.shell_execution.Future", TrackedFuture)
+    monkeypatch.setattr("vertical_harness.execution.shell_execution.Future", TrackedFuture)
     try:
         results = []
         for _ in range(26):

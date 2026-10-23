@@ -13,7 +13,7 @@ from typing import Any
 from deepagents.backends.filesystem import _resolve_ripgrep_path
 from deepagents.backends.protocol import GlobResult
 
-from vertical_harness.tools.structured_grep_result import StructuredGrepResult
+from vertical_harness.filesystem.structured_grep_result import StructuredGrepResult
 
 SEARCH_TIMEOUT = 30
 
@@ -308,7 +308,7 @@ class RipgrepSearch:
         :param case_sensitive: 是否严格区分大小写（默认 True）。
         :type case_sensitive: bool
         :return: 包含 matches 与 source_matches 的结构化检索结果对象。
-        :rtype: vertical_harness.tools.structured_grep_result.StructuredGrepResult
+        :rtype: vertical_harness.filesystem.structured_grep_result.StructuredGrepResult
         :author: tongliga
         :date: 2026-10-21
         """
@@ -348,7 +348,7 @@ class RipgrepSearch:
         :param case_sensitive: 是否区分大小写。
         :type case_sensitive: bool
         :return: 结构化匹配结果对象 StructuredGrepResult。
-        :rtype: vertical_harness.tools.structured_grep_result.StructuredGrepResult
+        :rtype: vertical_harness.filesystem.structured_grep_result.StructuredGrepResult
         :author: tongliga
         :date: 2026-10-21
         """

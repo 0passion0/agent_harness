@@ -14,9 +14,9 @@ import tracemalloc
 from dataclasses import asdict
 from pathlib import Path
 
-from vertical_harness.tools.patch_editor import PatchEditor
-from vertical_harness.tools.text_editor import TextEditor
-from vertical_harness.tools.update_chunk import UpdateChunk
+from vertical_harness.filesystem.patch_editor import PatchEditor
+from vertical_harness.filesystem.text_editor import TextEditor
+from vertical_harness.filesystem.update_chunk import UpdateChunk
 
 SOURCE_COMMIT = "7d3752c14ce8dd03cfaac03ee4062a877808a69c"
 

@@ -10,7 +10,7 @@ from pydantic import Field
 from vertical_harness import AgentComposer, HarnessSettings
 from vertical_harness.core import compose
 from vertical_harness.langchain.streaming import AgentStreaming
-from vertical_harness.tools.tool_details import ToolDetails
+from vertical_harness.langchain.tool_details import ToolDetails
 
 
 class ToolModel(FakeMessagesListChatModel):

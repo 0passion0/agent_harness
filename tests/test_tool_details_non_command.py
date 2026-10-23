@@ -4,7 +4,7 @@ import asyncio
 from uuid import uuid4
 
 from vertical_harness.langchain.streaming import AgentStreaming
-from vertical_harness.tools.tool_details import ToolDetails
+from vertical_harness.langchain.tool_details import ToolDetails
 
 
 class FakeComplexResponse:

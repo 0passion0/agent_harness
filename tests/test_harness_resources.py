@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from vertical_harness.bridge.resources import HarnessResources
+from vertical_harness.filesystem.resources import HarnessResources
 
 
 def skill(name="demo", description="A demo skill", body="Use this skill."):

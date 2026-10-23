@@ -12,7 +12,7 @@ from langgraph.types import Command
 from vertical_harness import HarnessSettings
 from vertical_harness.core import compose
 from vertical_harness.core.compose import AgentComposer
-from vertical_harness.storage.document_backend import DocumentFilesystemBackend
+from vertical_harness.filesystem.document_backend import DocumentFilesystemBackend
 
 
 class ToolModel(FakeMessagesListChatModel):

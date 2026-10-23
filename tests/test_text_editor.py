@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from vertical_harness.tools.text_editor import TextEditor
+from vertical_harness.filesystem.text_editor import TextEditor
 
 
 @pytest.mark.parametrize(

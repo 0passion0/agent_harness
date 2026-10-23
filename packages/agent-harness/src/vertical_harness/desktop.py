@@ -20,7 +20,7 @@ from langchain_core.messages import HumanMessage
 from langgraph.types import Command
 
 from vertical_harness.bridge.messages import DesktopMessages
-from vertical_harness.bridge.resources import HarnessResources
+from vertical_harness.filesystem.resources import HarnessResources
 from vertical_harness.bridge.runtime import DesktopRuntime
 from vertical_harness.config.checkpoint_config import CheckpointConfig
 from vertical_harness.config.langsmith_settings import LangSmithSettings
@@ -31,8 +31,8 @@ from vertical_harness.core.routing import ModelRouting
 from vertical_harness.langchain.streaming import AgentStreaming
 from vertical_harness.storage.checkpoint import CheckpointFactory
 from vertical_harness.storage.store import StoreFactory
-from vertical_harness.tools.shell_execution import ShellExecution
-from vertical_harness.tools.tool_details import ToolDetails
+from vertical_harness.execution.shell_execution import ShellExecution
+from vertical_harness.langchain.tool_details import ToolDetails
 from vertical_harness.utils.usage import UsageEstimator
 
 logger = logging.getLogger(__name__)

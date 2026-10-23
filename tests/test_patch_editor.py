@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from vertical_harness.tools.patch_editor import PatchEditor
-from vertical_harness.tools.update_chunk import UpdateChunk
+from vertical_harness.filesystem.patch_editor import PatchEditor
+from vertical_harness.filesystem.update_chunk import UpdateChunk
 
 
 def test_parse_operations_and_move():

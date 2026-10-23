@@ -18,8 +18,11 @@ from vertical_harness.middleware import (
     DesktopPermissionMiddleware,
     ModelRouterMiddleware,
 )
-from vertical_harness.storage import CheckpointFactory, DocumentFilesystemBackend, StoreFactory
-from vertical_harness.tools import PythonExecution, ToolDetails, UserInteraction, WebSearch
+from vertical_harness.storage import CheckpointFactory, StoreFactory
+from vertical_harness.filesystem import DocumentFilesystemBackend
+from vertical_harness.execution import PythonExecution
+from vertical_harness.langchain.tool_details import ToolDetails
+from vertical_harness.tools import UserInteraction, WebSearch
 from vertical_harness.utils import StructuredFormatter, UsageEstimator
 
 __all__ = [

@@ -23,8 +23,8 @@ from vertical_harness.middleware.file_glob_schema import FileGlobSchema
 from vertical_harness.middleware.native_read_schema import NativeReadSchema
 from vertical_harness.middleware.patch_schema import PatchSchema
 from vertical_harness.middleware.search_schema import SearchSchema
-from vertical_harness.tools.file_reader import FileReader
-from vertical_harness.tools.structured_grep_result import StructuredGrepResult
+from vertical_harness.filesystem.file_reader import FileReader
+from vertical_harness.filesystem.structured_grep_result import StructuredGrepResult
 
 
 class HarnessFilesystemMiddleware(FilesystemMiddleware):

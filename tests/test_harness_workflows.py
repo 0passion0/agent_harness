@@ -15,7 +15,7 @@ from pydantic import Field, ValidationError
 from vertical_harness.config import HarnessSettings
 from vertical_harness.core import compose
 from vertical_harness.core.context import RunContext
-from vertical_harness.tools.shell_execution import ShellExecution
+from vertical_harness.execution.shell_execution import ShellExecution
 
 
 class WorkflowModel(FakeMessagesListChatModel):

@@ -32,11 +32,11 @@ from vertical_harness.middleware.permission import DesktopPermissionMiddleware
 from vertical_harness.middleware.project_instructions import ProjectInstructionsMiddleware
 from vertical_harness.middleware.summarization import HarnessSummarizationMiddleware
 from vertical_harness.storage.checkpoint import CheckpointFactory
-from vertical_harness.storage.document_backend import DocumentFilesystemBackend
-from vertical_harness.tools.code_formatter import CodeFormatter
-from vertical_harness.tools.python_execution import PythonExecution
+from vertical_harness.filesystem.document_backend import DocumentFilesystemBackend
+from vertical_harness.filesystem.code_formatter import CodeFormatter
+from vertical_harness.execution.python_execution import PythonExecution
 from vertical_harness.tools.search import WebSearch
-from vertical_harness.tools.shell_execution import ShellExecution
+from vertical_harness.execution.shell_execution import ShellExecution
 from vertical_harness.tools.user_interaction import UserInteraction
 
 logger = logging.getLogger(__name__)
@@ -145,7 +145,7 @@ class AgentComposer:
         :param options: 可选的桌面与运行参数字典（如 max_context_tokens、permission_mode、agent_content 等）。
         :type options: dict[str, typing.Any] | None
         :param shell_execution: 可选的 Shell 外部命令执行引擎。
-        :type shell_execution: vertical_harness.tools.shell_execution.ShellExecution | None
+        :type shell_execution: vertical_harness.execution.shell_execution.ShellExecution | None
         :return: 编译完成的原生 CompiledStateGraph 智能体对象。
         :rtype: typing.Any
         :author: tongliga
@@ -302,7 +302,7 @@ class AgentComposer:
         :param options: 可选的桌面端运行控制参数字典。
         :type options: dict[str, typing.Any] | None
         :param shell_execution: 可选的外部 Shell 执行器。
-        :type shell_execution: vertical_harness.tools.shell_execution.ShellExecution | None
+        :type shell_execution: vertical_harness.execution.shell_execution.ShellExecution | None
         :return: 产生已挂载同步检查点的 CompiledStateGraph 智能体实例迭代器。
         :rtype: collections.abc.Iterator[typing.Any]
         :author: tongliga
@@ -330,7 +330,7 @@ class AgentComposer:
         :param options: 可选的桌面端运行控制参数字典。
         :type options: dict[str, typing.Any] | None
         :param shell_execution: 可选的外部 Shell 执行器。
-        :type shell_execution: vertical_harness.tools.shell_execution.ShellExecution | None
+        :type shell_execution: vertical_harness.execution.shell_execution.ShellExecution | None
         :return: 产生已挂载异步检查点的 CompiledStateGraph 智能体实例异步迭代器。
         :rtype: collections.abc.AsyncIterator[typing.Any]
         :author: tongliga

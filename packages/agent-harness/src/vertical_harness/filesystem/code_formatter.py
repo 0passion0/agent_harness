@@ -16,9 +16,9 @@ from typing import Any
 from langchain_core.tools import ToolException
 from pydantic import ConfigDict, TypeAdapter
 
-from vertical_harness.storage.file_mutation import FileMutation
-from vertical_harness.tools.code_formatter_entry import FormatterEntry
-from vertical_harness.tools.shell_execution import ShellExecution
+from vertical_harness.filesystem.file_mutation import FileMutation
+from vertical_harness.config.formatter_entry import FormatterEntry
+from vertical_harness.execution.shell_execution import ShellExecution
 
 logger = logging.getLogger(__name__)
 _CONFIG = TypeAdapter(bool | dict[str, FormatterEntry], config=ConfigDict(strict=True))

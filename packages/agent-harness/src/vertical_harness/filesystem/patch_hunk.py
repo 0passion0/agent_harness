@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-from vertical_harness.tools.update_chunk import UpdateChunk
+from vertical_harness.filesystem.update_chunk import UpdateChunk
 
 
 @dataclass(frozen=True)
@@ -21,7 +21,7 @@ class PatchHunk:
     :param move_path: 文件重命名或移动的目标路径（可选）。
     :type move_path: str | None
     :param chunks: 文件更新时的差异行更新块元组（默认空元组）。
-    :type chunks: tuple[vertical_harness.tools.update_chunk.UpdateChunk, ...]
+    :type chunks: tuple[vertical_harness.filesystem.update_chunk.UpdateChunk, ...]
     :author: tongliga
     :date: 2026-10-21
     """

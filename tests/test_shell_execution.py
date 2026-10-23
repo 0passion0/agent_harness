@@ -11,7 +11,7 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.tools import ToolException
 from pydantic import ValidationError
 
-from vertical_harness.tools.shell_execution import ShellExecution
+from vertical_harness.execution.shell_execution import ShellExecution
 
 
 def python_command(*args):

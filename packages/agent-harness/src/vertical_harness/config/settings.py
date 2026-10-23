@@ -11,7 +11,7 @@ from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from vertical_harness.config.store_backend import StoreBackendType
-from vertical_harness.tools.code_formatter_entry import FormatterEntry
+from vertical_harness.config.formatter_entry import FormatterEntry
 
 logger = logging.getLogger(__name__)
 
