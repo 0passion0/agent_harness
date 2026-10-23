@@ -337,6 +337,7 @@ export type WorkspaceFileEntry = {
 }
 
 /**
+ * 智能体指令内容及其项目级覆盖项的配置视图契约。
  */
 export type ConfigView = {
   /** 主智能体提示词配置及其来源 */
@@ -388,9 +389,6 @@ export type Command =
   | { id: string; method: 'model.configure'; params: { model_code: string } }
   | { id: string; method: 'runtime.configure'; params: ApplicationState['runtimes'] }
   | { id: string; method: 'permission.set'; params: { mode: ApplicationState['permission_mode'] } }
-  | { id: string; method: 'config.inspect'; params: { scope: ConfigScope } }
-  | { id: string; method: 'config.save'; params: { scope: ConfigScope; kind: 'agent'; content: string } }
-  | { id: string; method: 'config.remove'; params: { kind: 'agent' } }
   /** 获取当前所有已注册且物理路径存在的项目列表 */
   | { id: string; method: 'harness.projects'; params: Record<string, never> }
   /** 巡检指定范围与项目下的 Harness 指令与技能配置 */

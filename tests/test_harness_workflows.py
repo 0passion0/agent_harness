@@ -6,6 +6,7 @@ import subprocess
 import sys
 
 import pytest
+from langchain_core.exceptions import ContextOverflowError
 from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.checkpoint.memory import InMemorySaver
@@ -276,6 +277,7 @@ def test_root_instructions_are_included_in_context_budget(tmp_path, monkeypatch)
         HarnessSettings(_env_file=None, model="test:model", workspace_root=tmp_path, enable_planning=False),
         options={"max_context_tokens": 4000},
     )
-    with pytest.raises(ValueError, match="history was not sent to the model"):
+    with pytest.raises(ContextOverflowError) as failure:
         agent.invoke({"messages": [HumanMessage(content="Hello")]}, {"configurable": {"thread_id": "budget"}})
+    assert "history was not sent to the model" in str(failure.value.__cause__)
     assert model.seen == []

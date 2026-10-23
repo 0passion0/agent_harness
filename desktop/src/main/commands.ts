@@ -21,8 +21,7 @@ const methods: Record<string, string[]> = {
   'interaction.answer': ['run_id', 'interaction_id', 'answer'], 'project.create': ['name'], 'project.select': ['project_id'],
   'model.test': [], 'model.configure': ['model_code'], 'context.configure': ['max_tokens'],
   'runtime.configure': ['python', 'node'],
-  'permission.set': ['mode'], 'config.inspect': ['scope'], 'config.save': ['scope', 'kind', 'content'],
-  'config.remove': ['kind'],
+  'permission.set': ['mode'],
   'harness.projects': [], 'harness.inspect': ['scope', 'project_id'], 'harness.save': ['scope', 'project_id', 'kind', 'name', 'content'],
   'harness.remove': ['scope', 'project_id', 'kind', 'name'],
   'session.rename': ['session_id', 'title'], 'session.delete': ['session_id'], 'session.export': ['session_id']

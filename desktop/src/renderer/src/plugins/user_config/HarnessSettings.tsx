@@ -68,7 +68,7 @@ export function HarnessSettings({ kind, application, busy }: HarnessSettingsProp
   const request = useRef(0)
   const scope: ConfigScope = projectId ? 'project' : 'global'
   const locked = busy || pending || loading || projectsLoading
-  const applicationProjectsKey = JSON.stringify(application?.projects.map(({ id, path }) => [id, path])) ?? '[]'
+  const applicationProjectsKey = JSON.stringify(application?.projects ?? [])
 
   // 第一步：监听应用项目列表变更，拉取可用项目列表
   useEffect(() => {
@@ -123,11 +123,14 @@ export function HarnessSettings({ kind, application, busy }: HarnessSettingsProp
     }
   }
 
-  // 第五步：根据指令或技能类型分别向后端发起保存或删除变更请求
+  // 第五步：统一调用后端保存或删除 RPC 契约
   async function mutate(method: 'harness.save' | 'harness.remove', name: string, nextContent = ''): Promise<HarnessConfig> {
     const id = crypto.randomUUID()
-    if (method === 'harness.save') return await window.medpeer.command({ id, method, params: { scope, project_id: projectId, kind: kind === 'agent' ? 'agent' : 'skill', name, content: nextContent } }) as HarnessConfig
-    return await window.medpeer.command({ id, method, params: { scope, project_id: projectId, kind: kind === 'agent' ? 'agent' : 'skill', name } }) as HarnessConfig
+    const base = { scope, project_id: projectId, kind: kind === 'agent' ? ('agent' as const) : ('skill' as const), name }
+    const command = method === 'harness.save'
+      ? { id, method: 'harness.save' as const, params: { ...base, content: nextContent } }
+      : { id, method: 'harness.remove' as const, params: base }
+    return await window.medpeer.command(command) as HarnessConfig
   }
 
   // 第六步：渲染顶部范围选择工具栏、指令编辑卡片或技能管理卡片列表

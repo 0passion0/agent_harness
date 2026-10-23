@@ -51,15 +51,6 @@ describe('DesktopStore', () => {
     expect(() => store.importAttachments([source])).toThrow()
   })
 
-  it('rejects a symlinked config root before writing through it', () => {
-    const root = temp(); const project = path.join(root, 'project'); const workspace = path.join(root, 'workspace'); const outside = path.join(root, 'outside')
-    mkdirSync(project); mkdirSync(workspace); mkdirSync(outside)
-    symlinkSync(outside, path.join(project, 'config'), 'junction')
-    const store = new DesktopStore(project, workspace, path.join(root, 'account'))
-    expect(() => store.saveConfig('project', 'agent', 'must not escape')).toThrow()
-    expect(() => readFileSync(path.join(outside, 'agent.md'), 'utf8')).toThrow()
-  })
-
   it('requires published workspace artifact paths and retains their source run reference', () => {
     const root = temp(); const workspace = path.join(root, 'workspace'); mkdirSync(path.join(workspace, 'reports'), { recursive: true })
     writeFileSync(path.join(workspace, 'reports', 'result.csv'), 'x,y\n1,2\n')
@@ -72,13 +63,10 @@ describe('DesktopStore', () => {
     expect(() => store.resolveArtifact('/workspace/reports/unpublished.csv')).toThrow()
   })
 
-  it('removes project config without changing global files and preserves full usage summary shape', () => {
+  it('preserves full usage summary shape', () => {
     const root = temp(); const workspace = path.join(root, 'workspace'); mkdirSync(workspace)
     const account = path.join(root, 'account')
     const store = new DesktopStore(path.join(root, 'project'), workspace, account)
-    store.saveConfig('global', 'agent', 'global')
-    store.saveConfig('project', 'agent', 'project')
-    expect(store.removeConfig('agent').agent.content).toBe('global')
     store.recordUsage('p', 's', { request_id: '1', requested_at: '2026-01-01T01:00:00+08:00', model: 'm', source: 'model', usage: { input_tokens: 1, output_tokens: 2, total_tokens: 3, input_token_details: { cache_read: 1 }, output_token_details: { reasoning: 1 } }, cost_estimate: { minimum_cny: '0.1', maximum_cny: '0.2', minimum_credits: '0.3', maximum_credits: '0.4', rate_dates: ['2026-01-01'] } })
     store.recordUsage('p', 's', { request_id: '2', requested_at: '2026-01-01T01:30:00+08:00', model: 'm', source: 'model', usage: { input_tokens: 2, output_tokens: 3, total_tokens: 5, input_token_details: { cache_read: 2 }, output_token_details: { reasoning: 2 } }, cost_estimate: { minimum_cny: '0.2', maximum_cny: '0.4', minimum_credits: '0.5', maximum_credits: '0.6', rate_dates: ['2026-01-02'] } })
     store.recordUsage('p', 's', { request_id: '3', requested_at: '2026-01-01T02:00:00+08:00', model: 'm', source: 'jev', usage: null, cost_estimate: null })

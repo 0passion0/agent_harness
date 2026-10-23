@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Bot, ChartNoAxesCombined, ChevronRight, FileText, Puzzle, Settings2, ShieldCheck } from 'lucide-react'
-import type { ApplicationState, ConfigScope, ConfigView } from '../../../../shared/protocol'
+import type { ApplicationState } from '../../../../shared/protocol'
 import { HarnessSettings } from './HarnessSettings'
 import { UsageSettings } from './UsageSettings'
 import './settings-layout.css'
@@ -13,19 +13,15 @@ const navigation = [
   { id: 'usage', title: 'Token 消耗', group: '数据', icon: ChartNoAxesCombined, description: '查看本机各项目的 Token 使用情况。' }
 ] as const
 
-type Tab = typeof navigation[number]['id']
+export type Tab = typeof navigation[number]['id']
 export type UserSettingsPageProps = {
   initialTab?: Tab
   application: ApplicationState | null
-  config: ConfigView | null
   busy: boolean
   apply(method: 'model.test', params: Record<string, never>): Promise<void>
   apply(method: 'model.configure', params: { model_code: string }): Promise<void>
   apply(method: 'context.configure', params: { max_tokens: string }): Promise<void>
   apply(method: 'permission.set', params: { mode: ApplicationState['permission_mode'] }): Promise<void>
-  inspect(scope: ConfigScope): Promise<void>
-  save(scope: ConfigScope, kind: 'agent', content: string): Promise<void>
-  remove(kind: 'agent'): Promise<void>
   testProfile(): Promise<string>
 }
 

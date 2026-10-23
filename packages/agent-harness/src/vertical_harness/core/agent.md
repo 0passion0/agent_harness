@@ -7,7 +7,7 @@
 ## 2. 核心类与文件
 - `__init__.py`：统一导出核心业务类 `AgentComposer`、`ModelRouting`、`RunContext`。
 - `compose.py` (`AgentComposer`)：
-  - 智能体总装配器：构建包含 `FilesystemMiddleware`、`SummarizationMiddleware`（90% 预算压缩）、`ContextLimitMiddleware`、`DesktopPermissionMiddleware`、`DesktopApprovalMiddleware`、`TodoListMiddleware` 和 `ModelRouterMiddleware` 的中间件栈。
+  - 智能体总装配器：构建包含 `FilesystemMiddleware`、`SummarizationMiddleware`（90% 预算触发、保留上限 16k）、`ContextPruningMiddleware`（60% 触发、40% 目标）、`ContextLimitMiddleware`、`DesktopPermissionMiddleware`、`DesktopApprovalMiddleware`、`TodoListMiddleware` 和 `ModelRouterMiddleware` 的中间件栈。
   - 装配网络检索、受控 Python 脚本执行及用户交互确认工具。
   - 配置原生子任务委派（subagents），保证子智能体继承工作区权限与审批约束。
 - `routing.py` (`ModelRouting`)：

@@ -8,7 +8,7 @@
  */
 
 import { createHash, randomUUID } from 'node:crypto'
-import { copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, statSync, unlinkSync } from 'node:fs'
+import { copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, statSync } from 'node:fs'
 import path from 'node:path'
 import type { ArtifactRef, AttachmentRef, ConfigScope, ConfigView, Json, UsageStats } from '../shared/protocol'
 import { writeAtomic } from './local-store'
@@ -303,18 +303,6 @@ export class DesktopStore {
     const override = path.join(this.directory, 'config', 'agent.md')
     return { agent: { content: agentPath ? readFileSync(agentPath, 'utf8') : '', source: agentPath ?? '' }, overrides: { agent: scope === 'project' && existsSync(override) ? override : '' } }
   }
-  saveConfig(scope: ConfigScope, kind: 'agent', content: string): ConfigView {
-    if (kind !== 'agent') throw new Error('Only agent instructions are supported')
-    const directory = this.configWriteDir(scope)
-    writeAtomic(within(directory, path.join(directory, 'agent.md')), content)
-    return this.inspectConfig(scope)
-  }
-  removeConfig(kind: 'agent'): ConfigView {
-    if (kind !== 'agent') throw new Error('Only agent instructions are supported')
-    const directory = path.join(this.directory, 'config')
-    unlinkSync(within(directory, path.join(directory, 'agent.md')))
-    return this.inspectConfig('project')
-  }
 
   /**
    * 读取当前账号设置文件 settings.json，若不存在则回退至默认设置。
@@ -443,13 +431,6 @@ export class DesktopStore {
     if (scope === 'global') return [path.join(this.globalDirectory, 'config')]
     if (scope !== 'project') throw new Error('Invalid config scope')
     return [path.join(this.directory, 'config'), ...(this.workspace ? [path.join(this.workspace, '.medpeer')] : []), path.join(this.globalDirectory, 'config')]
-  }
-
-  /** 获取指定范围配置持久化写入的目标目录 */
-  private configWriteDir(scope: ConfigScope): string {
-    if (scope === 'global') return path.join(this.globalDirectory, 'config')
-    if (scope === 'project') return path.join(this.directory, 'config')
-    throw new Error('Invalid config scope')
   }
 
   /** 安全读取 JSON 文件并反序列化，文件不存在时返回 fallback 兜底值 */
