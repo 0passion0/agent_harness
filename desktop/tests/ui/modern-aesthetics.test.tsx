@@ -5,6 +5,24 @@ import { InlineActivity } from '../../src/renderer/src/components/InlineActivity
 import { Conversation } from '../../src/renderer/src/components/Conversation'
 import { initialState, reduceAgent } from '../../src/renderer/src/state/agent-state'
 import type { RunRecord, Snapshot } from '../../src/shared/protocol'
+import { describeTool, terminalOutput } from '../../src/renderer/src/components/tool-activity'
+
+test('terminal output decodes JSON results and keeps exit, timeout and truncation visible', () => {
+  expect(terminalOutput(JSON.stringify({ output: 'line one\nline two', exit_code: 1, timed_out: true, truncated: true }))).toBe('line one\nline two\n\n退出码 1 · 执行超时 · 输出已截断，完整日志见执行元数据')
+  expect(terminalOutput({ output: '', exit_code: 0 })).toBe('\n\n退出码 0')
+  for (const data of ['plain output', '{broken', null, ['output'], { output: 5 }]) expect(terminalOutput(data)).toBeNull()
+})
+
+test('recognizes actual skill reads, ordinary reads and commands', () => {
+  expect(describeTool({ kind: 'tool_start', name: 'read_file', arguments: { file_path: '/.agents/skills/review/SKILL.md' } })).toMatchObject({ skill: 'review', verb: '读取技能' })
+  expect(describeTool({ kind: 'tool_start', name: 'read_file', arguments: { path: 'C:\\Users\\test\\.agent-harness\\skills\\research\\SKILL.md' } })).toMatchObject({ skill: 'research' })
+  expect(describeTool({ kind: 'tool_start', name: 'edit_file', arguments: { path: '/.agents/skills/review/SKILL.md' } }).skill).toBe(false)
+  expect(describeTool({ kind: 'tool_start', name: 'read_file', arguments: { path: 'notes.md' } })).toMatchObject({ verb: '读取', preview: 'notes.md' })
+  expect(describeTool({ kind: 'tool_start', name: 'shell_exec', arguments: { command: 'npm test' } })).toMatchObject({ command: true, preview: 'npm test' })
+  const html = renderToStaticMarkup(<InlineActivity running records={[{ kind: 'tool_start', call_id: 'skill', name: 'read_file', arguments: { path: '/.agents/skills/review/SKILL.md' } }]} />)
+  expect(html).toContain('正在读取技能 review')
+  expect(html).toContain('is-skill')
+})
 
 test('isFilePath detects valid workspace and system file paths', () => {
   expect(isFilePath('src/renderer/src/App.tsx')).toBe(true)

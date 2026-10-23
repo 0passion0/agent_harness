@@ -42,6 +42,7 @@ export function RunDetails({ state }: { state: AgentState }) {
   const cost = totals?.cost_estimate as CostEstimate | null | undefined
   const models = (totals?.models ?? []) as SessionModelUsage[]
   const latest = state.snapshot?.runs.at(-1)
+  const runLog = state.runLog.filter(record => record.kind !== 'text')
 
   return <section className="side-section">
     <h3>运行明细</h3>
@@ -90,8 +91,8 @@ export function RunDetails({ state }: { state: AgentState }) {
     {state.question && <p>等待答复：{state.question.question}</p>}
 
     {/* 第四步：本轮实时事件流水日志 */}
-    <h3>本轮事件日志 · {state.runLog.length}</h3>
-    {state.runLog.map((record, index) => <details className="run-log-entry" key={index}>
+    <h3>本轮事件日志 · {runLog.length}</h3>
+    {runLog.map((record, index) => <details className="run-log-entry" key={index}>
       <summary>
         {index + 1}. {eventLabels[record.kind] ?? record.kind}
         {record.name && <> · {record.name}</>}
@@ -110,7 +111,7 @@ export function RunDetails({ state }: { state: AgentState }) {
         <pre>{JSON.stringify(record, null, 2)}</pre>
       </details>
     </details>)}
-    {!state.runLog.length && <p>开始任务后显示模型请求、工具调用、参数、结果、用量和错误。已保存的记录见下方。</p>}
+    {!runLog.length && <p>开始任务后显示模型请求、工具调用、参数、结果、用量和错误。已保存的记录见下方。</p>}
 
     {/* 第五步：历史已持久化轮次执行记录 */}
     <h3>已保存运行 · {state.snapshot?.runs.length ?? 0}</h3>

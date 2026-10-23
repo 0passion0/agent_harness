@@ -28,7 +28,7 @@ export type AgentState = {
   tools: Record<string, RunRecord>
   /** 最近发生的事件流水（保留最近 800 条） */
   events: RunRecord[]
-  /** 本轮次非文本流事件日志（工具调用、状态转移等） */
+  /** 本轮有序事件；连续文本增量合并保存，保留工具与正文的相对位置 */
   runLog: RunRecord[]
   /** 智能体向用户发起的等待授权或输入的问题 */
   question: Question | null
@@ -69,6 +69,13 @@ type Action =
   | { event: 'run.stopping' | 'error.clear' }
   | { event: 'interaction.answered'; interaction_id: string }
   | { event: 'snapshot.loaded'; data: Snapshot }
+
+export function recordText(data: RunRecord): string {
+  if (typeof data.text === 'string') return data.text
+  return Array.isArray(data.text)
+    ? data.text.map(part => typeof part === 'string' ? part : typeof part === 'object' && part && 'text' in part ? String(part.text) : '').join('')
+    : ''
+}
 
 /**
  * 智能体状态转移纯函数（Reducer）。
@@ -137,13 +144,13 @@ export function reduceAgent(state: AgentState, action: Action): AgentState {
       const tools = data.call_id ? { ...state.tools, [data.call_id]: { ...state.tools[data.call_id], ...data } } : state.tools
 
       // 提取流式生成的文本片段
-      const text = typeof data.text === 'string'
-        ? data.text
-        : Array.isArray(data.text)
-          ? data.text.map(part => typeof part === 'string' ? part : typeof part === 'object' && part && 'text' in part ? String(part.text) : '').join('')
-          : ''
-
+      const text = recordText(data)
       const stream = data.kind === 'text' ? state.stream + text : state.stream
+      const previous = state.runLog.at(-1)
+      const runLog = data.kind === 'text' && previous?.kind === 'text'
+        && previous.operation_id === data.operation_id && previous.message_id === data.message_id
+        ? [...state.runLog.slice(0, -1), { ...previous, ...data, text: recordText(previous) + text }]
+        : [...state.runLog, data]
       return {
         ...state,
         phase: state.phase === 'idle' || state.phase === 'disconnected' ? 'running' : state.phase,
@@ -153,7 +160,7 @@ export function reduceAgent(state: AgentState, action: Action): AgentState {
         tools,
         stream,
         events: [...state.events.slice(-799), data],
-        runLog: data.kind === 'text' ? state.runLog : [...state.runLog, data]
+        runLog
       }
     }
 

@@ -12,6 +12,7 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import mermaid from 'mermaid'
+import diagramFont from '../assets/fonts/jetbrains-mono-latin-400-normal.woff2?inline'
 import Prism from 'prismjs'
 import 'prismjs/components/prism-javascript'
 import 'prismjs/components/prism-typescript'
@@ -24,32 +25,20 @@ import 'prismjs/components/prism-markdown'
 import 'prismjs/components/prism-sql'
 import 'prismjs/components/prism-yaml'
 import 'prismjs/components/prism-css'
-import { ArrowDown, BarChart3, Check, Code, Copy, Download, Eye, Maximize2, Minimize2, Minus, Plus, RotateCcw } from 'lucide-react'
+import { ArrowDown, BarChart3, Check, ChevronDown, Code, Copy, Download, Eye, FileText, Maximize2, Minimize2, Minus, Plus, RotateCcw } from 'lucide-react'
 import type { AgentState } from '../state/agent-state'
-import type { ArtifactRef, Snapshot, RunRecord } from '../../../shared/protocol'
+import type { ArtifactRef, RunRecord } from '../../../shared/protocol'
 import { cleanPath, isFilePath } from './FileLink'
 import { InlineActivity } from './InlineActivity'
+import { contentText } from './content-text'
+import { runTimeline, savedConversation, type RunBlock } from './run-timeline'
+import { formatDuration, stepStatus } from './tool-activity'
 import './conversation.css'
+
+export { contentText } from './content-text'
 
 /** 支持在对话流内直接预览的图片 MIME 格式列表 */
 const previewImageTypes = ['image/png', 'image/jpeg', 'image/webp']
-
-/**
- * 安全提取消息载荷中的文本内容。
- * 兼容纯字符串、LangChain 多段 content 数组或未识别的 JSON 结构。
- *
- * @param content - 原始消息内容载荷
- * @returns 提取合并后的纯文本字符串
- */
-export function contentText(content: unknown): string {
-  if (typeof content === 'string') return content
-  if (Array.isArray(content)) {
-    return content
-      .map(block => typeof block === 'object' && block !== null && 'text' in block && typeof block.text === 'string' ? block.text : '')
-      .join('\n')
-  }
-  return JSON.stringify(content) ?? ''
-}
 
 /**
  * 消息单项快速复制按钮组件。
@@ -117,6 +106,8 @@ function ArtifactImage({ src, alt }: { src?: string; alt?: string }) {
 }
 
 const mermaidCache = new Map<string, { svg: string; error?: string }>()
+// Sandboxed previews and downloaded diagrams cannot use the page's font asset.
+const diagramFontStyle = `@font-face{font-family:'JetBrains Mono';src:url('${diagramFont}') format('woff2');font-weight:400;font-style:normal}`
 
 let lastMermaidTheme = ''
 function ensureMermaidTheme(isDark: boolean) {
@@ -131,7 +122,7 @@ function ensureMermaidTheme(isDark: boolean) {
       theme,
       securityLevel: 'loose',
       htmlLabels: false,
-      fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
+      fontFamily: getComputedStyle(document.documentElement).fontFamily
     })
   } catch {
     // 忽略重复初始化异常
@@ -143,7 +134,7 @@ function svgPreviewDocument(svg: string) {
   if (!tag) return ''
   const responsiveTag = tag.replace(/\s(?:width|height)=(?:"[^"]*"|'[^']*')/gi, '').replace(/>$/, ' width="100%" height="100%">')
   const responsiveSvg = svg.replace(tag, responsiveTag)
-  return `<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; font-src data:; style-src 'unsafe-inline'"><style>html,body{width:100%;height:100%;margin:0;overflow:hidden;background:transparent}body{display:grid;place-items:center}svg{width:100%!important;height:100%!important;max-width:none!important}</style></head><body>${responsiveSvg}</body></html>`
+  return `<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; font-src data:; style-src 'unsafe-inline'"><style>${diagramFontStyle}html,body{width:100%;height:100%;margin:0;overflow:hidden;background:transparent}body{display:grid;place-items:center;font-family:'JetBrains Mono','Microsoft YaHei',monospace}svg{width:100%!important;height:100%!important;max-width:none!important}</style></head><body>${responsiveSvg}</body></html>`
 }
 
 function SvgDiagram({ svg, filename = 'diagram.png', allowSvgDownload = false }: { svg: string; filename?: string; allowSvgDownload?: boolean }) {
@@ -346,11 +337,13 @@ function MermaidBlock({ code, isStreaming = false }: { code: string; isStreaming
 
       // 语法校验通过，执行矢量图 SVG 生成
       try {
+        await document.fonts.ready
         const result = await mermaid.render(id, trimmed)
         if (!cancelled) {
-          setSvg(result.svg)
+          const renderedSvg = result.svg.replace(/(<svg\b[^>]*>)/i, `$1<style>${diagramFontStyle}</style>`)
+          setSvg(renderedSvg)
           setError(null)
-          mermaidCache.set(cacheKey, { svg: result.svg })
+          mermaidCache.set(cacheKey, { svg: renderedSvg })
         }
       } catch (renderErr) {
         if (!cancelled && !isStreaming) {
@@ -427,7 +420,7 @@ function MermaidBlock({ code, isStreaming = false }: { code: string; isStreaming
             </button>
           </div>
         ) : svg ? (
-          <SvgDiagram svg={svg} filename="mermaid-diagram.png" />
+          <SvgDiagram svg={svg} filename="mermaid-diagram.png" allowSvgDownload />
         ) : (
           <div style={{ padding: '24px', textAlign: 'center', color: 'var(--muted)', fontSize: 12 }}>
             <span className="streaming-pulse-dot" style={{ marginRight: 6 }} />
@@ -677,9 +670,12 @@ function ArtifactCard({ artifact, open }: { artifact: ArtifactRef; open(path: st
   return (
     <details className="artifact-card modern-artifact-card" open={expanded} onToggle={event => setExpanded(event.currentTarget.open)}>
       <summary>
+        <span className="artifact-file-icon"><FileText size={19} /></span>
         <span className="artifact-title">
           <strong>{artifact.name}</strong>
+          <small>{artifact.media_type.split('/').at(-1)?.toUpperCase()} · 交付文件</small>
         </span>
+        <ChevronDown size={14} className="artifact-chevron" />
       </summary>
       {error && <p role="alert">{error}</p>}
       {preview && <img src={preview} alt={artifact.name} />}
@@ -700,16 +696,21 @@ function ArtifactCard({ artifact, open }: { artifact: ArtifactRef; open(path: st
   )
 }
 
-/**
- * 主对话流容器组件。
- *
- * 第一步：渲染会话顶部快捷操作条（包含全量会话复制与导出）。
- * 第二步：渲染历史消息列表，提供独立消息一键复制、Markdown 代码与文件智能联动。
- * 第三步：渲染 AI 正在流式生成的文本片段（stream）与精美闪烁游标。
- * 第四步：实时展示后台 LLM 思考过程、工具调用与插件调用卡片。
- * 第五步：渲染关联的附件与交付物成果卡片。
- * 第六步：监听滚动条位置，实现智能近底自动贴合滚动与“回到底部”悬浮按钮。
- */
+/** 按正文分段，工具的状态更新保留在原来的阶段内。 */
+function RunTranscript({ blocks, status, openArtifact }: { blocks: RunBlock[]; status: string; openArtifact(path: string): void }) {
+  return blocks.map((block, index) => {
+    if (block.kind === 'text') return <div className="run-segment message-content" key={block.key}>
+      <MessageMarkdown content={block.text} openArtifact={openArtifact} isStreaming={status === 'running' && !block.complete && index === blocks.length - 1} />
+    </div>
+    const statuses = block.records.map(record => stepStatus(record, 'running'))
+    const groupStatus = statuses.every(value => ['success', 'complete', 'completed', 'tool_end'].includes(value)) ? 'complete'
+      : !statuses.includes('running') && statuses.some(value => ['failed', 'tool_error'].includes(value)) ? 'failed' : status
+    return <div className="run-segment run-tool-group" key={block.key}>
+      <InlineActivity compact records={block.records} status={groupStatus} />
+    </div>
+  })
+}
+
 export function Conversation({ state, openArtifact }: { state: AgentState; openArtifact(path: string): void }) {
   const pane = useRef<HTMLDivElement>(null)
   const [nearBottom, setNearBottom] = useState(true)
@@ -745,14 +746,17 @@ export function Conversation({ state, openArtifact }: { state: AgentState; openA
   const handleCopyFullChat = () => {
     if (!state.snapshot?.messages) return
     const lines: string[] = []
-    state.snapshot.messages
-      .filter(m => ['human', 'ai'].includes(m.type) && contentText(m.data.content))
-      .forEach(m => {
-        const role = m.type === 'human' ? '### User' : '### Assistant (MedPeer)'
-        lines.push(`${role}\n\n${contentText(m.data.content)}\n`)
-      })
-    if (state.stream) {
-      lines.push(`### Assistant (MedPeer)\n\n${state.stream}\n`)
+    entries.forEach(entry => {
+      if (entry.kind === 'message') {
+        const role = entry.message.type === 'human' ? '### User' : '### Assistant (MedPeer)'
+        lines.push(`${role}\n\n${contentText(entry.message.data.content)}\n`)
+      } else {
+        const text = entry.blocks.filter(block => block.kind === 'text').map(block => block.text).join('\n\n')
+        if (text) lines.push(`### Assistant (MedPeer)\n\n${text}\n`)
+      }
+    })
+    if (liveText) {
+      lines.push(`### Assistant (MedPeer)\n\n${liveText}\n`)
     }
     void navigator.clipboard.writeText(lines.join('\n---\n\n'))
     setAllCopied(true)
@@ -766,26 +770,21 @@ export function Conversation({ state, openArtifact }: { state: AgentState; openA
   )
 
   const isRunning = state.phase === 'running'
-  const isStreaming = state.stream.length > 0
-  const isThinking = isRunning && state.stream.length === 0
   const activeRun = state.snapshot?.active_run
   const latestRunId = state.runId ?? activeRun?.id ?? state.lastFinishedRunId ?? state.snapshot?.runs.at(-1)?.id
   const artifacts = React.useMemo(() => (state.snapshot?.artifacts ?? []).filter(artifact => latestRunId && artifact.source_run_id === latestRunId), [state.snapshot?.artifacts, latestRunId])
   const hasLiveRun = Boolean(state.runId || (!state.lastRunSaved && (activeRun || state.runLog.length)) || isRunning)
   const activityStatus = state.phase === 'question' || (!state.runId && activeRun && state.phase === 'idle') ? 'paused' : state.phase
-  const liveRecords = [...(activeRun?.records ?? []), ...state.runLog]
-  const messages = state.snapshot?.messages.filter(message => ['human', 'ai'].includes(message.type) && contentText(message.data.content)) ?? []
-  const lastMessageByUser = new Map<string, number>()
-  let userMessageId: string | undefined
-  messages.forEach((message, index) => {
-    if (message.type === 'human') userMessageId = typeof message.data.id === 'string' ? message.data.id : undefined
-    if (userMessageId) lastMessageByUser.set(userMessageId, index)
-  })
-  const savedActivity = (run: Snapshot['runs'][number], index: number) => (
-    <div className="saved-run-activity" key={run.id ?? index}>
-      <InlineActivity records={run.records} tools={run.tools as Record<string, RunRecord>} status={run.status ?? 'complete'} elapsed={run.elapsed} />
-    </div>
-  )
+  const liveBlocks = React.useMemo(() => {
+    if (!hasLiveRun && !state.stream) return []
+    const blocks = runTimeline([...(activeRun?.records ?? []), ...state.runLog], state.tools)
+    if (state.stream && !blocks.some(block => block.kind === 'text')) blocks.push({ kind: 'text', key: 'stream', text: state.stream, complete: false })
+    return blocks
+  }, [activeRun?.records, state.runLog, state.tools, state.stream, hasLiveRun])
+  const liveText = liveBlocks.filter(block => block.kind === 'text').map(block => block.text).join('\n\n')
+  const isStreaming = liveText.length > 0
+  const isThinking = isRunning && !isStreaming
+  const entries = React.useMemo(() => savedConversation(state.snapshot), [state.snapshot])
 
   return (
     <div className="conversation-wrap codex-conversation">
@@ -801,14 +800,25 @@ export function Conversation({ state, openArtifact }: { state: AgentState; openA
         }}
       >
         {/* 历史消息列表 */}
-        {messages
-          .map((message, index) => {
+        {entries.map((entry, index) => {
+            if (entry.kind === 'run') {
+              const { run, blocks } = entry
+              if (!blocks.length) return <div className="saved-run-activity" key={`run-${run.id ?? index}`}>
+                <InlineActivity records={run.records} tools={run.tools as Record<string, RunRecord>} status={run.status ?? 'complete'} elapsed={run.elapsed} />
+              </div>
+              return <article className="message ai saved-run-activity" key={`run-${run.id ?? index}`} aria-label="MedPeer">
+                <RunTranscript blocks={blocks} status={run.status ?? 'complete'} openArtifact={openArtifact} />
+                <div className="run-duration">{formatDuration(run.elapsed)}</div>
+                <div className="message-footer-row ai-footer"><div className="message-actions-bar">
+                  <CopyButton text={blocks.filter(block => block.kind === 'text').map(block => block.text).join('\n\n')} />
+                </div></div>
+              </article>
+            }
+            const { message } = entry
             const textToCopy = contentText(message.data.content)
 
             return (
-              <React.Fragment key={typeof message.data.id === 'string' ? message.data.id : index}>
-              {message.type === 'ai' && state.snapshot?.runs.filter(run => run.user_message_id && lastMessageByUser.get(run.user_message_id) === index).map(savedActivity)}
-              <article className={`message ${message.type}`} aria-label={message.type === 'human' ? '你' : 'MedPeer'}>
+              <article className={`message ${message.type}`} key={typeof message.data.id === 'string' ? message.data.id : index} aria-label={message.type === 'human' ? '你' : 'MedPeer'}>
                 <div className="message-content">
                   <MessageMarkdown
                     content={message.type === 'human' && Array.isArray(message.data.content) ? message.data.content.slice(0, 1) : message.data.content}
@@ -822,8 +832,6 @@ export function Conversation({ state, openArtifact }: { state: AgentState; openA
                   </div>
                 </div>
               </article>
-              {message.type === 'human' && state.snapshot?.runs.filter(run => run.user_message_id && lastMessageByUser.get(run.user_message_id) === index).map(savedActivity)}
-              </React.Fragment>
             )
           })}
 
@@ -848,31 +856,18 @@ export function Conversation({ state, openArtifact }: { state: AgentState; openA
               </div>
             </div>}
 
-            <InlineActivity records={liveRecords} tools={state.tools} running={isRunning} status={activityStatus} />
-
-            {/* 流式文本正文 */}
-            {state.stream.length > 0 && (
-              <div className="message-content">
-                <MessageMarkdown
-                  content={state.stream}
-                  openArtifact={openArtifact}
-                  isStreaming={isRunning}
-                />
-              </div>
-            )}
+            <RunTranscript blocks={liveBlocks} status={activityStatus} openArtifact={openArtifact} />
 
             {/* 复制按钮置于流式回复底部 */}
-            {state.stream.length > 0 && (
+            {liveText && (
               <div className="message-footer-row ai-footer">
                 <div className="message-actions-bar">
-                  <CopyButton text={state.stream} label="复制" />
+                  <CopyButton text={liveText} label="复制" />
                 </div>
               </div>
             )}
           </article>
         )}
-
-        {state.snapshot?.runs.filter(run => !run.user_message_id || !lastMessageByUser.has(run.user_message_id)).map(savedActivity)}
 
         {/* 仅展示最新一轮生成的交付文件。 */}
         {artifacts.map(artifact => (

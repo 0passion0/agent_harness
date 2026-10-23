@@ -11,6 +11,7 @@
 import { useState } from 'react'
 import { FileText, RefreshCw } from 'lucide-react'
 import { QuirkyMascot } from './QuirkyMascot'
+import { WindowTitleBar } from '../../components/WindowTitleBar'
 import './loading.css'
 
 /**
@@ -55,6 +56,7 @@ export function LoadingScreen({ theme, error, onRetry }: LoadingScreenProps) {
 
   return (
     <div className={`app product-v2 product-v3 ${theme}`}>
+      <WindowTitleBar theme={theme} />
       <main className="boot-page" role="status" aria-live="polite">
         {/* 背景动态呼吸微光 */}
         <div className="boot-ambient-glow" aria-hidden="true" />

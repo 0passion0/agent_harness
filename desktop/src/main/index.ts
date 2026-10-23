@@ -16,6 +16,7 @@ import { Backend } from './backend'
 import { assertFilePaths, assertSender, validateCommand } from './commands'
 import { DesktopApplication } from './application'
 import { scanDirectory, copyFilesToWorkspace } from './workspace-files'
+import { titleBarOverlay } from './window-theme'
 import type { EventFrame } from '../shared/protocol'
 
 app.setName('MedPeer')
@@ -110,6 +111,9 @@ async function start(): Promise<void> {
     minWidth: 640,
     minHeight: 520,
     show: false,
+    titleBarStyle: 'hidden',
+    titleBarOverlay: titleBarOverlay('light'),
+    backgroundColor: '#f3f3fb',
     icon: path.join(root, 'assets/medpeer.ico'),
     webPreferences: {
       preload: path.join(import.meta.dirname, '../preload/index.cjs'),
@@ -117,6 +121,14 @@ async function start(): Promise<void> {
       sandbox: true,
       nodeIntegration: false
     }
+  })
+
+  // 主题切换不等待后端启动，加载屏也需要可用的窗口外壳。
+  ipcMain.handle('window:theme', (event, theme: unknown) => {
+    trusted(event)
+    const overlay = titleBarOverlay(theme)
+    if (process.platform !== 'darwin') window.setTitleBarOverlay(overlay)
+    window.setBackgroundColor(overlay.color)
   })
 
   // ===== 1. 后端命令 IPC 路由 =====

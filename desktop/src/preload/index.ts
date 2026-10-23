@@ -14,6 +14,8 @@ import type { Command, DesktopAPI, EventFrame } from '../shared/protocol'
  * 暴露给渲染进程的安全 API 实现对象。
  */
 const api: DesktopAPI = {
+  setWindowTheme: theme => ipcRenderer.invoke('window:theme', theme),
+
   /** 打开系统文件管理器并定位到数据或日志目录 */
   openDataDirectory: (kind) => ipcRenderer.invoke('storage:open', kind),
 

@@ -1,0 +1,67 @@
+.app.product-v2.product-v3 {
+  display: flex;
+  flex-direction: column;
+  padding: 0 4px 4px 0;
+  overflow: hidden;
+  background: linear-gradient(155deg, var(--rail) 35%, var(--soft) 100%);
+}
+
+.product-v3 .window-titlebar {
+  flex: none;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  padding-left: max(12px, env(titlebar-area-x, 0px));
+  max-width: env(titlebar-area-width, 100%);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  user-select: none;
+  -webkit-app-region: drag;
+}
+
+.app.product-v3 > .workspace-layout,
+.app.product-v3 > .boot-page {
+  flex: 1;
+  height: auto;
+  min-height: 0;
+}
+
+.product-v3 .workspace-surface,
+.app.product-v3 > .boot-page {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 2px 12px color-mix(in srgb, var(--heading) 4%, transparent);
+}
+
+.product-v3 .workspace-surface {
+  position: relative;
+  display: grid;
+  grid-template-columns: subgrid;
+  grid-column: 2 / -1;
+  grid-row: 1;
+  background: var(--bg);
+}
+
+.product-v3 .app-rail {
+  background: transparent;
+  border-right: 0;
+}
+
+.product-v3 .workspace-surface > .sidebar {
+  grid-column: 1;
+  background: linear-gradient(165deg, var(--sidebar) 60%, color-mix(in srgb, var(--soft) 35%, var(--sidebar)));
+}
+
+@media (max-width: 860px) {
+  .product-v3 .workspace-layout .workspace-surface > .sidebar {
+    left: 0;
+    grid-column: auto;
+  }
+
+  .product-v3 .workspace-layout .workspace-surface > .task-main {
+    grid-column: 1;
+  }
+}

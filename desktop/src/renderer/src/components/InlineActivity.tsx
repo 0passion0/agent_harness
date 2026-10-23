@@ -21,11 +21,12 @@ import {
   Boxes,
   Copy,
   Check,
-  Sparkles
+  Sparkles,
+  Blocks
 } from 'lucide-react'
 import type { RunRecord } from '../../../shared/protocol'
 import { FileLink, isFilePath } from './FileLink'
-import { stepStatus, toolSteps } from './tool-activity'
+import { describeTool, formatDuration, stepStatus, terminalOutput, toolSteps } from './tool-activity'
 
 /**
  * 根据工具名或类别返回最具辨识度的现代图标。
@@ -54,13 +55,14 @@ function getToolIcon(name?: string) {
 /**
  * 解析并美化展示工具输入或输出载荷。若检测到文件路径则内嵌交互式 FileLink。
  */
-function FormattedPayload({ data }: { data: unknown }) {
+function FormattedPayload({ data, terminal = false }: { data: unknown; terminal?: boolean }) {
   const [copied, setCopied] = useState(false)
   if (data === undefined || data === null) {
     return <span className="act-empty-text">无载荷</span>
   }
 
   const jsonStr = typeof data === 'string' ? data : JSON.stringify(data, null, 2)
+  const outputText = terminal ? terminalOutput(data) : null
 
   // 提取载荷中可能包含的文件路径
   const filePaths: string[] = []
@@ -87,7 +89,7 @@ function FormattedPayload({ data }: { data: unknown }) {
   }
 
   return (
-    <div className="act-payload-box">
+    <div className={`act-payload-box${terminal ? ' act-terminal' : ''}`}>
       {filePaths.length > 0 && (
         <div className="act-file-chips">
           <span className="act-file-chips-label">涉及文件：</span>
@@ -106,7 +108,8 @@ function FormattedPayload({ data }: { data: unknown }) {
           {copied ? <Check size={11} /> : <Copy size={11} />}
           <span>{copied ? '已复制' : '复制'}</span>
         </button>
-        <pre className="act-json-pre">{jsonStr}</pre>
+        <pre className="act-json-pre" tabIndex={0}>{outputText ?? jsonStr}</pre>
+        {outputText !== null && <details className="act-result-metadata"><summary>执行元数据</summary><pre className="act-json-pre" tabIndex={0}>{jsonStr}</pre></details>}
       </div>
     </div>
   )
@@ -121,16 +124,14 @@ function ActivityItem({ record, status }: { record: RunRecord; status: string })
   const isError = status === 'failed' || status === 'tool_error'
   const isComplete = ['success', 'complete', 'completed', 'tool_end'].includes(status)
 
-  const name = record.name || record.node || record.kind
+  const { name, verb, preview, skill, command } = describeTool(record)
   const elapsed = typeof record.elapsed === 'number' ? `${record.elapsed.toFixed(2)}s` : ''
   const args = record.arguments && typeof record.arguments === 'object' && !Array.isArray(record.arguments) ? record.arguments : {}
-  const preview = [args.command, args.cmd, args.path, args.file_path, args.query, args.pattern].find(value => typeof value === 'string')
-  const verb = /write|edit|patch/i.test(name) ? '编辑' : /read|cat/i.test(name) ? '读取' : /search|find|grep/i.test(name) ? '搜索' : '运行'
   const action = `${isRunning ? '正在' : isError ? '未能' : isComplete ? '已' : '已停止'}${verb}`
-  const title = `${action} ${preview || record.summary || name}`
+  const title = `${action} ${preview}`
 
   return (
-    <details className={`act-item ${isRunning ? 'is-running' : isError ? 'is-error' : isComplete ? 'is-complete' : 'is-interrupted'}`}
+    <details className={`act-item ${isRunning ? 'is-running' : isError ? 'is-error' : isComplete ? 'is-complete' : 'is-interrupted'}${skill ? ' is-skill' : ''}`}
       onToggle={event => setOpen(event.currentTarget.open)}>
       <summary className="act-item-header" title={`${name} · ${title}`}>
         <span className="act-item-icon-wrap">
@@ -138,7 +139,7 @@ function ActivityItem({ record, status }: { record: RunRecord; status: string })
             <Loader2 size={13} className="act-spinner" />
           ) : isError ? (
             <AlertCircle size={13} className="act-status-err" />
-          ) : getToolIcon(name)}
+          ) : skill ? <Blocks size={13} /> : getToolIcon(name)}
         </span>
 
         <span className="act-item-title-wrap">
@@ -165,15 +166,14 @@ function ActivityItem({ record, status }: { record: RunRecord; status: string })
         <div className="act-item-details">
           {record.summary && <div className="act-summary-line">{String(record.summary)}</div>}
           {record.arguments !== undefined && (
-            <div className="act-detail-section">
-              <span className="act-detail-label">调用参数</span>
+            <details className="act-input-details">
+              <summary>调用参数</summary>
               <FormattedPayload data={record.arguments} />
-            </div>
+            </details>
           )}
           {record.output !== undefined && (
             <div className="act-detail-section">
-              <span className="act-detail-label">执行结果</span>
-              <FormattedPayload data={record.output} />
+              <FormattedPayload data={record.output} terminal={command} />
             </div>
           )}
         </div>
@@ -191,13 +191,15 @@ export interface InlineActivityProps {
   running?: boolean
   status?: string
   elapsed?: number
+  /** 对话中的阶段工具分组，省去重复的完成计数 */
+  compact?: boolean
 }
 
 /**
  * 现代极简风格的内联活动执行流组件。
  * 聚合展示 LLM 后台动作、工具调用、插件执行细节。
  */
-export function InlineActivity({ records = [], tools = {}, running = false, status = running ? 'running' : 'complete', elapsed }: InlineActivityProps) {
+export function InlineActivity({ records = [], tools = {}, running = false, status = running ? 'running' : 'complete', elapsed, compact = false }: InlineActivityProps) {
   const toolRecords = toolSteps([...records, ...Object.entries(tools).map(([id, record]) => ({ ...record, call_id: id }))])
   const statuses = toolRecords.map(record => stepStatus(record, status))
   const activeCount = statuses.filter(value => value === 'running').length
@@ -205,23 +207,24 @@ export function InlineActivity({ records = [], tools = {}, running = false, stat
   const failedCount = statuses.filter(value => value === 'failed' || value === 'tool_error').length
   const current = toolRecords.filter((_, index) => statuses[index] === 'running').at(-1)
   const isRunning = status === 'running'
-  const seconds = typeof elapsed === 'number' && Number.isFinite(elapsed) ? Math.max(0, Math.round(elapsed)) : null
-  const duration = seconds === null ? '' : `用时 ${seconds >= 60 ? `${Math.floor(seconds / 60)}分` : ''}${seconds % 60}秒`
-  const label = status === 'paused' ? '等待你的答复' : status === 'stopping' ? '正在停止' : status === 'cancelled' ? '执行已取消' : status === 'failed' ? '执行失败' : status === 'disconnected' ? '连接已中断' : isRunning ? (current?.name || current?.node || '正在处理') : '运行了工具'
+  const duration = formatDuration(elapsed)
+  const currentTool = current ? describeTool(current) : null
+  const label = status === 'paused' ? '等待你的答复' : status === 'stopping' ? '正在停止' : status === 'cancelled' ? '执行已取消' : status === 'failed' ? '执行失败' : status === 'disconnected' ? '连接已中断' : isRunning ? (currentTool ? `正在${currentTool.verb} ${currentTool.preview}` : '正在处理') : '执行记录'
+  const groupLabel = toolRecords.every(record => describeTool(record).command) ? `运行了 ${toolRecords.length} 个命令` : `执行了 ${toolRecords.length} 项操作`
 
   if (toolRecords.length === 0) {
     return null
   }
 
   return (
-    <details className={`inline-activity-card ${isRunning ? 'is-active' : ''}${duration ? ' has-duration' : ''}`}>
+    <details className={`inline-activity-card ${isRunning ? 'is-active' : ''}${duration ? ' has-duration' : ''}${compact ? ' is-stage' : ''}`}>
       <summary className="inline-activity-bar">
         <div className="act-bar-left">
           <span className="act-bar-symbol">
             {isRunning ? <Loader2 size={14} className="act-spinner" /> : status === 'failed' ? <AlertCircle size={14} /> : <Terminal size={14} />}
           </span>
           <span className="act-bar-label">
-            {!isRunning && ['complete', 'completed', 'success'].includes(status) && duration ? duration : label}
+            {!isRunning && ['complete', 'completed', 'success'].includes(status) ? duration || (compact ? groupLabel : label) : label}
           </span>
           <span className="act-count-pill">
             {toolRecords.length} 项操作
@@ -230,7 +233,7 @@ export function InlineActivity({ records = [], tools = {}, running = false, stat
         </div>
 
         <div className="act-bar-right">
-          <span className="act-summary-badge">
+          <span className={`act-summary-badge${failedCount ? ' has-failures' : ''}`}>
             {activeCount ? `${activeCount} 进行中 · ` : ''}{completedCount} 已完成{failedCount ? ` · ${failedCount} 失败` : ''}
           </span>
           <span className="act-chevron">

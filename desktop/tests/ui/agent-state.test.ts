@@ -69,10 +69,10 @@ describe('stream event aggregation', () => {
     let state = reduceAgent(initialState, { event: 'run.accepted', run_id: 'r' })
     state = reduceAgent(state, { event: 'run.event', session_id: 's', run_id: 'r', data: start })
     state = reduceAgent(state, { event: 'run.batch', frames: Array.from({ length: 900 }, () => ({ event: 'run.event' as const, session_id: 's', run_id: 'r', data: { kind: 'text', text: 'x' } })) })
-    expect(state.runLog).toEqual([start])
+    expect(state.runLog).toEqual([start, { kind: 'text', text: 'x'.repeat(900) }])
     expect(state.events).toHaveLength(800)
     state = reduceAgent(state, { event: 'run.finished', session_id: 's', run_id: 'r', data: { status: 'complete', snapshot } })
-    expect(state.runLog).toEqual([start, { kind: 'run_finished', status: 'complete' }])
+    expect(state.runLog).toEqual([start, { kind: 'text', text: 'x'.repeat(900) }, { kind: 'run_finished', status: 'complete' }])
     expect(reduceAgent(state, { event: 'run.accepted', run_id: 'next' }).runLog).toEqual([])
     expect(reduceAgent(state, { event: 'snapshot.loaded', data: snapshot }).runLog).toEqual([])
   })
@@ -82,6 +82,7 @@ describe('stream event aggregation', () => {
     expect(result.stream).toHaveLength(900)
     expect(result.stream.startsWith('0123456789')).toBe(true)
     expect(result.events.length).toBe(800)
+    expect(result.runLog).toHaveLength(1)
   })
 
   it('retains workflow event identity and hierarchy for expandable run cards', () => {

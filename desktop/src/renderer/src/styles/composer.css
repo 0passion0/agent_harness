@@ -1,0 +1,60 @@
+.product-v3 .task-bottom {
+  padding: 8px max(28px, calc((100% - 800px) / 2)) 18px;
+}
+.product-v3 .task-composer {
+  border-radius: 20px;
+  box-shadow: 0 4px 20px -6px color-mix(in srgb, var(--heading) 12%, transparent);
+  backdrop-filter: none;
+}
+.product-v3 .task-composer:focus-within {
+  border-color: var(--line-strong);
+  box-shadow: 0 0 0 2px var(--soft), 0 4px 20px -6px color-mix(in srgb, var(--heading) 12%, transparent);
+}
+.product-v3 .task-composer textarea { min-height: 76px; font-size: 14px; }
+.product-v3 .task-composer textarea::placeholder { color: var(--muted); }
+.product-v3 .composer-bottom-row { padding: 6px 12px 12px; gap: 8px; }
+.product-v3 .task-composer .composer-bottom-row { position: static; }
+.product-v3 .composer-context { gap: 8px; flex: 1; }
+.product-v3 .composer-model { font-size: 11px; max-width: min(24vw, 210px); }
+.product-v3 .task-footnote { font-size: 10px; opacity: .8; }
+.product-v3 .composer-skill-trigger {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  height: 30px; padding: 0 8px; border: 0; border-radius: 8px;
+  color: var(--muted); background: transparent; font-size: 12px; white-space: nowrap;
+}
+.product-v3 .composer-skill-trigger:hover:not(:disabled),
+.product-v3 .composer-skill-trigger[aria-expanded=true] { color: var(--accent); background: var(--soft); }
+.product-v3 .composer-skill-trigger kbd { font: 10px var(--font-mono); opacity: .6; }
+.product-v3 .skill-menu {
+  position: absolute; z-index: 30; left: 0; right: 0; bottom: calc(100% + 10px);
+  border: 1px solid var(--line-strong); border-radius: 16px; overflow: hidden;
+  background: var(--panel); box-shadow: var(--float-shadow); color: var(--text);
+}
+.product-v3 .skill-menu header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px 4px; }
+.product-v3 .skill-menu header > span { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 600; color: var(--heading); }
+.product-v3 .skill-menu header > span svg { color: var(--accent); }
+.product-v3 .skill-menu header button { display: grid; place-items: center; width: 26px; height: 26px; padding: 0; border: 0; background: transparent; color: var(--muted); border-radius: 6px; }
+.product-v3 .skill-menu-search { display: flex; align-items: center; gap: 8px; margin: 8px 12px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; color: var(--muted); background: var(--sidebar); }
+.product-v3 .skill-menu-search:focus-within { border-color: var(--accent); }
+.product-v3 .skill-menu-search input { flex: 1; min-width: 0; height: 36px; padding: 0; border: 0; outline: none; box-shadow: none; background: transparent; color: var(--text); font-size: 12px; }
+.product-v3 .skill-menu-options { max-height: min(320px, 36vh); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; padding: 2px 6px 6px; }
+.product-v3 .skill-menu-option { display: flex; align-items: center; gap: 12px; padding: 10px; border-radius: 8px; cursor: pointer; }
+.product-v3 .skill-menu-option[aria-selected=true] { background: var(--soft); }
+.product-v3 .skill-menu-option > svg { flex: none; color: var(--muted); }
+.product-v3 .skill-menu-option[aria-selected=true] > svg { color: var(--accent); }
+.product-v3 .skill-menu-option > span { flex: 1; min-width: 0; }
+.product-v3 .skill-menu-option strong { display: block; color: var(--heading); font-size: 12px; font-weight: 550; }
+.product-v3 .skill-menu-option small { display: block; margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 11px; }
+.product-v3 .skill-menu-option em { flex: none; font-style: normal; font-size: 10px; color: var(--muted); }
+.product-v3 .skill-menu footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--line); color: var(--muted); font-size: 10px; }
+.product-v3 .skill-menu footer button { display: inline-flex; align-items: center; gap: 4px; padding: 0; background: transparent; border: 0; color: var(--accent); font-size: 11px; }
+.product-v3 .skill-menu-empty { margin: 0; padding: 24px 12px; text-align: center; color: var(--muted); font-size: 12px; }
+.product-v3 .skill-menu-error { padding: 0 16px; max-height: 70px; overflow: auto; color: #c15a5a; font-size: 11px; overflow-wrap: anywhere; }
+.product-v3 .skill-picker button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (max-width: 720px) {
+  .product-v3 .task-bottom { padding-left: 20px; padding-right: 20px; }
+  .product-v3 .composer-context { flex: 1 1 120px; gap: 4px; }
+  .product-v3 .composer-skill-trigger kbd, .product-v3 .context-sep { display: none; }
+  .product-v3 .composer-model { max-width: 100px; }
+  .product-v3 .skill-menu footer > span { font-size: 9px; }
+}

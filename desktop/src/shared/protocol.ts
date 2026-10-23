@@ -416,6 +416,8 @@ export type EventFrame =
  * 通过 Electron preload contextBridge 向渲染进程暴露的原生能力 API 契约。
  */
 export type DesktopAPI = {
+  /** 同步原生窗口按钮与界面主题 */
+  setWindowTheme(theme: 'light' | 'dark'): Promise<void>
   /** 调起原生文件选择框并导入 ZIP 技能归档至指定作用域 */
   importSkills(scope: ConfigScope, projectId: string): Promise<HarnessConfig | null>
   /** 打开系统文件管理器并定位到数据或日志目录 */

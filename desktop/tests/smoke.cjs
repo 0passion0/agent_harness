@@ -1,11 +1,11 @@
-const { app, BrowserWindow } = require('electron')
-const { mkdirSync, writeFileSync } = require('node:fs')
+const { app, BrowserWindow, ipcMain } = require('electron')
+const { mkdirSync, writeFileSync, readFileSync } = require('node:fs')
 const path = require('node:path')
 const assert = require('node:assert/strict')
 app.setPath('userData', process.env.DESKTOP_SMOKE_DIR)
 const preload = path.join(process.env.DESKTOP_SMOKE_DIR, 'preload.cjs')
 writeFileSync(preload, `
-const { contextBridge } = require('electron')
+const { contextBridge, ipcRenderer } = require('electron')
 const listeners = new Set()
 const tick = String.fromCharCode(96)
 const snapshot = { session_id:'chat',thread_id:'chat',thread_ids:['chat'],messages:[],attachments:[],artifacts:[],runs:[],totals:{},unsettled_history:false }
@@ -15,12 +15,20 @@ const resources = Object.fromEntries(['', ...projects.map(project => project.id)
   const root = id ? projects.find(project => project.id === id).path : 'C:/Users/test/.agent-harness'
   return [id, {scope:id ? 'project' : 'global',root,agent:{content:id || 'system rules',source:root+'/AGENTS.md',exists:true},skills:[]}]
 }))
+resources.project.skills = [
+  {name:'review',description:'审查研究结果与证据',directory:'C:/workspace/.agents/skills/review',content:'Review guidance'},
+  {name:'zip-skill',description:'Project override',directory:'C:/workspace/.agents/skills/zip-skill',content:'Project guidance'}
+]
 contextBridge.exposeInMainWorld('medpeer', {
+  setWindowTheme: theme => ipcRenderer.invoke('window:theme', theme),
   onEvent(fn) { listeners.add(fn); return () => listeners.delete(fn) },
   async command(command) {
     switch(command.method) {
       case 'app.snapshot': return application
       case 'session.snapshot': case 'protocol.hello': return snapshot
+      case 'session.clear':
+        snapshot.messages = []; snapshot.runs = []; snapshot.artifacts = []
+        return snapshot
       case 'session.search': case 'session.list': return [{id:'chat',title:'测试任务',updated:'2026-10-20'}]
       case 'harness.projects': return projects
       case 'usage.stats': return {today:'2026-10-22',tracking_since:null,dates:[],model_names:[],models:[],daily:[],totals:{total_tokens:0,input_tokens:0,output_tokens:0,requests:0,reported_requests:0,cache_read:0,reasoning:0,jev_requests:0}}
@@ -34,6 +42,50 @@ contextBridge.exposeInMainWorld('medpeer', {
         return config
       }
       case 'run.start':
+        if(command.params.text === '验证分段流式') {
+          const texts = [
+            '我会先检查流式事件与对话组件，确认文本和工具记录在哪里失去顺序。',
+            '问题已经定位：文本与工具被分别聚合。接下来按每段 AI 进度说明切分，让工具跟随对应步骤。',
+            '分段展示已完成。现在验证实时追加、历史回放和中断恢复，并检查窄窗口及深色主题。',
+            '验证结束。对话将按“进度说明 → 本阶段工具 → 下一段说明”的顺序展示，工具参数和结果仍可展开查看。'
+          ]
+          const records = []
+          const emit = data => {
+            const record = {...data,seq:records.length + 1}
+            records.push(record)
+            for(const fn of listeners) fn({event:'run.event',session_id:'chat',run_id:command.id,data:record})
+          }
+          const narrate = index => {
+            emit({kind:'model_start',operation_id:'stage-'+index})
+            for(const text of [texts[index].slice(0, 10),texts[index].slice(10)]) emit({kind:'text',operation_id:'stage-'+index,message_id:'stage-message-'+index,text})
+            emit({kind:'model_end',operation_id:'stage-'+index,message_id:'stage-message-'+index,text:texts[index]})
+          }
+          const tool = (id, name, args) => {
+            emit({kind:'tool_start',call_id:id,name,arguments:args,status:'running'})
+            emit({kind:'tool_end',call_id:id,name,status:'success',output:'检查完成'})
+          }
+          setTimeout(() => {
+            narrate(0)
+            tool('stage-read-1','read_file',{path:'src/components/Conversation.tsx'})
+            tool('stage-read-2','read_file',{path:'src/state/agent-state.ts'})
+          }, 40)
+          setTimeout(() => {
+            narrate(1)
+            tool('stage-edit','edit_file',{path:'src/components/run-timeline.ts'})
+            emit({kind:'tool_start',call_id:'stage-check',name:'shell_exec',arguments:{command:'npm run typecheck'},status:'running'})
+          }, 500)
+          setTimeout(() => {
+            emit({kind:'tool_end',call_id:'stage-check',name:'shell_exec',status:'success',output:'Typecheck passed'})
+            narrate(2)
+            tool('stage-tests','shell_exec',{command:'npx vitest run tests/ui'})
+            tool('stage-smoke','shell_exec',{command:'npm run test:smoke'})
+            narrate(3)
+            snapshot.messages.push({type:'human',data:{id:'staged-user',content:command.params.text}},...texts.map((text,index) => ({type:'ai',data:{id:'stage-message-'+index,content:text}})))
+            snapshot.runs.push({id:command.id,user_message_id:'staged-user',status:'complete',elapsed:83,tools:{},requests:[],records})
+            for(const fn of listeners) fn({event:'run.finished',session_id:'chat',run_id:command.id,data:{status:'complete',snapshot}})
+          }, 1200)
+          return {run_id:command.id}
+        }
         if(command.params.text === '验证图表') {
           const fence = tick.repeat(3), newline = String.fromCharCode(10)
           const text = [fence+'svg','<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 80"><rect width="160" height="80" fill="#e8f3ff"/><circle cx="80" cy="40" r="24" fill="#6158db"/></svg>',fence,'',fence+'MERMAID','graph TD','A[开始] --> B[完成]',fence,'',fence+'typescript','const answer: number = 42',fence].join(newline)
@@ -60,9 +112,10 @@ contextBridge.exposeInMainWorld('medpeer', {
           ]
           snapshot.runs = [{id:command.id,user_message_id:'u1',status:'complete',elapsed:385,tools:{},requests:[],records:[
             {kind:'tool_end',call_id:'edit-1',name:'edit_file',arguments:{path:'src/App.tsx'},status:'success',output:'Updated'},
-            {kind:'tool_end',call_id:'cmd-1',name:'shell_exec',arguments:{command:'npm run typecheck'},status:'success',output:'Typecheck passed'},
+            {kind:'tool_end',call_id:'cmd-1',name:'shell_exec',arguments:{command:'npm run typecheck'},status:'success',output:JSON.stringify({output:'Typecheck passed',exit_code:0,timed_out:false,output_path:'/logs/typecheck.log'})},
             {kind:'tool_end',call_id:'cmd-2',name:'shell_exec',arguments:{command:'npx vitest run tests/ui/harness-settings.test.tsx tests/ui/usage-settings.test.tsx'},status:'success',output:'6 tests passed'},
-            {kind:'tool_end',call_id:'edit-2',name:'edit_file',arguments:{path:'src/plugins/user_config/index.tsx'},status:'success',output:'Updated'}
+            {kind:'tool_end',call_id:'edit-2',name:'edit_file',arguments:{path:'src/plugins/user_config/index.tsx'},status:'success',output:'Updated'},
+            {kind:'tool_end',call_id:'skill-1',name:'read_file',arguments:{file_path:'/.agents/skills/review/SKILL.md'},status:'success',output:'Review guidance'}
           ]}]
           for(const fn of listeners) fn({event:'run.finished',session_id:'chat',run_id:command.id,data:{status:'complete',snapshot}})
         }, 50)
@@ -80,13 +133,38 @@ contextBridge.exposeInMainWorld('medpeer', {
 `)
 const deadline = setTimeout(() => { console.error('Renderer smoke timed out'); app.exit(1) }, 20000)
 app.whenReady().then(async () => {
-  const window = new BrowserWindow({ show:false, webPreferences:{preload,contextIsolation:true,backgroundThrottling:false} })
+  const window = new BrowserWindow({ show:false, titleBarStyle:'hidden', titleBarOverlay:{color:'#f3f3fb',symbolColor:'#3a3c54',height:36}, webPreferences:{preload,contextIsolation:true,backgroundThrottling:false} })
+  const themes = []
+  ipcMain.handle('window:theme', (_event, theme) => {
+    themes.push(theme)
+    window.setTitleBarOverlay({color:theme === 'dark' ? '#191a2f' : '#f3f3fb',symbolColor:theme === 'dark' ? '#d4d1eb' : '#3a3c54',height:36})
+  })
   const url = process.env.ELECTRON_RENDERER_URL
   if(url) await window.loadURL(url)
   else await window.loadFile(path.join(__dirname,'../out/renderer/index.html'))
   const result = await window.webContents.executeJavaScript(`(async () => {
     const until = async predicate => { for(let i=0;i<100;i++){ if(predicate()) return; await new Promise(r=>setTimeout(r,40)) }; throw new Error('UI condition timed out') }
     await until(() => document.querySelector('[aria-label="任务输入"]') && !document.querySelector('[aria-label="任务输入"]').disabled)
+    const titlebar = document.querySelector('.window-titlebar')
+    if(!titlebar || getComputedStyle(titlebar).webkitAppRegion !== 'drag') throw new Error('Window titlebar is not draggable')
+    const workspace = document.querySelector('.workspace-layout')
+    if(workspace.getBoundingClientRect().top !== titlebar.getBoundingClientRect().bottom) throw new Error('Window titlebar overlaps workspace')
+    const surface = document.querySelector('.workspace-surface')
+    const rail = document.querySelector('.app-rail')
+    if(getComputedStyle(surface).borderTopLeftRadius !== '14px') throw new Error('Window workspace lost its rounded corners')
+    if(getComputedStyle(workspace).borderTopLeftRadius !== '0px' || getComputedStyle(rail).borderRightWidth !== '0px') throw new Error('Rail is still inside the rounded panel')
+    if(surface.getBoundingClientRect().left !== rail.getBoundingClientRect().right) throw new Error('Rounded panel must start beside the rail')
+    if(workspace.getBoundingClientRect().bottom > innerHeight) throw new Error('Window chrome pushes workspace below viewport')
+    const themeButton = () => document.querySelector('.sidebar-footer button:last-child')
+    themeButton().click()
+    await until(() => document.querySelector('.product-v3.dark'))
+    themeButton().click()
+    await until(() => !document.querySelector('.product-v3.dark'))
+    await document.fonts.ready
+    if(![...document.fonts].some(font => font.family.includes('JetBrains Mono') && font.status === 'loaded')) throw new Error('Local JetBrains Mono font did not load')
+    for(const element of document.querySelectorAll('.app, .app button, .app input, .app textarea, .app select')) {
+      if(!getComputedStyle(element).fontFamily.startsWith('"JetBrains Mono"')) throw new Error('UI control does not use JetBrains Mono')
+    }
     if(document.body.innerText.includes('MCP 服务') || document.body.innerText.includes('插件与权限')) throw new Error('Removed extension UI is still present')
     const input = document.querySelector('[aria-label="任务输入"]')
     Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(input,'按钮下拉框，布局的规范性完整性代码的组织优美，嵌套的合理性；不要饱和度轰炸')
@@ -141,6 +219,7 @@ app.whenReady().then(async () => {
     return true
   })()`)
   assert.equal(result,true)
+  assert.ok(themes.includes('light') && themes.includes('dark'), 'Native window controls must follow theme changes')
   mkdirSync(path.join(__dirname, '../test-artifacts'), { recursive: true })
   for (const width of [1280, 920, 640]) {
     window.setContentSize(width, 900)
@@ -159,7 +238,7 @@ app.whenReady().then(async () => {
     }
     await window.webContents.executeJavaScript(`(async () => {
       [...document.querySelectorAll('.settings-nav-item')].find(element => element.textContent.startsWith('模型与运行环境')).click()
-      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+      await new Promise(resolve => setTimeout(resolve, 100))
       const cards = [...document.querySelectorAll('.settings-model-grid > .pref-section')].map(element => element.getBoundingClientRect())
       if(cards.length !== 3) throw new Error('Missing model settings cards')
       if(${width} === 1280 && document.querySelector('.settings-navigation').getBoundingClientRect().width !== 224) throw new Error('Settings navigation width was overridden')
@@ -184,17 +263,65 @@ app.whenReady().then(async () => {
       await window.webContents.executeJavaScript(`document.querySelector('.product-v3').classList.remove('dark')`)
     }
   }
+  window.setContentSize(1280, 900)
   await window.webContents.executeJavaScript(`(async () => {
     [...document.querySelectorAll('button')].find(element => element.textContent.trim() === '返回任务').click()
     await new Promise(resolve => setTimeout(resolve, 80))
+  })()`)
+  for (const theme of ['light', 'dark']) {
+    await window.webContents.executeJavaScript(`(async () => {
+      if(document.querySelector('.product-v3').classList.contains('dark') !== ${theme === 'dark'}) document.querySelector('.sidebar-footer button:last-child').click()
+      await new Promise(resolve => setTimeout(resolve, 80))
+      const surface = document.querySelector('.workspace-surface')
+      if(document.querySelector('.sidebar').parentElement !== surface || document.querySelector('.task-main').parentElement !== surface) throw new Error('Sidebar and task must share the rounded panel')
+      if(getComputedStyle(document.querySelector('.app-rail')).backgroundColor !== 'rgba(0, 0, 0, 0)') throw new Error('Rail must blend into the window chrome')
+    })()`)
+    writeFileSync(path.join(__dirname, '../test-artifacts', `window-chrome-${theme}.png`), (await window.webContents.capturePage()).toPNG())
+  }
+  await window.webContents.executeJavaScript(`(async () => {
+    document.querySelector('.sidebar-footer button:last-child').click()
+    await new Promise(resolve => setTimeout(resolve, 80))
     document.querySelector('[aria-label="切换侧边栏"]').click()
     document.querySelector('.inline-activity-card').open = true
+  })()`)
+  await window.webContents.executeJavaScript(`(async () => {
+    const until = async predicate => { for(let i=0;i<100;i++){ if(predicate()) return; await new Promise(resolve=>setTimeout(resolve,30)) }; throw new Error('Skill menu condition timed out') }
+    await window.medpeer.importSkills('global', '')
+    const input = document.querySelector('[aria-label="任务输入"]')
+    const setValue = (element, value) => {
+      Object.getOwnPropertyDescriptor(element instanceof HTMLInputElement ? HTMLInputElement.prototype : HTMLTextAreaElement.prototype,'value').set.call(element,value)
+      element.dispatchEvent(new Event('input',{bubbles:true}))
+    }
+    setValue(input, '/')
+    await until(() => document.querySelector('[aria-label="搜索技能"]'))
+    await until(() => document.querySelectorAll('[role="option"]').length === 2)
+    if(document.activeElement.getAttribute('aria-label') !== '搜索技能') throw new Error('Slash did not focus skill search')
+    if(!document.querySelector('.skill-menu').textContent.includes('Project override')) throw new Error('Project skill did not override system skill')
+    const search = document.querySelector('[aria-label="搜索技能"]')
+    setValue(search, '不存在')
+    await until(() => document.querySelector('.skill-menu').textContent.includes('没有找到匹配的技能'))
+    search.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true}))
+    setValue(search, '证据')
+    await until(() => document.querySelectorAll('[role="option"]').length === 1)
+    search.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}))
+    await until(() => input.value === '$review ' && !document.querySelector('.skill-menu'))
+    await until(() => document.activeElement === input)
+    document.querySelector('[aria-label="选择技能"]').click()
+    await until(() => document.querySelector('[aria-label="搜索技能"]'))
+    document.querySelector('[aria-label="搜索技能"]').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))
+    await until(() => !document.querySelector('.skill-menu'))
+    if(input.value !== '$review ') throw new Error('Closing the skill menu changed the draft')
+    if(!document.querySelector('.is-skill').textContent.includes('已读取技能 review')) throw new Error('Actual skill activation is not visible')
+    setValue(input, '')
   })()`)
   for (const width of [1000, 640]) {
     window.setContentSize(width, 1040)
     await window.webContents.executeJavaScript(`(async () => {
       await new Promise(resolve => setTimeout(resolve, 100))
       const pane = document.querySelector('.conversation')
+      for(const element of pane.querySelectorAll('.message-content, .act-item-title, .act-json-pre, code')) {
+        if(!getComputedStyle(element).fontFamily.startsWith('"JetBrains Mono"')) throw new Error('Transcript font was overridden')
+      }
       pane.scrollTop = 0
       const inline = pane.querySelector('.modern-inline-code')
       if(!inline || getComputedStyle(inline).backgroundColor !== 'rgba(0, 0, 0, 0)' || getComputedStyle(inline).borderTopWidth !== '0px') throw new Error('Inline code still has a colored badge')
@@ -204,16 +331,60 @@ app.whenReady().then(async () => {
       if(getComputedStyle(assistant).paddingLeft !== '0px') throw new Error('Assistant transcript is indented')
       if(document.querySelector('.message-avatar')) throw new Error('Assistant avatar is still present')
       if(pane.scrollWidth > pane.clientWidth + 1) throw new Error('Transcript overflows at ${width}px')
+      const composer = document.querySelector('.task-composer')
+      if(composer.scrollWidth > composer.clientWidth + 1) throw new Error('Composer overflows at ${width}px')
+      const app = document.querySelector('.product-v3')
+      for(const dark of [false, true]) {
+        app.classList.toggle('dark', dark)
+        const transcript = getComputedStyle(document.querySelector('.codex-conversation'))
+        const theme = getComputedStyle(app)
+        const probe = document.createElement('span')
+        probe.style.color = theme.getPropertyValue('--text')
+        app.appendChild(probe)
+        if(transcript.color !== getComputedStyle(probe).color) throw new Error('Transcript changed the theme palette')
+        probe.remove()
+      }
+      app.classList.remove('dark')
       const row = document.querySelector('.act-item')
       row.open = true
       await new Promise(resolve => setTimeout(resolve, 40))
       if(!row.textContent.includes('Updated')) throw new Error('Tool output is unavailable after expanding')
       row.open = false
+      const terminal = [...document.querySelectorAll('.act-item')].find(element => element.textContent.includes('已运行 npm run typecheck'))
+      terminal.open = true
+      await new Promise(resolve => setTimeout(resolve, 40))
+      if(!terminal.querySelector('.act-terminal pre').textContent.includes('Typecheck passed') || !terminal.querySelector('.act-terminal pre').textContent.includes('退出码 0')) throw new Error('Terminal result is not readable')
+      if(!terminal.querySelector('.act-result-metadata').textContent.includes('/logs/typecheck.log')) throw new Error('Terminal metadata was lost')
+      for(const selector of ['.inline-activity-bar', '.act-item-header', '.act-payload-box']) {
+        const style = getComputedStyle(document.querySelector(selector))
+        if(style.backgroundColor !== 'rgba(0, 0, 0, 0)' || style.borderTopWidth !== '0px') throw new Error('Tool activity still has a background or panel border')
+      }
       const bubble = document.querySelector('.message.human').getBoundingClientRect()
       const reply = assistant.getBoundingClientRect()
       if(bubble.left <= reply.left || Math.abs(bubble.right - reply.right) > 1) throw new Error('User message is not aligned to the right')
     })()`)
     writeFileSync(path.join(__dirname, '../test-artifacts', `codex-conversation-${width}.png`), (await window.webContents.capturePage()).toPNG())
+    await window.webContents.executeJavaScript(`(async () => {
+      document.querySelector('[aria-label="选择技能"]').click()
+      await new Promise(resolve => setTimeout(resolve, 100))
+      const menu = document.querySelector('.skill-menu')
+      const bounds = menu.getBoundingClientRect()
+      if(bounds.left < 0 || bounds.right > innerWidth || bounds.top < 52 || menu.scrollWidth > menu.clientWidth + 1) throw new Error('Skill menu escapes the viewport at ${width}px')
+      if(bounds.bottom > document.querySelector('.task-composer').getBoundingClientRect().top) throw new Error('Skill menu covers the draft')
+      await new Promise(resolve => setTimeout(resolve, 100))
+    })()`)
+    await window.webContents.capturePage(undefined, {stayHidden:true, stayAwake:true})
+    writeFileSync(path.join(__dirname, '../test-artifacts', `conversation-skills-${width}.png`), (await window.webContents.capturePage(undefined, {stayHidden:true})).toPNG())
+    if (width === 1000) {
+      await window.webContents.executeJavaScript(`(async () => {
+        document.querySelector('.product-v3').classList.add('dark')
+        await new Promise(resolve => setTimeout(resolve, 150))
+      })()`)
+      await window.webContents.capturePage(undefined, {stayHidden:true, stayAwake:true})
+      writeFileSync(path.join(__dirname, '../test-artifacts/conversation-skills-dark.png'), (await window.webContents.capturePage(undefined, {stayHidden:true})).toPNG())
+      await window.webContents.executeJavaScript(`document.querySelector('.product-v3').classList.remove('dark')`)
+    }
+    await window.webContents.executeJavaScript(`document.querySelector('[aria-label="关闭技能菜单"]').click()`)
   }
   window.setContentSize(1000, 1040)
   await window.webContents.executeJavaScript(`(async () => {
@@ -229,6 +400,7 @@ app.whenReady().then(async () => {
     await until(() => document.querySelector('.modern-mermaid-block .svg-preview-frame'))
     const mermaid = document.querySelector('.modern-mermaid-block')
     if(!mermaid.querySelector('iframe').srcdoc.includes('<svg')) throw new Error('Mermaid did not render SVG')
+    if(!mermaid.querySelector('iframe').srcdoc.includes('JetBrains Mono') || !mermaid.querySelector('iframe').srcdoc.includes('data:font/woff2;base64,')) throw new Error('Mermaid preview is missing its bundled font')
     const button = (root, title) => [...root.querySelectorAll('button')].find(element => element.title === title)
     button(mermaid,'查看图表源代码').click()
     await until(() => mermaid.querySelector('pre'))
@@ -248,7 +420,59 @@ app.whenReady().then(async () => {
     await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
   })()`)
   writeFileSync(path.join(__dirname, '../test-artifacts/conversation-rich-content.png'), (await window.webContents.capturePage()).toPNG())
-  console.log('Electron smoke passed: conversation, real project choices, isolated instructions and skill import/edit/delete')
+  for (const [selector, format] of [['.modern-code-block', 'SVG'], ['.modern-code-block', 'PNG'], ['.modern-mermaid-block', 'SVG'], ['.modern-mermaid-block', 'PNG']]) {
+    const downloaded = new Promise((resolve, reject) => {
+      window.webContents.session.once('will-download', (_event, item) => {
+        const target = path.join(process.env.DESKTOP_SMOKE_DIR, item.getFilename())
+        item.setSavePath(target)
+        item.once('done', (_event, state) => state === 'completed' ? resolve(target) : reject(new Error('Download failed: ' + state)))
+      })
+    })
+    await window.webContents.executeJavaScript(`document.querySelector('${selector} [title="下载 ${format}"]').click()`)
+    const file = await downloaded
+    const bytes = readFileSync(file)
+    if(format === 'PNG') assert.equal(bytes.subarray(1, 4).toString(), 'PNG')
+    else {
+      assert.match(bytes.toString(), /<svg/)
+      if(selector === '.modern-mermaid-block') assert.match(bytes.toString(), /data:font\/woff2;base64,/)
+    }
+  }
+  window.setContentSize(1280, 1100)
+  await window.webContents.executeJavaScript(`(async () => {
+    const until = async predicate => { for(let i=0;i<120;i++){ if(predicate()) return; await new Promise(resolve=>setTimeout(resolve,30)) }; throw new Error('Staged streaming condition timed out') }
+    document.querySelector('[aria-label="新建任务"]').click()
+    await until(() => document.querySelector('.task-empty'))
+    const input = document.querySelector('[aria-label="任务输入"]')
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(input,'验证分段流式')
+    input.dispatchEvent(new Event('input',{bubbles:true}))
+    await until(() => !document.querySelector('[aria-label="提交任务"]').disabled)
+    document.querySelector('[aria-label="提交任务"]').click()
+    await until(() => document.querySelector('.is-active-response')?.textContent.includes('问题已经定位'))
+    const active = document.querySelector('.is-active-response')
+    const segments = [...active.querySelectorAll('.run-segment')]
+    if(segments.map(element => element.classList.contains('run-tool-group') ? 'tools' : 'text').join('|') !== 'text|tools|text|tools') throw new Error('Live tools are not interleaved with narration')
+    if(active.querySelectorAll('.act-item').length !== 4) throw new Error('Live tools were duplicated across stages')
+    if(active.querySelectorAll('.inline-activity-card.is-active').length !== 1) throw new Error('Finished stages still show a spinner')
+    segments[1].querySelector('details').open = true
+    await until(() => !document.querySelector('.is-active-response'))
+    const saved = [...document.querySelectorAll('.saved-run-activity')].at(-1)
+    if(saved.querySelectorAll('.run-tool-group').length !== 3 || saved.querySelectorAll('.act-item').length !== 6) throw new Error('Saved stage boundaries changed')
+    if(document.body.innerText.split('问题已经定位').length !== 2) throw new Error('Narration was duplicated after saving')
+    saved.querySelector('.inline-activity-card').open = true
+    const pane = document.querySelector('.conversation')
+    pane.scrollTop += saved.getBoundingClientRect().top - pane.getBoundingClientRect().top - 24
+  })()`)
+  for(const dark of [false, true]) {
+    await window.webContents.executeJavaScript(`(async () => {
+      document.querySelector('.product-v3').classList.toggle('dark', ${dark})
+      await new Promise(resolve=>setTimeout(resolve,80))
+      const groups = [...document.querySelectorAll('.saved-run-activity')].at(-1).querySelectorAll('.run-tool-group')
+      for(const group of groups) if(group.scrollWidth > group.clientWidth + 1) throw new Error('Stage tool summary overflows')
+    })()`)
+    await window.webContents.capturePage(undefined, {stayHidden:true, stayAwake:true})
+    writeFileSync(path.join(__dirname, '../test-artifacts', 'streaming-stages-'+(dark ? 'dark' : 'light')+'.png'), (await window.webContents.capturePage(undefined, {stayHidden:true})).toPNG())
+  }
+  console.log('Electron smoke passed: interleaved live/saved narration, tools, keyboard skills, responsive themes, SVG/Mermaid and downloads')
   clearTimeout(deadline)
   window.destroy()
   app.quit()

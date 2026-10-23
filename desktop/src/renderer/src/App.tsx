@@ -24,12 +24,16 @@ import { WorkspaceDirectory } from './components/WorkspaceDirectory'
 import { UserConfig, type Tab as SettingsTab } from './plugins/user_config'
 import { AttachmentChips } from './components/AttachmentChips'
 import { TokenWindowPopup } from './components/TokenWindowPopup'
+import { SkillPicker } from './components/SkillPicker'
 import { LoadingScreen } from './features/boot/LoadingScreen'
+import { WindowTitleBar } from './components/WindowTitleBar'
 import './settings.css'
 import './v2.css'
 import './v3.css'
 import './styles/layout.css'
 import './styles/modern-aesthetics.css'
+import './styles/composer.css'
+import './styles/window-chrome.css'
 
 /** 界面外观模式 */
 type Theme = 'light' | 'dark'
@@ -226,6 +230,7 @@ export default function App() {
       void c.importDroppedFiles([...event.dataTransfer.files])
     }}
   >
+    <WindowTitleBar theme={theme} />
     <div
       className={`workspace-layout ${sidebarOpen && view === 'task' ? 'has-sidebar' : ''} ${detailOpen && view === 'task' ? 'has-detail' : ''} ${view === 'settings' ? 'view-settings' : ''}`}
       style={{ '--detail-width': `${detailWidth}px` } as React.CSSProperties}
@@ -268,6 +273,7 @@ export default function App() {
         </button>
       </nav>
 
+      <div className="workspace-surface">
       {/* 历史会话与项目侧边栏 */}
       {sidebarOpen && view === 'task' && <SessionSidebar
         sessions={sessions}
@@ -435,7 +441,7 @@ export default function App() {
                 value={draft}
                 disabled={busy || !canCompose}
                 rows={2}
-                placeholder={!connected ? '本地服务未连接…' : !project ? (hasProjects ? '先选择项目…' : '先新建项目…') : '描述你希望完成的任务…'}
+                placeholder={!connected ? '本地服务未连接…' : !project ? (hasProjects ? '先选择项目…' : '先新建项目…') : '描述任务，或输入 / 选择技能…'}
                 onChange={event => {
                   const val = event.target.value
                   setDraft(val)
@@ -459,14 +465,21 @@ export default function App() {
                   >
                     <Paperclip size={17} />
                   </button>
+                  <SkillPicker
+                    projectId={application.active_project_id ?? ''}
+                    draft={draft}
+                    disabled={!canCompose || busy}
+                    onSelect={name => {
+                      setDraft(`$${name} ${draft === '/' ? '' : draft}`)
+                      requestAnimationFrame(() => composer.current?.focus())
+                    }}
+                    onClose={() => composer.current?.focus()}
+                    onManage={() => openSettings('skills')}
+                  />
                   <span className="context-sep" />
                   <span className="composer-model" title="MedPeer 统一模型">
                     <Sparkles size={13}/>{application?.model?.model ?? '未连接模型'}
                   </span>
-                  <span className="context-sep" />
-                  
-                  <span className="context-sep" />
-                  
                 </div>
                 <div className="composer-actions">
                   <TokenWindowPopup report={state.snapshot?.token_usage} onOpenSettings={() => openSettings('models')} />
@@ -528,6 +541,7 @@ export default function App() {
 
         </div>
       </aside>}
+      </div>
     </div>
 
     {/* 错误浮层条 */}
