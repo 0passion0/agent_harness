@@ -1,4 +1,12 @@
-"""文本替换与模糊对齐编辑工具模块，支持排版符号归一化与区域换行符保持。"""
+"""文本替换与模糊对齐编辑工具模块，支持排版符号归一化与区域换行符保持。
+
+本模块提供高精度文本替换引擎 `TextEditor`，负责：
+1. 阶梯式精准与模糊匹配查找（字符完全一致 -> Unicode 排版字符映射归一化 -> 忽略行尾空白的多行模糊比对）；
+2. 跨平台换行符（CRLF / LF）精细化继承与维护：通过最长公共子序列（LCS）算法建立替换前后行的映射关系，
+   确保更新行自动继承被替换区域所在文件的原始换行符风格，避免混用换行符引发 Git 脏 Diff；
+3. 支持单处唯一匹配安全替换与 `replace_all=True` 全量批量替换；
+4. 自动保留文件开头的 UTF-8 BOM 签名。
+"""
 
 from __future__ import annotations
 
@@ -6,31 +14,54 @@ import re
 from array import array
 from bisect import bisect_left
 
-_SPACE = "\u0009\u000b\u000c\u0020\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff\n\r"
-_TRAILING = re.compile(f"[{_SPACE}]+$")
-_TYPOGRAPHY = str.maketrans(
-    {
-        **dict.fromkeys("‘’‚‛", "'"),
-        **dict.fromkeys("“”„‟", '"'),
-        **dict.fromkeys("‐‑‒–—―−", "-"),
-        **dict.fromkeys(
-            "\u00a0\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u202f\u205f\u3000", " "
-        ),
-    }
+# 包含各类 Unicode 扩展空白与不可见控制字符的集合
+_SPACE: str = (
+    "\u0009\u000b\u000c\u0020\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff\n\r"
 )
+# 匹配行尾不可见空白字符的正则表达式
+_TRAILING: re.Pattern[str] = re.compile(f"[{_SPACE}]+$")
+# 排版字符映射源字典
+_TYPOGRAPHY_MAP: dict[str, str | None] = {
+    **dict.fromkeys("‘’‚‛", "'"),
+    **dict.fromkeys("“”„‟", '"'),
+    **dict.fromkeys("‐‑‒–—―−", "-"),
+    **dict.fromkeys(
+        "\u00a0\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u202f\u205f\u3000", " "
+    ),
+}
+# 排版符号容错转换表：将弯引号、特殊破折号及全角/非断空格映射为标准 ASCII 符号
+_TYPOGRAPHY: dict[int, str | None] = str.maketrans(_TYPOGRAPHY_MAP)
 
 
 class TextEditor:
-    """高鲁棒性文本精准/模糊替换器，具备多层级匹配、排版容错与局部换行符继承能力。"""
+    """高鲁棒性文本精准/模糊替换器，具备多层级匹配、排版容错与局部换行符继承能力。
+
+    纯静态工具类，为 `edit_file` 工具调用提供底层的文本搜索与安全修改能力。
+    """
 
     @staticmethod
     def _key(line: str) -> str:
-        """去除行尾空白字符并应用常见引号、破折号及全角空格排版字符归一化。"""
+        """去除行尾空白字符并应用常见引号、破折号及全角空格排版字符归一化。
+
+        Args:
+            line (str): 待计算匹配键的原始行文本。
+
+        Returns:
+            str: 归一化后的标准键字符串。
+        """
         return _TRAILING.sub("", line).translate(_TYPOGRAPHY)
 
     @staticmethod
     def _occurrences(content: str, search: str) -> list[tuple[int, int]]:
-        """在源文本中寻找所有完全非重叠出现的子串起止偏移量。"""
+        """在源文本中寻找所有完全非重叠出现的子串起止偏移量。
+
+        Args:
+            content (str): 源文本字符串。
+            search (str): 待检索的目标子串。
+
+        Returns:
+            list[tuple[int, int]]: 包含各匹配项字符切片起止索引的二元组列表 `[(start, end), ...]`。
+        """
         matches = []
         offset = 0
         while (offset := content.find(search, offset)) != -1:
@@ -40,7 +71,15 @@ class TextEditor:
 
     @staticmethod
     def _line_occurrences(content: str, search: str) -> list[tuple[int, int]]:
-        """基于行归一化键对齐的多行模糊匹配，忽略行尾空白与细微排版差异。"""
+        """基于行归一化键对齐的多行模糊匹配，忽略行尾空白与细微排版差异。
+
+        Args:
+            content (str): 源文本字符串。
+            search (str): 目标搜索的多行文本块。
+
+        Returns:
+            list[tuple[int, int]]: 模糊匹配命中区间的起止物理字符偏移量列表。
+        """
         trailing = search.endswith("\n")
         expected = search.split("\n")
         if trailing:
@@ -71,14 +110,31 @@ class TextEditor:
 
     @staticmethod
     def _line_ending(text: str, fallback: str) -> str:
-        """统计文本中占优的主换行符（CRLF 或 LF），在持平时使用兜底换行符。"""
+        """统计文本中占优的主换行符（CRLF 或 LF），在持平时使用兜底换行符。
+
+        Args:
+            text (str): 待统计换行符特征的文本。
+            fallback (str): 占优统计持平或无换行符时的兜底字符（如 `"\n"` 或 `"\r\n"`）。
+
+        Returns:
+            str: 占优的换行符字符串。
+        """
         crlf = text.count("\r\n")
         lf = text.count("\n") - crlf
         return fallback if crlf == lf else "\r\n" if crlf > lf else "\n"
 
     @staticmethod
     def _align_lines(before: list[str], after: list[str]) -> list[int | None]:
-        """基于最长公共子序列（LCS）算法对齐替换前后行，映射在新文本中继承的原行号索引。"""
+        """基于最长公共子序列（LCS）算法对齐替换前后行，映射在新文本中继承的原行号索引。
+
+        Args:
+            before (list[str]): 替换前的行列表。
+            after (list[str]): 替换后的行列表。
+
+        Returns:
+            list[int | None]: 与 `after` 长度相同的列表，每一项指向 `before` 中对应的原行号下标；
+                若为全新插入行则为 None。
+        """
         prefix = 0
         while prefix < min(len(before), len(after)) and before[prefix] == after[prefix]:
             prefix += 1
@@ -137,7 +193,16 @@ class TextEditor:
 
     @staticmethod
     def _region_endings(region: str, replacement: str, fallback: str) -> str:
-        """根据原匹配区域的真实换行符序列，为新文本对应行赋予正确的换行终止符。"""
+        """根据原匹配区域的真实换行符序列，为新文本对应行赋予正确的换行终止符。
+
+        Args:
+            region (str): 原文件中被命中的被替换文本切片。
+            replacement (str): 待写入的新文本模板。
+            fallback (str): 无法从原行继承时的默认换行符。
+
+        Returns:
+            str: 格式化修正各行换行符后的最终替换内容。
+        """
         before = re.split(r"\r?\n", region)
         endings = re.findall(r"\r?\n", region)
         after = replacement.split("\n")
@@ -158,14 +223,47 @@ class TextEditor:
 
     @staticmethod
     def replace_text(content: str, old: str, new: str, replace_all: bool = False) -> str:
-        """执行文本查找与替换操作，直接返回替换后的最终文本。"""
+        """执行文本查找与替换操作，直接返回替换后的最终文本。
+
+        Args:
+            content (str): 源文件完整文本。
+            old (str): 待替换的原字符串，必须严格匹配或排版等价。
+            new (str): 准备置换的目标新字符串。
+            replace_all (bool): 是否替换所有匹配项，默认 False（要求唯一定位）。
+
+        Returns:
+            str: 替换完成后的完整文本。
+
+        Raises:
+            ValueError: 替换前后内容无实质变化、原串为空、未找到匹配或多处匹配未指明 replace_all 时抛出。
+        """
         return TextEditor.replace_text_with_count(content, old, new, replace_all)[0]
 
     @staticmethod
     def replace_text_with_count(
         content: str, old: str, new: str, replace_all: bool = False
     ) -> tuple[str, int]:
-        """执行多级层级容错匹配文本替换，并返回替换文本及匹配命中次数。"""
+        """执行多级层级容错匹配文本替换，并返回替换文本及匹配命中次数。
+
+        按序执行：
+        1. 检查 old 与 new 是否完全相同；
+        2. 纯换行符模式或全文精准/排版归一/行对齐三级搜索；
+        3. 单处唯一性断言校验；
+        4. 局部换行符继承并逆向应用文本替换；
+        5. UTF-8 BOM 还原。
+
+        Args:
+            content (str): 源文件完整内容字符串。
+            old (str): 待搜索替换的原字符串。
+            new (str): 替换目标新文本。
+            replace_all (bool): 是否全量替换所有出现的位置。
+
+        Returns:
+            tuple[str, int]: 包含替换后最新完整文本与命中替换次数的二元组 `(new_content, count)`。
+
+        Raises:
+            ValueError: 当输入非法、找不到目标或出现歧义多重匹配时抛出。
+        """
         if old == new:
             raise ValueError("No changes to apply: oldString and newString are identical.")
         if old == "":

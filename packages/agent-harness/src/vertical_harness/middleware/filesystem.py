@@ -1,4 +1,13 @@
-"""工作区文件系统操作中间件，集成安全分页读取、多模态媒体嗅探、增强通配检索与原子补丁应用。"""
+"""工作区文件系统操作中间件，集成安全分页读取、多模态媒体嗅探、增强通配检索与原子补丁应用。
+
+本模块提供 `HarnessFilesystemMiddleware` 中间件，继承自 DeepAgents 的 `FilesystemMiddleware`：
+1. 挂载增强型工具集：扩展 `read_file`（支持目录分页与多模态二进制直传）、`grep`（支持 ripgrep 字面量/正则与结构化行元数据）、
+   `glob`（支持隐藏文件过滤与上限限制），并附加原子多文件补丁工具 `apply_patch`；
+2. 全局技能只读挂载：通过 `skill_backend` 拦截 `/.agent-harness/skills/` 虚拟路径的只读访问；
+3. 动态子目录 AGENTS.md 嗅探注入：在 `before_model` 钩子中，根据最近已读文件所在的目录层级，
+   自底向上探查同级或父级目录中的 `AGENTS.md` 并注入会话提示，实现精准的作用域规范感知；
+4. 权限与容错集成：Unicode 文件名歧义自愈、读写权限白名单校验、多文件事务提交报告生成。
+"""
 
 from __future__ import annotations
 
@@ -31,7 +40,11 @@ from vertical_harness.middleware.search_schema import SearchSchema
 
 
 class HarnessFilesystemMiddleware(FilesystemMiddleware):
-    """强化型文件系统操作拦截中间件，提供多文件补丁、Ripgrep 结构化搜索与分页阅读。"""
+    """强化型文件系统操作拦截中间件，提供多文件补丁、Ripgrep 结构化搜索与分页阅读。
+
+    Attributes:
+        backend (DocumentFilesystemBackend): 绑定的沙箱文件系统后端。
+    """
 
     backend: DocumentFilesystemBackend
 
@@ -42,7 +55,13 @@ class HarnessFilesystemMiddleware(FilesystemMiddleware):
         skill_backend: BackendProtocol | None = None,
         **kwargs: Any,
     ) -> None:
-        """初始化 HarnessFilesystemMiddleware，附加原子多文件补丁工具与全局技能只读后端。"""
+        """初始化 HarnessFilesystemMiddleware，附加原子多文件补丁工具与全局技能只读后端。
+
+        Args:
+            backend (DocumentFilesystemBackend): 沙箱文件系统后端。
+            skill_backend (BackendProtocol | None): 全局技能存储后端，若提供则挂载技能文件的只读拦截路由。
+            **kwargs (Any): 传递给基类 `FilesystemMiddleware` 的参数。
+        """
         super().__init__(backend=backend, **kwargs)
         self._skills_read: Callable[..., ToolMessage] | None = None
         self._skills_aread: Callable[..., Awaitable[ToolMessage]] | None = None
@@ -62,7 +81,15 @@ class HarnessFilesystemMiddleware(FilesystemMiddleware):
         self.tools = [*self.tools, self._create_patch_tool()]
 
     def _authorize(self, operation: Literal["read", "write"], path: str) -> str | None:
-        """校验当前路径与操作类型是否在工作区权限许可范围内。"""
+        """校验当前路径与操作类型是否在工作区权限许可范围内。
+
+        Args:
+            operation (Literal["read", "write"]): 操作类型。
+            path (str): 目标路径字符串。
+
+        Returns:
+            str | None: 若被权限规则拒绝则返回错误描述文本，否则返回 None。
+        """
         try:
             return _permission_error(
                 self._permissions, operation, self.backend, validate_path(path)
@@ -71,7 +98,14 @@ class HarnessFilesystemMiddleware(FilesystemMiddleware):
             return str(exc)
 
     def _read_path(self, file_path: str) -> tuple[str, str | None]:
-        """安全解析并校验读路径，支持 Unicode 规范化名称自动容错恢复。"""
+        """安全解析并校验读路径，支持 Unicode 规范化名称自动容错恢复。
+
+        Args:
+            file_path (str): 请求的虚拟文件路径。
+
+        Returns:
+            tuple[str, str | None]: 二元组 `(resolved_path, error_message)`。
+        """
         if error := self._authorize("read", file_path):
             return file_path, error
         validated = validate_path(file_path)
@@ -90,9 +124,19 @@ class HarnessFilesystemMiddleware(FilesystemMiddleware):
             return validated, f"Cannot read file ({type(exc).__name__}: {exc})."
 
     def _read_directory(
-        self, file_path: str, offset: int, limit: int, runtime: ToolRuntime
+        self, file_path: str, offset: int, limit: int, runtime: ToolRuntime[Any]
     ) -> ToolMessage:
-        """安全分页读取目录下的直接子文件与子目录列表。"""
+        """安全分页读取目录下的直接子文件与子目录列表。
+
+        Args:
+            file_path (str): 目录路径。
+            offset (int): 起始行偏移量。
+            limit (int): 最大条目限制配额。
+            runtime (ToolRuntime[Any]): 工具运行时上下文。
+
+        Returns:
+            ToolMessage: 格式化后的目录清单消息。
+        """
         try:
             path = self.backend.resolve_path(file_path)
             entries = [
@@ -122,9 +166,18 @@ class HarnessFilesystemMiddleware(FilesystemMiddleware):
         )
 
     def _read_media(
-        self, file_path: str, native_media: bool, runtime: ToolRuntime
+        self, file_path: str, native_media: bool, runtime: ToolRuntime[Any]
     ) -> ToolMessage | None:
-        """检测并直接读取图片或 PDF 二进制媒体数据为 Base64 消息内容块。"""
+        """检测并直接读取图片或 PDF 二进制媒体数据为 Base64 消息内容块。
+
+        Args:
+            file_path (str): 文件路径。
+            native_media (bool): 是否将 PDF 作为媒体二进制直传。
+            runtime (ToolRuntime[Any]): 工具运行时对象。
+
+        Returns:
+            ToolMessage | None: 包含媒体内容块的工具消息；若非支持的媒体文件则返回 None。
+        """
         try:
             value = FileReader.read_supported_media(
                 self.backend.resolve_path(file_path), pdf=native_media
@@ -153,12 +206,23 @@ class HarnessFilesystemMiddleware(FilesystemMiddleware):
     def _read_file(
         self,
         file_path: str,
-        runtime: ToolRuntime,
+        runtime: ToolRuntime[Any],
         offset: int = 0,
         limit: int = 2000,
         native_media: bool = False,
     ) -> ToolMessage:
-        """执行同步文件/目录/多模态读取操作。"""
+        """执行同步文件/目录/多模态读取操作。
+
+        Args:
+            file_path (str): 目标文件或目录路径。
+            runtime (ToolRuntime[Any]): 运行时注入上下文。
+            offset (int): 起始行偏移量。
+            limit (int): 最大读取行数。
+            native_media (bool): 是否按二进制媒体直传 PDF。
+
+        Returns:
+            ToolMessage: 读取结果消息。
+        """
         if self._skills_read is not None and file_path.startswith("/.agent-harness/skills/"):
             return self._skills_read(
                 file_path.removeprefix("/.agent-harness/skills"), runtime, offset, limit
@@ -182,12 +246,23 @@ class HarnessFilesystemMiddleware(FilesystemMiddleware):
     async def _aread_file(
         self,
         file_path: str,
-        runtime: ToolRuntime,
+        runtime: ToolRuntime[Any],
         offset: int = 0,
         limit: int = 2000,
         native_media: bool = False,
     ) -> ToolMessage:
-        """执行异步非阻塞文件/目录/多模态读取操作。"""
+        """执行异步非阻塞文件/目录/多模态读取操作。
+
+        Args:
+            file_path (str): 目标路径。
+            runtime (ToolRuntime[Any]): 运行时上下文。
+            offset (int): 行偏移量。
+            limit (int): 最大行数。
+            native_media (bool): 是否将 PDF 作为媒体流直传。
+
+        Returns:
+            ToolMessage: 异步读取结果消息。
+        """
         if self._skills_aread is not None and file_path.startswith("/.agent-harness/skills/"):
             return await self._skills_aread(
                 file_path.removeprefix("/.agent-harness/skills"), runtime, offset, limit
@@ -211,7 +286,11 @@ class HarnessFilesystemMiddleware(FilesystemMiddleware):
         return message
 
     def _create_read_file_tool(self) -> StructuredTool:
-        """重写父类构建读文件工具方法，挂载增强型 NativeReadSchema。"""
+        """重写父类构建读文件工具方法，挂载增强型 NativeReadSchema。
+
+        Returns:
+            StructuredTool: 构造的 read_file 工具。
+        """
         original = super()._create_read_file_tool()
         assert (
             isinstance(original, StructuredTool)
@@ -230,7 +309,15 @@ class HarnessFilesystemMiddleware(FilesystemMiddleware):
         )
 
     def before_model(self, state: Any, runtime: Any) -> dict[str, Any] | None:
-        """在模型前置钩子中动态探查已读文件所在目录树中的 AGENTS.md 规范文件并注入提示词。"""
+        """在模型前置钩子中动态探查已读文件所在目录树中的 AGENTS.md 规范文件并注入提示词。
+
+        Args:
+            state (Any): 状态字典。
+            runtime (Any): 运行时上下文。
+
+        Returns:
+            dict[str, Any] | None: 包含注入规范消息的更新字典；若无新指令则返回 None。
+        """
         messages = state["messages"]
         loaded = {
             path
@@ -288,7 +375,15 @@ class HarnessFilesystemMiddleware(FilesystemMiddleware):
         }
 
     async def abefore_model(self, state: Any, runtime: Any) -> dict[str, Any] | None:
-        """以异步线程方式执行前置模型规范指令注入。"""
+        """以异步线程方式执行前置模型规范指令注入。
+
+        Args:
+            state (Any): 状态字典。
+            runtime (Any): 运行时上下文。
+
+        Returns:
+            dict[str, Any] | None: 状态更新字典或 None。
+        """
         return await asyncio.to_thread(self.before_model, state, runtime)
 
     def _grep_result(
@@ -296,9 +391,19 @@ class HarnessFilesystemMiddleware(FilesystemMiddleware):
         pattern: str,
         output_mode: Literal["files_with_matches", "content", "count"],
         value: GrepResult,
-        runtime: ToolRuntime,
+        runtime: ToolRuntime[Any],
     ) -> ToolMessage:
-        """过滤无权限的 Grep 匹配条目，组装包含结构化 artifact 的 ToolMessage。"""
+        """过滤无权限的 Grep 匹配条目，组装包含结构化 artifact 的 ToolMessage。
+
+        Args:
+            pattern (str): 检索模式。
+            output_mode (Literal["files_with_matches", "content", "count"]): 输出格式模式。
+            value (GrepResult): 原始检索结果对象。
+            runtime (ToolRuntime[Any]): 工具运行时。
+
+        Returns:
+            ToolMessage: 格式化过滤后的工具消息。
+        """
         matches = value.matches or []
         filtered = _filter_grep_matches_by_permission(
             self._permissions, matches, operation="read", backend=self.backend
@@ -329,7 +434,7 @@ class HarnessFilesystemMiddleware(FilesystemMiddleware):
     def _grep(
         self,
         pattern: str,
-        runtime: ToolRuntime,
+        runtime: ToolRuntime[Any],
         path: str | None = None,
         glob: str | None = None,
         output_mode: Literal["files_with_matches", "content", "count"] = "files_with_matches",
@@ -337,7 +442,21 @@ class HarnessFilesystemMiddleware(FilesystemMiddleware):
         literal: bool = True,
         case_sensitive: bool = True,
     ) -> ToolMessage:
-        """执行同步 grep 内容检索。"""
+        """执行同步 grep 内容检索。
+
+        Args:
+            pattern (str): 检索词。
+            runtime (ToolRuntime[Any]): 运行时。
+            path (str | None): 相对路径。
+            glob (str | None): 文件名过滤通配符。
+            output_mode (Literal["files_with_matches", "content", "count"]): 展现模式。
+            max_count (int | None): 最大返回条目。
+            literal (bool): 是否字面量精确检索。
+            case_sensitive (bool): 是否大小写敏感。
+
+        Returns:
+            ToolMessage: 结果消息。
+        """
         error = self._authorize("read", path or "/")
         value = (
             GrepResult(error=error)
@@ -356,7 +475,7 @@ class HarnessFilesystemMiddleware(FilesystemMiddleware):
     async def _agrep(
         self,
         pattern: str,
-        runtime: ToolRuntime,
+        runtime: ToolRuntime[Any],
         path: str | None = None,
         glob: str | None = None,
         output_mode: Literal["files_with_matches", "content", "count"] = "files_with_matches",
@@ -364,7 +483,21 @@ class HarnessFilesystemMiddleware(FilesystemMiddleware):
         literal: bool = True,
         case_sensitive: bool = True,
     ) -> ToolMessage:
-        """执行异步非阻塞 grep 内容检索。"""
+        """执行异步非阻塞 grep 内容检索。
+
+        Args:
+            pattern (str): 关键词。
+            runtime (ToolRuntime[Any]): 运行时。
+            path (str | None): 相对路径。
+            glob (str | None): 文件过滤通配符。
+            output_mode (Literal["files_with_matches", "content", "count"]): 模式。
+            max_count (int | None): 最大数量。
+            literal (bool): 是否字面精确匹配。
+            case_sensitive (bool): 是否区分大小写。
+
+        Returns:
+            ToolMessage: 异步检索结果。
+        """
         error = self._authorize("read", path or "/")
         value = (
             GrepResult(error=error)
@@ -381,7 +514,11 @@ class HarnessFilesystemMiddleware(FilesystemMiddleware):
         return self._grep_result(pattern, output_mode, value, runtime)
 
     def _create_grep_tool(self) -> StructuredTool:
-        """重写父类构建 grep 检索工具方法，挂载 SearchSchema。"""
+        """重写父类构建 grep 检索工具方法，挂载 SearchSchema。
+
+        Returns:
+            StructuredTool: 构造好的 grep 工具。
+        """
         return StructuredTool.from_function(
             name="grep",
             description="Find literal text or ripgrep regular expressions. Use literal=false for regex; narrow with path/glob. Results are bounded and permission filtered.",
@@ -390,8 +527,16 @@ class HarnessFilesystemMiddleware(FilesystemMiddleware):
             args_schema=SearchSchema,
         )
 
-    def _glob_result(self, value: GlobResult, runtime: ToolRuntime) -> ToolMessage:
-        """应用读权限过滤 glob 匹配路径并返回 ToolMessage。"""
+    def _glob_result(self, value: GlobResult, runtime: ToolRuntime[Any]) -> ToolMessage:
+        """应用读权限过滤 glob 匹配路径并返回 ToolMessage。
+
+        Args:
+            value (GlobResult): Glob 查询结果对象。
+            runtime (ToolRuntime[Any]): 运行时上下文。
+
+        Returns:
+            ToolMessage: 工具执行结果消息。
+        """
         paths = _apply_permissions_to_glob_results(
             self._permissions, value.matches or [], backend=self.backend
         )
@@ -408,12 +553,23 @@ class HarnessFilesystemMiddleware(FilesystemMiddleware):
     def _glob(
         self,
         pattern: str,
-        runtime: ToolRuntime,
+        runtime: ToolRuntime[Any],
         path: str | None = None,
         hidden: bool = False,
         limit: int = 100,
     ) -> ToolMessage:
-        """执行同步 glob 通配文件查找。"""
+        """执行同步 glob 通配文件查找。
+
+        Args:
+            pattern (str): 通配表达式。
+            runtime (ToolRuntime[Any]): 运行时。
+            path (str | None): 可选相对路径。
+            hidden (bool): 是否搜寻隐藏文件。
+            limit (int): 最大数量上限。
+
+        Returns:
+            ToolMessage: 结果消息。
+        """
         error = self._authorize("read", path or "/")
         value = (
             GlobResult(error=error)
@@ -425,12 +581,23 @@ class HarnessFilesystemMiddleware(FilesystemMiddleware):
     async def _aglob(
         self,
         pattern: str,
-        runtime: ToolRuntime,
+        runtime: ToolRuntime[Any],
         path: str | None = None,
         hidden: bool = False,
         limit: int = 100,
     ) -> ToolMessage:
-        """执行异步非阻塞 glob 通配文件查找。"""
+        """执行异步非阻塞 glob 通配文件查找。
+
+        Args:
+            pattern (str): 通配符。
+            runtime (ToolRuntime[Any]): 运行时。
+            path (str | None): 相对路径。
+            hidden (bool): 是否包含隐藏文件。
+            limit (int): 上限数量。
+
+        Returns:
+            ToolMessage: 异步结果消息。
+        """
         error = self._authorize("read", path or "/")
         value = (
             GlobResult(error=error)
@@ -440,7 +607,11 @@ class HarnessFilesystemMiddleware(FilesystemMiddleware):
         return self._glob_result(value, runtime)
 
     def _create_glob_tool(self) -> StructuredTool:
-        """重写父类构建 glob 工具方法，挂载 FileGlobSchema。"""
+        """重写父类构建 glob 工具方法，挂载 FileGlobSchema。
+
+        Returns:
+            StructuredTool: 构造的 glob 工具。
+        """
         return StructuredTool.from_function(
             name="glob",
             description="Find files with ripgrep glob and ignore rules. Hidden files are optional; .git directories are excluded. Results are bounded and permission filtered.",
@@ -449,8 +620,16 @@ class HarnessFilesystemMiddleware(FilesystemMiddleware):
             args_schema=FileGlobSchema,
         )
 
-    def _apply_patch(self, patch_text: str, runtime: ToolRuntime) -> ToolMessage:
-        """执行同步多文件补丁应用。"""
+    def _apply_patch(self, patch_text: str, runtime: ToolRuntime[Any]) -> ToolMessage:
+        """执行同步多文件补丁应用。
+
+        Args:
+            patch_text (str): 补丁文本。
+            runtime (ToolRuntime[Any]): 运行时对象。
+
+        Returns:
+            ToolMessage: 包含应用摘要与结构化差异 artifact 的工具消息。
+        """
         try:
             content, artifact = self.backend.apply_patch(
                 patch_text, lambda path: self._authorize("write", path)
@@ -469,8 +648,16 @@ class HarnessFilesystemMiddleware(FilesystemMiddleware):
             tool_call_id=runtime.tool_call_id,
         )
 
-    async def _aapply_patch(self, patch_text: str, runtime: ToolRuntime) -> ToolMessage:
-        """执行异步非阻塞多文件补丁应用。"""
+    async def _aapply_patch(self, patch_text: str, runtime: ToolRuntime[Any]) -> ToolMessage:
+        """执行异步非阻塞多文件补丁应用。
+
+        Args:
+            patch_text (str): 补丁文本。
+            runtime (ToolRuntime[Any]): 运行时。
+
+        Returns:
+            ToolMessage: 异步补丁结果消息。
+        """
         try:
             content, artifact = await self.backend.aapply_patch(
                 patch_text, lambda path: self._authorize("write", path)
@@ -490,7 +677,11 @@ class HarnessFilesystemMiddleware(FilesystemMiddleware):
         )
 
     def _create_patch_tool(self) -> StructuredTool:
-        """构建原生多文件补丁应用工具 apply_patch。"""
+        """构建原生多文件补丁应用工具 apply_patch。
+
+        Returns:
+            StructuredTool: 构造好的 apply_patch 工具实例。
+        """
         return StructuredTool.from_function(
             name="apply_patch",
             description="Apply a multi-file patch. Format: *** Begin Patch, then *** Add File: path with +lines, *** Delete File: path, or *** Update File: path with @@ hunks and optional *** Move to: path; finish with *** End Patch. All paths and hunks are checked before writing. Updates may use *** End of File. Earlier operations may remain if a later filesystem write fails.",

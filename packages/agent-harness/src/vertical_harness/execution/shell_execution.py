@@ -1,4 +1,13 @@
-"""工作区 Shell 命令受控执行工具模块，支持前台同步运行与后台异步作业生命周期管理。"""
+"""工作区 Shell 命令受控执行工具模块，支持前台同步运行与后台异步作业生命周期管理。
+
+本模块提供 `ShellExecution` 工具类及其对应的 LangChain `StructuredTool` 工具集合（`shell` 和 `shell_status`）。
+提供以下核心能力：
+1. 前台同步执行与后台异步作业生命周期管理；
+2. 跨平台默认终端适配（Windows 下调用 `cmd.exe`，POSIX 下调用 `/bin/sh`）；
+3. 严格限制工作区操作边界，自动将命令合并标准输出/错误落盘并提取尾部预览；
+4. 基于可信运行上下文 `(tenant_id, user_id, thread_id)` 实现后台作业的会话隔离与鉴权；
+5. 提供超时终止、主动取消、分页字节读取及输出文件清理等功能。
+"""
 
 from __future__ import annotations
 
@@ -24,12 +33,20 @@ from vertical_harness.execution.shell_job import ShellJob
 
 @dataclass(eq=False)
 class ShellExecution:
-    """工作区 Shell 命令运行器，管理进程树生命周期、输出文件持久化与多会话作业隔离。"""
+    """工作区 Shell 命令运行器，管理进程树生命周期、输出文件持久化与多会话作业隔离。
+
+    Attributes:
+        workspace (Path): 智能体操作的根工作区目录，执行的所有命令和输出文件均严格限制在该目录及其子目录内。
+    """
 
     workspace: Path
+    # 当前活跃与保留的后台作业注册表，以 shell_id 为键
     _jobs: dict[str, ShellJob] = field(default_factory=dict, init=False)
+    # 最近已完成作业的 ID 队列，最多保留 25 项以防止作业记录无限膨胀
     _completed: list[str] = field(default_factory=list, init=False)
+    # 保护作业容器与关闭状态并发安全的互斥锁
     _lock: Any = field(default_factory=Lock, init=False)
+    # 执行器是否已被整体关闭标记
     _closed: bool = field(default=False, init=False)
 
     # 可选 ToolRuntime 仍需标记为注入参数，避免成为模型可见输入。
@@ -41,7 +58,24 @@ class ShellExecution:
         background: bool = False,
         runtime: Annotated[ToolRuntime[RunContext] | None, InjectedToolArg] = None,
     ) -> dict[str, Any]:
-        """以同步方式执行 Shell 命令并阻塞等待结果。"""
+        """以同步方式执行 Shell 命令并阻塞等待结果。
+
+        内部通过 `asyncio.run` 调用异步实现 `aexecute`。
+
+        Args:
+            command (str): 要执行的 Shell 命令行文本，不可为空。
+            workdir (str | None): 可选的子目录相对或绝对路径，必须位于工作区之内。默认使用工作区根目录。
+            timeout (int | None): 命令超时时间（毫秒）。前台执行默认 120,000 毫秒（120秒）；后台执行默认 0（无超时）。
+            background (bool): 是否以异步后台作业方式启动。若为 True，将立即返回作业 `shell_id` 而不阻塞等待完成。
+            runtime (ToolRuntime[RunContext] | None): 运行时注入的上下文实体，包含租户、用户与会话元数据（模型不可见）。
+
+        Returns:
+            dict[str, Any]: 前台执行返回包含 `exit_code`、`output` 预览及落盘路径等字段的字典；
+                后台执行返回包含 `shell_id`、`status` 及 `output_path` 的字典。
+
+        Raises:
+            ToolException: 命令非法、路径逃逸或当前执行器已关闭时抛出。
+        """
         return asyncio.run(self.aexecute(command, workdir, timeout, background, runtime))
 
     async def aexecute(
@@ -52,7 +86,24 @@ class ShellExecution:
         background: bool = False,
         runtime: Annotated[ToolRuntime[RunContext] | None, InjectedToolArg] = None,
     ) -> dict[str, Any]:
-        """以异步非阻塞方式执行 Shell 命令，支持前台与后台模式。"""
+        """以异步非阻塞方式执行 Shell 命令，支持前台与后台模式。
+
+        前台模式下等待命令执行结束，并在发生超时或外部取消时强行杀死子进程树；
+        后台模式下立即拉起后台独立作业并返回状态。
+
+        Args:
+            command (str): 待执行的命令行文本。
+            workdir (str | None): 可选的工作目录路径，必须位于工作区之内。
+            timeout (int | None): 超时限制（毫秒）。前台默认 120,000 毫秒；后台默认 0。
+            background (bool): 是否作为后台作业执行。
+            runtime (ToolRuntime[RunContext] | None): 依赖注入的运行时上下文。
+
+        Returns:
+            dict[str, Any]: 前台执行结果载荷或后台作业启动凭据字典。
+
+        Raises:
+            ToolException: 参数校验失败或工作目录非法时抛出。
+        """
         if background:
             return self._start_background(
                 command, workdir, 0 if timeout is None else timeout, runtime
@@ -83,7 +134,23 @@ class ShellExecution:
     def _prepare(
         self, command: str, workdir: str | None
     ) -> tuple[Path, Path, dict[str, str], str, Path]:
-        """校验参数合法性、工作区目录边界并分配唯一的持久化输出文件。"""
+        """校验参数合法性、工作区目录边界并分配唯一的持久化输出文件。
+
+        Args:
+            command (str): 待校验的原始命令字符串。
+            workdir (str | None): 相对或绝对的工作目录路径字符串。
+
+        Returns:
+            tuple[Path, Path, dict[str, str], str, Path]: 包含以下元素的五元组：
+                - `root` (Path): 解析后真实工作区物理根路径。
+                - `cwd` (Path): 解析后子进程执行的目标工作目录。
+                - `env` (dict[str, str]): 安全过滤后的环境变量字典。
+                - `executable` (str): 目标系统的默认命令行解释器路径（cmd.exe 或 /bin/sh）。
+                - `output_path` (Path): 为本次执行新创建的输出日志文件物理路径。
+
+        Raises:
+            ToolException: 当命令为空字符串、目录越界或目录不存在时抛出。
+        """
         if not command.strip():
             raise ToolException("Shell command must not be blank")
         root = self.workspace.resolve(strict=True)
@@ -115,7 +182,20 @@ class ShellExecution:
         exit_code: int | None,
         timed_out: bool,
     ) -> dict[str, Any]:
-        """格式化命令结果载荷并提取末尾截断预览。"""
+        """格式化命令结果载荷并提取末尾截断预览。
+
+        Args:
+            command (str): 执行的命令。
+            cwd (Path): 进程工作目录。
+            root (Path): 工作区根目录。
+            output_path (Path): 输出日志绝对路径。
+            exit_code (int | None): 进程返回码。
+            timed_out (bool): 是否发生超时。
+
+        Returns:
+            dict[str, Any]: 结构化结果字典，包含 `command`、`workdir`、`output_path`、
+                `exit_code`、`timed_out`、`output` 及 `truncated` 字段。
+        """
         virtual_output = "/" + output_path.relative_to(root).as_posix()
         output, truncated = self._capture(output_path)
         if truncated:
@@ -132,7 +212,17 @@ class ShellExecution:
 
     @staticmethod
     def _owner(runtime: ToolRuntime[RunContext] | None) -> tuple[str, str, str]:
-        """从运行时上下文中提取 (tenant_id, user_id, thread_id) 作业归属三元组。"""
+        """从运行时上下文中提取 (tenant_id, user_id, thread_id) 作业归属三元组。
+
+        Args:
+            runtime (ToolRuntime[RunContext] | None): 注入的工具运行时上下文。
+
+        Returns:
+            tuple[str, str, str]: 包含租户标识、用户标识和会话线程标识的三元组。
+
+        Raises:
+            ToolException: 若上下文缺失或缺少会话线程标识则抛出。
+        """
         if runtime is None or runtime.context is None:
             raise ToolException(
                 "Background commands require trusted run context and a session thread_id"
@@ -149,7 +239,20 @@ class ShellExecution:
         timeout: int,
         runtime: ToolRuntime[RunContext] | None,
     ) -> dict[str, Any]:
-        """初始化并拉起后台作业进程，由独立守护线程进行状态与超时监控。"""
+        """初始化并拉起后台作业进程，由独立守护线程进行状态与超时监控。
+
+        Args:
+            command (str): 命令行字符串。
+            workdir (str | None): 工作目录。
+            timeout (int): 超时毫秒数。
+            runtime (ToolRuntime[RunContext] | None): 运行时上下文。
+
+        Returns:
+            dict[str, Any]: 包含 `shell_id`、`status="running"`、`command` 和 `output_path` 的字典。
+
+        Raises:
+            ToolException: 若执行器已关闭或参数非法则抛出。
+        """
         owner = self._owner(runtime)
         with self._lock:
             if self._closed:
@@ -188,7 +291,11 @@ class ShellExecution:
         }
 
     def _monitor(self, job: ShellJob) -> None:
-        """后台轮询监控工作线程函数，处理超时与退出码派发。"""
+        """后台轮询监控工作线程函数，处理超时检测、进程收尾与结果通知派发。
+
+        Args:
+            job (ShellJob): 待监控的后台作业实例。
+        """
         timed_out = False
         failure = None
         try:
@@ -246,7 +353,30 @@ class ShellExecution:
         limit: Annotated[int, Field(ge=0)] = 65_536,
         timeout: Annotated[int | None, Field(ge=0)] = None,
     ) -> dict[str, Any]:
-        """查询、等待、取消或分页读取当前会话所属的后台 Shell 命令作业。"""
+        """查询、等待、取消或分页读取当前会话所属的后台 Shell 命令作业。
+
+        Args:
+            shell_id (str): 目标后台作业的唯一标识符（当 action 为 'list' 时可留空）。
+            runtime (ToolRuntime[RunContext] | None): 运行时上下文凭据，用于验证会话归属。
+            action (Literal["status", "wait", "cancel", "output", "timeout", "list", "remove"]):
+                操作指令类型：
+                - `"status"`: 立即返回当前运行状态和预览；
+                - `"wait"`: 阻塞直到作业完成并返回最终结果；
+                - `"cancel"`: 终止作业进程树并返回结果；
+                - `"output"`: 按字节游标分页读取全量输出日志；
+                - `"timeout"`: 重置从当前时刻起的超时时间；
+                - `"list"`: 列出当前会话正在运行的所有后台命令作业；
+                - `"remove"`: 终止作业并删除物理日志文件与记录。
+            cursor (int): 分页读取日志的起始字节游标，默认 0。
+            limit (int): 分页读取的最大字节数限制，默认 65,536。
+            timeout (int | None): 配合 action="timeout" 使用的超时毫秒数。
+
+        Returns:
+            dict[str, Any]: 结构化响应数据，根据不同 action 包含作业状态、分页文本或列表。
+
+        Raises:
+            ToolException: 当找不到该作业、越权访问或参数不符合要求时抛出。
+        """
         owner = self._owner(runtime)
         if action == "timeout" and timeout is None:
             raise ToolException("The timeout action requires timeout in milliseconds")
@@ -317,13 +447,36 @@ class ShellExecution:
         limit: Annotated[int, Field(ge=0)] = 65_536,
         timeout: Annotated[int | None, Field(ge=0)] = None,
     ) -> dict[str, Any]:
-        """以异步非阻塞形式调用后台作业状态管理。"""
+        """以异步非阻塞形式调用后台作业状态管理。
+
+        Args:
+            shell_id (str): 后台作业 ID。
+            runtime (ToolRuntime[RunContext] | None): 运行时上下文。
+            action (Literal["status", "wait", "cancel", "output", "timeout", "list", "remove"]): 操作指令类型。
+            cursor (int): 起始字节游标。
+            limit (int): 最大字节数。
+            timeout (int | None): 超时毫秒数。
+
+        Returns:
+            dict[str, Any]: 操作结果字典。
+        """
         return await asyncio.to_thread(
             self.status, shell_id, runtime, action, cursor, limit, timeout
         )
 
     def _remove(self, shell_id: str, job: ShellJob) -> dict[str, Any]:
-        """停止后台作业并安全清理其在磁盘上的日志文件和注册记录。"""
+        """停止后台作业并安全清理其在磁盘上的日志文件和注册记录。
+
+        Args:
+            shell_id (str): 作业 ID。
+            job (ShellJob): 目标作业对象。
+
+        Returns:
+            dict[str, Any]: `{"shell_id": shell_id, "status": "removed"}` 字典。
+
+        Raises:
+            ToolException: 输出路径非法或已移除时抛出。
+        """
         with job.lock:
             if not job.path.resolve().is_relative_to(job.root):
                 raise ToolException("Shell output directory must remain inside the workspace")
@@ -354,14 +507,24 @@ class ShellExecution:
         self._close_jobs(jobs)
 
     def close_session(self, tenant_id: str, user_id: str, thread_id: str) -> None:
-        """停止并清理指定会话独占拥有的全部后台命令作业。"""
+        """停止并清理指定会话独占拥有的全部后台命令作业。
+
+        Args:
+            tenant_id (str): 租户 ID。
+            user_id (str): 用户 ID。
+            thread_id (str): 会话线程 ID。
+        """
         owner = tenant_id, user_id, thread_id
         with self._lock:
             jobs = [job for job in self._jobs.values() if job.owner == owner]
         self._close_jobs(jobs)
 
     def _close_jobs(self, jobs: list[ShellJob]) -> None:
-        """停止指定列表的后台作业进程并等待其守护线程退出。"""
+        """停止指定列表的后台作业进程并等待其守护线程退出。
+
+        Args:
+            jobs (list[ShellJob]): 待销毁的作业列表。
+        """
         for job in jobs:
             with job.lock:
                 if job.process.poll() is None:
@@ -377,12 +540,25 @@ class ShellExecution:
         await asyncio.to_thread(self.close)
 
     async def aclose_session(self, tenant_id: str, user_id: str, thread_id: str) -> None:
-        """以异步非阻塞方式调用 close_session 方法。"""
+        """以异步非阻塞方式调用 close_session 方法。
+
+        Args:
+            tenant_id (str): 租户 ID。
+            user_id (str): 用户 ID。
+            thread_id (str): 会话线程 ID。
+        """
         await asyncio.to_thread(self.close_session, tenant_id, user_id, thread_id)
 
     @staticmethod
     def _capture(path: Path) -> tuple[str, bool]:
-        """限制末尾 50 KiB / 2,000 行的 Shell 输出预览，超出部分在全量输出文件中持久化。"""
+        """限制末尾 50 KiB / 2,000 行的 Shell 输出预览，超出部分在全量输出文件中持久化。
+
+        Args:
+            path (Path): 输出日志文件路径。
+
+        Returns:
+            tuple[str, bool]: 包含预览文本和是否截断标记的二元组 `(text, truncated)`。
+        """
         size = path.stat().st_size
         with path.open("rb") as stream:
             stream.seek(max(0, size - 50 * 1024))
@@ -395,11 +571,22 @@ class ShellExecution:
 
     @staticmethod
     def shell_tool(workspace: Path) -> StructuredTool:
-        """构建单个同步与异步双入口的标准 LangChain 前台命令工具。"""
+        """构建单个同步与异步双入口的标准 LangChain 前台命令工具。
+
+        Args:
+            workspace (Path): 关联的工作区路径。
+
+        Returns:
+            StructuredTool: 构造的 LangChain 工具实例。
+        """
         return ShellExecution(workspace).tools()[0]
 
     def tools(self) -> list[StructuredTool]:
-        """构建包含 shell 与 shell_status 的完整执行工具栈，共享后台作业注册表。"""
+        """构建包含 shell 与 shell_status 的完整执行工具栈，共享后台作业注册表。
+
+        Returns:
+            list[StructuredTool]: 工具列表，依次为 `shell` 和 `shell_status`。
+        """
         shell = "cmd.exe" if os.name == "nt" else "/bin/sh"
         command = StructuredTool.from_function(
             name="shell",

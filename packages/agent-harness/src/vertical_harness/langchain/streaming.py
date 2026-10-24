@@ -1,4 +1,11 @@
-"""将原生执行事件投影为可序列化的 UI 事件，不负责传输或管理 Agent 生命周期。"""
+"""将原生执行事件投影为可序列化的 UI 事件，不负责传输或管理 Agent 生命周期。
+
+本模块提供 `AgentStreaming` 静态工具类：
+1. 原生 LangGraph 事件流过滤投影（`astream_events(version="v2")`）；
+2. 敏感数据与内部配置剥离：严格过滤原始图状态、工具内部参数与模型私有凭据，仅投影标准可显示的文本增量与状态事件；
+3. 超时统一拦截：通过 `asyncio.timeout` 配合图元数据中的 `harness_run_timeout_seconds` 进行超时强杀；
+4. 结构化事件输出：封装输出强类型的 `StreamEvent` 序列，支持单步序号自增（seq）与调用树祖先链（parent_ids）。
+"""
 
 from __future__ import annotations
 
@@ -22,18 +29,42 @@ from typing_extensions import TypeForm
 from vertical_harness.core.context import RunContext
 from vertical_harness.langchain.stream_event import StreamEvent, StreamEventType
 
+# 模块级日志记录器，记录事件流与执行调用周期
 logger = logging.getLogger(__name__)
+
+# JSON 序列化合法值严格校验适配器
 _JSON: TypeAdapter[JsonValue] = TypeAdapter(TypeForm(JsonValue))
 
 
 class AgentStreaming:
+    """智能体执行事件流投影器，将 LangGraph 原始底层事件转换为前端规范的 StreamEvent 序列。
+
+    纯静态/类方法集合，供 Desktop IPC 与 CLI 统一调用。
+    """
+
     @staticmethod
     def _project(
         event: StandardStreamEvent | CustomStreamEvent,
         root_id: str,
         interrupts: tuple[Interrupt, ...],
     ) -> tuple[StreamEventType, dict[str, JsonValue]] | None:
-        """只输出明确允许的字段；不转发原始 state、工具参数、工具结果或模型配置。"""
+        """只输出明确允许的字段；不转发原始 state、工具参数、工具结果或模型配置。
+
+        将 LangChain 标准事件分类映射为前端 `StreamEventType`，过滤掉无文本内容的空增量。
+
+        Args:
+            event (StandardStreamEvent | CustomStreamEvent): LangGraph v2 事件流派发的单个底层原始事件。
+            root_id (str): 整棵状态图执行树根调用的 operation_id 字符串。
+            interrupts (tuple[Interrupt, ...]): 当前捕获到的人机交互中断列表。
+
+        Returns:
+            tuple[StreamEventType, dict[str, JsonValue]] | None: 映射成功的 `(event_type, data)` 二元组；
+                若该事件无需向前端推送（如空增量或内部节点启动）则返回 None。
+
+        Raises:
+            TypeError: 当模型事件缺少 AIMessage 载荷时抛出。
+            ValueError: 当工具命令 Command 未包含有效更新消息时抛出。
+        """
         kind = event["event"]
         data = event["data"]
         if kind == "on_custom_event":
@@ -110,7 +141,20 @@ class AgentStreaming:
     def _run_timeout(
         agent: CompiledStateGraph[Any, RunContext, Any, Any], timeout_seconds: float | None
     ) -> float:
-        """计算智能体调用的超时秒数阈值。"""
+        """计算智能体调用的超时秒数阈值。
+
+        若显式提供了 `timeout_seconds` 则优先使用；否则从编译图元数据中的 `harness_run_timeout_seconds` 读取，默认 900 秒。
+
+        Args:
+            agent (CompiledStateGraph[Any, RunContext, Any, Any]): 已编译的状态图实例。
+            timeout_seconds (float | None): 可选的调用方指定超时秒数。
+
+        Returns:
+            float: 最终确定的有限正浮点数超时时间（秒）。
+
+        Raises:
+            ValueError: 当计算出的超时不是大于 0 的有限数值时抛出。
+        """
         logger.debug("calculating_run_timeout")
         timeout = (
             timeout_seconds
@@ -132,7 +176,19 @@ class AgentStreaming:
         durability: Literal["sync", "async", "exit"] = "sync",
         timeout_seconds: float | None = None,
     ) -> Any:
-        """在宿主控制的超时截止时限内异步调用原生编译状态图，支持人机审批恢复。"""
+        """在宿主控制的超时截止时限内异步调用原生编译状态图，支持人机审批恢复。
+
+        Args:
+            agent (CompiledStateGraph[Any, RunContext, Any, Any]): 已编译的 LangGraph 图实例。
+            inputs (dict[str, Any] | Command[Any] | None): 初始消息输入字典，或用于恢复中断的 Command。
+            config (RunnableConfig): 运行时配置字典，必须包含 `configurable: {"thread_id": ...}`。
+            context (RunContext | None): 注入的可信运行上下文。
+            durability (Literal["sync", "async", "exit"]): 检查点落盘同步级别，默认 `"sync"`。
+            timeout_seconds (float | None): 单次调用的超时秒数。
+
+        Returns:
+            Any: 图执行完成后最终的状态字典。
+        """
         logger.debug("ainvoke_agent_started")
         async with asyncio.timeout(cls._run_timeout(agent, timeout_seconds)):
             result = await agent.ainvoke(
@@ -155,7 +211,27 @@ class AgentStreaming:
         durability: Literal["sync", "async", "exit"] = "sync",
         timeout_seconds: float | None = None,
     ) -> AsyncGenerator[StreamEvent, None]:
-        """执行一次 Agent 并产生 UI 事件，支持 None / Command(resume=...) 输入。"""
+        """执行一次 Agent 并产生 UI 事件，支持 None / Command(resume=...) 输入。
+
+        在配置的超时时间内拉起事件流（v2 协议），将底层的链、模型和工具事件实时转换为面向前端渲染的 `StreamEvent`。
+        若执行发生未捕获异常，会在抛出前生成最终的 `run.failed` 事件。
+
+        Args:
+            agent (CompiledStateGraph[Any, RunContext, Any, Any]): 编译就绪的状态图实例。
+            inputs (dict[str, Any] | Command[Any] | None): 输入字典或人机审批恢复命令。
+            config (RunnableConfig): 包含 `thread_id` 的可配置项字典。
+            context (RunContext | None): 可信身份与任务调度上下文。
+            durability (Literal["sync", "async", "exit"]): 检查点同步策略。
+            timeout_seconds (float | None): 任务总超时秒数。
+
+        Yields:
+            StreamEvent: 强类型可序列化的标准化流式事件实例。
+
+        Raises:
+            ValueError: 当 `config` 中缺少有效的 `thread_id` 时抛出。
+            TypeError: 当事件流不是有效的异步生成器时抛出。
+            Exception: 当图执行崩溃或超时时，派发 `run.failed` 后重新抛出异常。
+        """
         logger.debug("astream_agent_started")
         thread_id = config.get("configurable", {}).get("thread_id")
         if not isinstance(thread_id, str) or not thread_id.strip():
