@@ -1,7 +1,24 @@
 """Guard capability dependencies without prescribing private method decomposition."""
 
 import ast
+from graphlib import TopologicalSorter
 from pathlib import Path
+
+
+def test_backend_concrete_module_imports_are_acyclic():
+    root = Path(__file__).resolve().parents[1] / "packages/agent-harness/src"
+    modules = {}
+    for path in (root / "vertical_harness").rglob("*.py"):
+        name = ".".join(path.relative_to(root).with_suffix("").parts)
+        modules[name] = path
+    dependencies = {}
+    for name, path in modules.items():
+        dependencies[name] = {
+            node.module
+            for node in ast.walk(ast.parse(path.read_text(encoding="utf-8")))
+            if isinstance(node, ast.ImportFrom) and node.module in modules
+        }
+    assert len(tuple(TopologicalSorter(dependencies).static_order())) == len(modules)
 
 
 def test_backend_capabilities_do_not_import_host_layers():

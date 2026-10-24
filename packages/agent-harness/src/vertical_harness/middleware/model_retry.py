@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import math
 import random
 import re
@@ -25,6 +26,8 @@ from langchain_core.messages import AIMessage, HumanMessage, message_chunk_to_me
 from openai import APIConnectionError, APIError, APIStatusError, APITimeoutError
 
 from vertical_harness.middleware.model_output_guard import ModelOutputGuard
+
+logger = logging.getLogger(__name__)
 
 
 class ModelRetryMiddleware(AgentMiddleware):
@@ -164,6 +167,12 @@ class ModelRetryMiddleware(AgentMiddleware):
         Returns:
             bool: 若属于瞬时网络故障或可重试错误则返回 True，否则返回 False。
         """
+        if isinstance(error, APIStatusError) and (error.code or "").lower() in cls._quota_codes:
+            return False
+        if isinstance(error, (APIStatusError, httpx.HTTPStatusError)) and (
+            error.response.status_code == 429 and cls._quota_text.search(str(error))
+        ):
+            return False
         override = cls._headers(error).get("x-should-retry")
         if override is not None:
             if override == "true":
@@ -172,10 +181,6 @@ class ModelRetryMiddleware(AgentMiddleware):
                 return False
         if isinstance(error, (APIStatusError, httpx.HTTPStatusError)):
             status = error.response.status_code
-            if isinstance(error, APIStatusError) and (error.code or "").lower() in cls._quota_codes:
-                return False
-            if status == 429 and cls._quota_text.search(str(error)):
-                return False
             return status in (408, 409, 429) or status >= 500
         if isinstance(error, ModelError):
             return error.is_retryable
@@ -215,6 +220,26 @@ class ModelRetryMiddleware(AgentMiddleware):
                 break
         return math.ceil(delay * 1000) / 1000
 
+    @classmethod
+    def _retry_delay(cls, error: Exception, attempt: int, timeouts: int) -> float:
+        """记录可重试故障的元数据，不输出异常正文或请求内容。
+
+        :return: 本次等待秒数；真正的等待保持可取消。
+        """
+        delay = cls._delay(error, attempt)
+        logger.info(
+            "model_retrying",
+            extra={
+                "event_fields": {
+                    "attempt": attempt + 1,
+                    "timeouts": timeouts,
+                    "delay_seconds": delay,
+                    "error_type": type(error).__name__,
+                }
+            },
+        )
+        return delay
+
     def wrap_model_call(self, request: ModelRequest[Any], handler: Any) -> Any:
         """同步拦截模型请求，执行最多 10 次指数退避重试或部分响应保留。
 
@@ -245,7 +270,7 @@ class ModelRetryMiddleware(AgentMiddleware):
                     )
                     if output.delivered and partial is None:
                         raise
-                    time.sleep(self._delay(error, attempt))
+                    time.sleep(self._retry_delay(error, attempt, timeouts))
                     if partial is not None:
                         return partial
 
@@ -279,7 +304,7 @@ class ModelRetryMiddleware(AgentMiddleware):
                     )
                     if output.delivered and partial is None:
                         raise
-                    await asyncio.sleep(self._delay(error, attempt))
+                    await asyncio.sleep(self._retry_delay(error, attempt, timeouts))
                     if partial is not None:
                         return partial
 

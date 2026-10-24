@@ -4,9 +4,7 @@
 1. 挂载增强型工具集：扩展 `read_file`（支持目录分页与多模态二进制直传）、`grep`（支持 ripgrep 字面量/正则与结构化行元数据）、
    `glob`（支持隐藏文件过滤与上限限制），并附加原子多文件补丁工具 `apply_patch`；
 2. 全局技能只读挂载：通过 `skill_backend` 拦截 `/.agent-harness/skills/` 虚拟路径的只读访问；
-3. 动态子目录 AGENTS.md 嗅探注入：在 `before_model` 钩子中，根据最近已读文件所在的目录层级，
-   自底向上探查同级或父级目录中的 `AGENTS.md` 并注入会话提示，实现精准的作用域规范感知；
-4. 权限与容错集成：Unicode 文件名歧义自愈、读写权限白名单校验、多文件事务提交报告生成。
+3. 权限与容错集成：Unicode 文件名歧义自愈、读写权限白名单校验、多文件事务提交报告生成。
 """
 
 from __future__ import annotations
@@ -26,9 +24,9 @@ from deepagents.middleware.filesystem import (
     _permission_error,
 )
 from langchain.tools import ToolRuntime
-from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from langchain_core.messages import ToolMessage
 from langchain_core.messages.content import create_file_block, create_image_block
-from langchain_core.tools import StructuredTool
+from langchain_core.tools import BaseTool, StructuredTool
 
 from vertical_harness.filesystem.document_backend import DocumentFilesystemBackend
 from vertical_harness.filesystem.file_reader import FileReader
@@ -47,6 +45,15 @@ class HarnessFilesystemMiddleware(FilesystemMiddleware):
     """
 
     backend: DocumentFilesystemBackend
+
+    @property
+    def name(self) -> str:
+        """替换原生文件工具槽位，避免注册两层 FilesystemMiddleware。"""
+        return "FilesystemMiddleware"
+
+    def _create_tools(self) -> list[BaseTool]:
+        """权限重绑定时仍保留补丁工具，复用原生工具构造生命周期。"""
+        return [*super()._create_tools(), self._create_patch_tool()]
 
     def __init__(
         self,
@@ -69,7 +76,7 @@ class HarnessFilesystemMiddleware(FilesystemMiddleware):
             tool = FilesystemMiddleware(
                 backend=skill_backend,
                 tools=["read_file"],
-                _permissions=self._permissions,
+                permissions=self._permissions,
                 tool_token_limit_before_evict=self._tool_token_limit_before_evict,
             ).tools[0]
             assert (
@@ -78,7 +85,6 @@ class HarnessFilesystemMiddleware(FilesystemMiddleware):
                 and tool.coroutine is not None
             )
             self._skills_read, self._skills_aread = tool.func, tool.coroutine
-        self.tools = [*self.tools, self._create_patch_tool()]
 
     def _authorize(self, operation: Literal["read", "write"], path: str) -> str | None:
         """校验当前路径与操作类型是否在工作区权限许可范围内。
@@ -307,84 +313,6 @@ class HarnessFilesystemMiddleware(FilesystemMiddleware):
             coroutine=self._aread_file,
             args_schema=NativeReadSchema,
         )
-
-    def before_model(self, state: Any, runtime: Any) -> dict[str, Any] | None:
-        """在模型前置钩子中动态探查已读文件所在目录树中的 AGENTS.md 规范文件并注入提示词。
-
-        Args:
-            state (Any): 状态字典。
-            runtime (Any): 运行时上下文。
-
-        Returns:
-            dict[str, Any] | None: 包含注入规范消息的更新字典；若无新指令则返回 None。
-        """
-        messages = state["messages"]
-        loaded = {
-            path
-            for message in messages
-            if isinstance(message, HumanMessage)
-            for path in (
-                message.additional_kwargs.get("harness_instructions", [])
-                or message.additional_kwargs.get("opencode_instructions", [])
-            )
-        }
-        candidates: dict[str, str] = {}
-        for message in reversed(messages):
-            if isinstance(message, AIMessage):
-                break
-            if (
-                not isinstance(message, ToolMessage)
-                or message.name != "read_file"
-                or message.status != "success"
-            ):
-                continue
-            file_path = message.additional_kwargs.get("read_file_path")
-            if file_path is None:
-                continue
-            try:
-                resolved = self.backend.resolve_path(file_path)
-                parent = resolved if resolved.is_dir() else resolved.parent
-                while parent != self.backend.cwd and parent.is_relative_to(self.backend.cwd):
-                    instruction = (parent / "AGENTS.md").resolve()
-                    virtual = self.backend.virtual_path(instruction)
-                    if (
-                        instruction != resolved
-                        and str(instruction) not in loaded
-                        and instruction.is_file()
-                        and not self._authorize("read", virtual)
-                    ):
-                        candidates[str(instruction)] = instruction.read_text(encoding="utf-8-sig")
-                    parent = parent.parent
-            except Exception:
-                continue
-        if not candidates:
-            return None
-        return {
-            "messages": [
-                HumanMessage(
-                    content="\n\n".join(
-                        f"Instructions from: {path}\n{content}"
-                        for path, content in candidates.items()
-                    ),
-                    additional_kwargs={
-                        "harness_instructions": list(candidates),
-                        "opencode_instructions": list(candidates),
-                    },
-                )
-            ]
-        }
-
-    async def abefore_model(self, state: Any, runtime: Any) -> dict[str, Any] | None:
-        """以异步线程方式执行前置模型规范指令注入。
-
-        Args:
-            state (Any): 状态字典。
-            runtime (Any): 运行时上下文。
-
-        Returns:
-            dict[str, Any] | None: 状态更新字典或 None。
-        """
-        return await asyncio.to_thread(self.before_model, state, runtime)
 
     def _grep_result(
         self,

@@ -16,6 +16,7 @@ from typing import Any
 
 # 记录当前执行协程或线程所属 run_id 的上下文变量，用于日志链路关联
 _RUN_ID: ContextVar[str | None] = ContextVar("harness_log_run_id", default=None)
+_THREAD_ID: ContextVar[str | None] = ContextVar("harness_log_thread_id", default=None)
 
 
 class StructuredFormatter(logging.Formatter):
@@ -54,6 +55,7 @@ class StructuredFormatter(logging.Formatter):
             "logger": record.name,
             "event": record.getMessage(),
             "run_id": _RUN_ID.get(),
+            "thread_id": _THREAD_ID.get(),
         }
         fields = getattr(record, "event_fields", {})
         payload.update({name: value for name, value in fields.items() if name not in payload})

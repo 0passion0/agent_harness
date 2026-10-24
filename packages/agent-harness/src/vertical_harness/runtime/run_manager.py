@@ -303,6 +303,9 @@ class RunManager:
         config["run_id"] = UUID(run_id)
         config["callbacks"] = [details]
         try:
+            checkpoint = await self.runtime.checkpointer.aget_tuple(config)
+            if checkpoint is not None:
+                self.sessions.verify_owner(checkpoint.metadata)
             async with self.runtime.open_agent() as agent:
                 assert agent.config is not None
                 config["recursion_limit"] = agent.config["recursion_limit"]

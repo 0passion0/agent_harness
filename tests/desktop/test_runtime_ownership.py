@@ -2,15 +2,78 @@ import asyncio
 from uuid import uuid4
 
 import pytest
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage
 from test_bridge import configure
 
 from vertical_harness.config.settings import HarnessSettings
+from vertical_harness.core import compose
 from vertical_harness.core.context import RunContext
 from vertical_harness.desktop import AgentLoop
 from vertical_harness.runtime.agent_runtime import AgentRuntime
 from vertical_harness.runtime.run_manager import RunManager
 from vertical_harness.runtime.session_service import SessionService
+
+
+@pytest.mark.parametrize("tenant,user", [("other", "user"), ("tenant", "other")])
+def test_shared_checkpoint_rejects_other_identity_without_changing_data(
+    tmp_path, monkeypatch, tenant, user
+):
+    from test_deepagents_architecture import Model
+
+    model = Model(responses=[AIMessage("private answer")])
+    monkeypatch.setattr(compose.ModelRouting, "init_configured_model", lambda _: model)
+
+    async def run():
+        configured = HarnessSettings(
+            _env_file=None,
+            model="test:model",
+            workspace_root=tmp_path,
+            store_backend="memory",
+        )
+        owner = await AgentRuntime.create(configured, RunContext("tenant", "user"))
+        borrower = AgentRuntime(configured, RunContext(tenant, user))
+        borrower.checkpointer, borrower.store = owner.checkpointer, owner.store
+        thread_id, run_id = str(uuid4()), str(uuid4())
+        config = {
+            "configurable": {"thread_id": thread_id},
+            "metadata": {
+                "desktop_tenant_id": "tenant",
+                "desktop_user_id": "user",
+                "desktop_run_id": run_id,
+            },
+        }
+        events = []
+
+        async def notify(method, data):
+            events.append((method, data))
+
+        sessions = SessionService(borrower)
+        manager = RunManager(borrower, sessions, notify)
+        try:
+            async with owner.open_agent() as graph:
+                await graph.ainvoke({"messages": [HumanMessage("private prompt")]}, config)
+            for usage_only in [False, True]:
+                with pytest.raises(PermissionError, match="identity"):
+                    await sessions.snapshot(thread_id, usage_only=usage_only)
+            with pytest.raises(PermissionError, match="identity"):
+                await sessions.delete(thread_id)
+            manager.start(thread_id, str(uuid4()), HumanMessage("overwrite"))
+            with pytest.raises(PermissionError, match="identity"):
+                await manager.wait()
+            assert events[-1][1]["type"] == "run.failed"
+            assert "private" not in str(events)
+            snapshot = await SessionService(owner).snapshot(thread_id)
+            assert [m["data"]["content"] for m in snapshot["messages"]] == [
+                "private prompt",
+                "private answer",
+            ]
+            assert len(model.seen) == 1
+        finally:
+            await manager.cancel()
+            await borrower.aclose()
+            await owner.aclose()
+
+    asyncio.run(run())
 
 
 def test_failed_reconfiguration_preserves_working_runtime(tmp_path, monkeypatch):

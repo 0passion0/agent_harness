@@ -226,7 +226,11 @@ def test_snapshot_reopens_sqlite_checkpoint_with_messages_and_interrupt(monkeypa
                 {"messages": [HumanMessage(content="hello")]},
                 {
                     **CheckpointConfig.make_checkpoint_config(thread_id),
-                    "metadata": {"desktop_run_id": run_id},
+                    "metadata": {
+                        "desktop_run_id": run_id,
+                        "desktop_tenant_id": "tenant-a",
+                        "desktop_user_id": "user-a",
+                    },
                 },
             )
 

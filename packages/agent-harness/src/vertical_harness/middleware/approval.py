@@ -55,7 +55,7 @@ class DesktopApprovalMiddleware(AgentMiddleware):
             "execute_python_file",
             "shell",
             "write_todos",
-        }:
+        } and not (request.tool.metadata or {}).get("requires_approval"):
             return None
 
         # 触发 LangGraph 原生状态图挂起中断，等待调用方提供决策输入

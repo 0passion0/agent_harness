@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from copy import deepcopy
 from typing import Any
 
@@ -51,6 +52,21 @@ class SessionService:
             identity.user_id,
             thread_id,
         )
+
+    def verify_owner(self, metadata: Mapping[str, Any] | None) -> None:
+        """校验已有检查点身份，不隐式认领无身份的历史数据。
+
+        :param metadata: 原生检查点元数据；不存在的线程为 None。
+        :raises PermissionError: 已有线程缺少身份或属于其他用户。
+        """
+        if metadata is None:
+            return
+        identity = self.runtime.identity
+        if (
+            metadata.get("desktop_tenant_id") != identity.tenant_id
+            or metadata.get("desktop_user_id") != identity.user_id
+        ):
+            raise PermissionError("Thread identity does not match the configured user and tenant")
 
     async def save_usage(self, thread_id: str, report: dict[str, Any]) -> None:
         """异步将模型调用真实的 Token 用量报告写入状态存储。
@@ -106,6 +122,7 @@ class SessionService:
         """
         async with self.runtime.open_agent() as agent:
             state = await agent.aget_state(CheckpointConfig.make_checkpoint_config(thread_id))
+            self.verify_owner(state.metadata)
         messages = state.values.get("messages", [])
         usage = await self.context_usage(thread_id, messages)
         if usage_only:
@@ -137,6 +154,11 @@ class SessionService:
         Returns:
             dict[str, Any]: 确认字典 `{"thread_id": thread_id, "deleted": True}`。
         """
+        checkpoint = await self.runtime.checkpointer.aget_tuple(
+            CheckpointConfig.make_checkpoint_config(thread_id)
+        )
+        if checkpoint is not None:
+            self.verify_owner(checkpoint.metadata)
         await self.runtime.checkpointer.adelete_thread(thread_id)
         await self.runtime.store.adelete(self.namespace(thread_id), "usage")
         return {"thread_id": thread_id, "deleted": True}

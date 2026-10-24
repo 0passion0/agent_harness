@@ -15,13 +15,17 @@ from contextlib import asynccontextmanager, contextmanager
 from pathlib import Path
 from typing import Any
 
-from deepagents import FilesystemPermission, create_deep_agent
+from deepagents import DeepAgentState, FilesystemPermission, create_deep_agent
 from deepagents.backends import CompositeBackend, FilesystemBackend
 from deepagents.backends.protocol import BackendProtocol
+from deepagents.middleware.subagents import SubAgent
 from deepagents.middleware.summarization import SummarizationMiddleware
 from langchain.agents.middleware import AgentMiddleware, TodoListMiddleware
+from langchain.agents.structured_output import ResponseFormat
+from langchain_core.tools import BaseTool
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph.state import CompiledStateGraph
+from langgraph.store.base import BaseStore
 
 from vertical_harness.config.settings import HarnessSettings
 from vertical_harness.core.context import RunContext
@@ -34,6 +38,7 @@ from vertical_harness.log.observability import TracingSession
 from vertical_harness.middleware.approval import DesktopApprovalMiddleware
 from vertical_harness.middleware.context_limit import ContextLimitMiddleware
 from vertical_harness.middleware.context_pruning import ContextPruningMiddleware
+from vertical_harness.middleware.directory_instructions import DirectoryInstructionsMiddleware
 from vertical_harness.middleware.execution_limits import ExecutionLimitsMiddleware
 from vertical_harness.middleware.filesystem import HarnessFilesystemMiddleware
 from vertical_harness.middleware.model_retry import ModelRetryMiddleware
@@ -42,6 +47,7 @@ from vertical_harness.middleware.project_instructions import ProjectInstructions
 from vertical_harness.middleware.routing import ModelRouterMiddleware
 from vertical_harness.middleware.summarization import HarnessSummarizationMiddleware
 from vertical_harness.storage.checkpoint import CheckpointFactory
+from vertical_harness.storage.store import StoreFactory
 from vertical_harness.tools.search import WebSearch
 from vertical_harness.tools.user_interaction import UserInteraction
 
@@ -201,26 +207,16 @@ class AgentComposer:
         backend: DocumentFilesystemBackend,
         system_skills: FilesystemBackend,
         permissions: list[FilesystemPermission],
+        *,
+        extensions: Sequence[AgentMiddleware[Any, Any, Any]] = (),
     ) -> list[AgentMiddleware[Any, Any, Any]]:
-        """按特定优先级次序组装智能体中间件调用栈。
+        """分别为每个图创建策略实例，原生文件与摘要槽按名称替换。
 
-        组装顺序严格遵循防御层次：
-        1. TodoListMiddleware: 任务拆解与待办清单驱动；
-        2. Request 中间件: ModelRouter, ProjectInstructions, ContextPruning；
-        3. 步数与摘要限制: ExecutionLimits, Summarization；
-        4. 权限与上下文拦截: DesktopPermission, ContextLimit, ModelRetry；
-        5. 审批中间件: DesktopApproval（仅在 ask 模式下启用）；
-        6. 沙箱文件系统中间件: HarnessFilesystemMiddleware。
+        请求准备在原生摘要位置完成；扩展包装位于最终权限、窗口和重试检查之外。
+        有效顺序以 Deep Agents 合并后的栈为准，详见 docs/DEEP_AGENTS_REFACTOR.md。
 
-        Args:
-            settings (HarnessSettings): 宿主配置对象。
-            model (Any): 基础聊天模型实例。
-            backend (DocumentFilesystemBackend): 工作区文档感知后端实例。
-            system_skills (FilesystemBackend): 全局只读技能存储后端。
-            permissions (list[FilesystemPermission]): 文件系统安全访问规则。
-
-        Returns:
-            list[AgentMiddleware[Any, Any, Any]]: 完整排序的中间件组件列表。
+        :param extensions: 仅属于当前图的原生 Middleware 扩展。
+        :return: 交给 create_deep_agent 合并的策略列表。
         """
         system_root = Path.home() / ".agent-harness"
         maximum = settings.max_context_tokens
@@ -229,6 +225,7 @@ class AgentComposer:
         # 1. 任务规划管理中间件
         if settings.enable_planning:
             middleware.append(TodoListMiddleware())
+        middleware.extend(extensions)
 
         # 2. 针对单次请求的模型路由与指令注入拦截器
         request_middleware: list[
@@ -261,7 +258,9 @@ class AgentComposer:
         if settings.permission_mode == "ask":
             middleware.append(DesktopApprovalMiddleware())
 
-        # 5. 沙箱文件系统工具与审计中间件
+        middleware.append(DirectoryInstructionsMiddleware(backend, permissions))
+
+        # 5. 替换原生文件工具槽，不重复注册一套文件 Middleware。
         middleware.append(
             HarnessFilesystemMiddleware(
                 backend=backend,
@@ -269,7 +268,7 @@ class AgentComposer:
                 tools=["ls", "read_file", "write_file", "edit_file", "delete", "glob", "grep"],
                 tool_token_limit_before_evict=3000,
                 grep_max_count=100,
-                _permissions=permissions,
+                permissions=permissions,
             )
         )
         return middleware
@@ -280,7 +279,12 @@ class AgentComposer:
         settings: HarnessSettings,
         *,
         checkpointer: Any = None,
+        store: BaseStore | None = None,
         shell_execution: ShellExecution | None = None,
+        tools: Sequence[BaseTool] = (),
+        middleware: Sequence[AgentMiddleware[Any, Any, Any]] = (),
+        subagents: Sequence[SubAgent] = (),
+        response_format: ResponseFormat[Any] | type | dict[str, Any] | None = None,
     ) -> CompiledStateGraph[Any, RunContext, Any, Any]:
         """构建组装挂载了文件系统、网页检索与受控 Python 脚本工具的原生 LangGraph 智能体状态图。
 
@@ -294,6 +298,12 @@ class AgentComposer:
 
         Returns:
             CompiledStateGraph[Any, RunContext, Any, Any]: 编译就绪的 LangGraph 执行图实例。
+
+        :param store: 借用的原生长期 Store；不由构建方法关闭。
+        :param tools: 附加业务工具；副作用工具用 metadata.requires_approval 标明审批需求。
+        :param middleware: 主图的附加中间件，子图需在自己的声明中显式配置。
+        :param subagents: 附加原生声明式子代理，独立装配宿主策略。
+        :param response_format: 原生结构化输出策略或 Schema。
         """
         # 确保工作区根目录物理存在
         root = settings.resolved_workspace_root
@@ -323,8 +333,36 @@ class AgentComposer:
         # 初始化模型与权限中间件
         model = ModelRouting.init_configured_model(settings)
         permissions = cls._permissions(settings)
-        middleware = cls._middleware(settings, model, backend, system_skills, permissions)
+        main_middleware = cls._middleware(
+            settings, model, backend, system_skills, permissions, extensions=middleware
+        )
         system_prompt = BASE_PROMPT + "\n" + settings.agent_content
+        child_specs: list[SubAgent] = [
+            {
+                "name": "general-purpose",
+                "description": "Delegate a scoped task to an agent with the same workspace and permissions.",
+                "system_prompt": system_prompt,
+                "skills": skills,
+            },
+            *subagents,
+        ]
+        for index, spec in enumerate(child_specs):
+            # 每个图独立构造策略实例；子图仍由 Deep Agents 编译和调度。
+            child_model = spec.get("model", model)
+            if isinstance(child_model, str):
+                child_model = ModelRouting.init_configured_model(settings, child_model)
+            child_specs[index] = {
+                **spec,
+                "model": child_model,
+                "middleware": cls._middleware(
+                    settings,
+                    child_model,
+                    backend,
+                    system_skills,
+                    permissions,
+                    extensions=spec.get("middleware", ()),
+                ),
+            }
 
         # 调用 deepagents 工厂构建原生智能体
         agent = create_deep_agent(
@@ -335,23 +373,19 @@ class AgentComposer:
                 PythonExecution.python_file_tool(root, settings.python_executable),
                 *(shell_execution or ShellExecution(root)).tools(),
                 UserInteraction.ask_user,
+                *tools,
             ],
             system_prompt=system_prompt,
             backend=skill_backend,
             skills=skills,
             permissions=permissions,
-            middleware=middleware,
-            subagents=[
-                {
-                    "name": "general-purpose",
-                    "description": "Delegate a scoped task to an agent with the same workspace and permissions.",
-                    "system_prompt": system_prompt,
-                    "middleware": middleware,
-                    "skills": skills,
-                }
-            ],
+            middleware=main_middleware,
+            subagents=child_specs,
+            response_format=response_format,
+            state_schema=DeepAgentState,
             context_schema=RunContext,
             checkpointer=checkpointer if checkpointer is not None else InMemorySaver(),
+            store=store,
         )
 
         # 注入宿主图配置参数与超时元数据
@@ -390,11 +424,12 @@ class AgentComposer:
         with (
             TracingSession.tracing_session(),
             CheckpointFactory.open_checkpointer(settings) as checkpointer,
+            StoreFactory.open_store(settings) as store,
         ):
             execution = shell_execution or ShellExecution(settings.resolved_workspace_root)
             try:
                 yield cls.build_agent(
-                    settings, checkpointer=checkpointer, shell_execution=execution
+                    settings, checkpointer=checkpointer, store=store, shell_execution=execution
                 )
             finally:
                 if shell_execution is None:
@@ -421,11 +456,14 @@ class AgentComposer:
             CompiledStateGraph[Any, RunContext, Any, Any]: 可直接异步调用的已编译智能体图实例。
         """
         with TracingSession.tracing_session():
-            async with CheckpointFactory.aopen_checkpointer(settings) as checkpointer:
+            async with (
+                CheckpointFactory.aopen_checkpointer(settings) as checkpointer,
+                StoreFactory.aopen_store(settings) as store,
+            ):
                 execution = shell_execution or ShellExecution(settings.resolved_workspace_root)
                 try:
                     yield cls.build_agent(
-                        settings, checkpointer=checkpointer, shell_execution=execution
+                        settings, checkpointer=checkpointer, store=store, shell_execution=execution
                     )
                 finally:
                     if shell_execution is None:

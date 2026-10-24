@@ -17,6 +17,7 @@ from vertical_harness.bridge.stdio import StdioServer
 from vertical_harness.core.context import RunContext
 from vertical_harness.core.routing import ModelRouting
 from vertical_harness.filesystem.resources import HarnessResources
+from vertical_harness.log.logging import HarnessLogging
 from vertical_harness.runtime.agent_runtime import AgentRuntime
 from vertical_harness.runtime.run_manager import RunManager
 from vertical_harness.runtime.session_service import SessionService
@@ -109,6 +110,7 @@ class AgentLoop:
 
         # 构造成功后原子替换；旧资源关闭失败需及时回收新资源，避免泄漏半初始化配置
         try:
+            HarnessLogging.configure_logging(settings)
             if self.runtime is not None:
                 await self.runtime.aclose()
         except BaseException:

@@ -13,7 +13,7 @@ import json
 import os
 
 from dotenv import dotenv_values
-from langchain_core.tools import tool
+from langchain_core.tools import StructuredTool, ToolException
 from pydantic import SecretStr
 
 
@@ -33,8 +33,7 @@ class WebSearch:
         return os.getenv("EXA_API_KEY") or dotenv_values(".env").get("EXA_API_KEY") or ""
 
     @staticmethod
-    @tool
-    async def web_search(query: str) -> str:
+    async def _search(query: str) -> str:
         """Search the web for sources. Returns titles, URLs and bounded source text.
 
         使用 Exa 搜索引擎异步检索互联网权威网页来源，返回包含标题、链接及受限网页片段的 JSON 字符串。
@@ -47,10 +46,10 @@ class WebSearch:
                 若密钥未配置或请求失败则返回清晰的错误描述字符串。
         """
         if not query.strip():
-            return "Search query must not be blank."
+            raise ToolException("Search query must not be blank.")
         key = WebSearch.search_api_key()
         if not key:
-            return "Web search unavailable: EXA_API_KEY is not configured."
+            raise ToolException("Web search unavailable: EXA_API_KEY is not configured.")
         from langchain_exa import ExaSearchResults
 
         try:
@@ -63,4 +62,10 @@ class WebSearch:
             )
             return json.dumps(results, ensure_ascii=False, default=str)
         except Exception as exc:
-            return f"Web search failed ({type(exc).__name__}); no sources were retrieved."
+            raise ToolException(
+                f"Web search failed ({type(exc).__name__}); no sources were retrieved."
+            ) from exc
+
+    web_search = StructuredTool.from_function(
+        name="web_search", coroutine=_search, handle_tool_error=True
+    )

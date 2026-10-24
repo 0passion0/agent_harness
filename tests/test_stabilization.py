@@ -7,6 +7,7 @@ from pydantic import Field
 
 from vertical_harness import HarnessSettings, RunContext
 from vertical_harness.core import compose, routing
+from vertical_harness.storage.store import StoreFactory
 
 
 class RecordingModel(FakeMessagesListChatModel):
@@ -72,7 +73,8 @@ def test_private_database_cannot_be_read_or_deleted(tmp_path, monkeypatch, async
         enable_memory=False,
         enable_planning=False,
     )
-    config.resolved_store_target.write_text("private sentinel", encoding="utf-8")
+    with StoreFactory.open_store(config) as store:
+        store.put(("private",), "sentinel", {"text": "private sentinel"})
     model = RecordingModel(
         responses=[
             AIMessage(
@@ -101,3 +103,5 @@ def test_private_database_cannot_be_read_or_deleted(tmp_path, monkeypatch, async
     errors = [m for m in result["messages"] if isinstance(m, ToolMessage)]
     assert len(errors) == 2 and all("permission denied" in str(m.content).lower() for m in errors)
     assert config.resolved_store_target.exists()
+    with StoreFactory.open_store(config) as store:
+        assert store.get(("private",), "sentinel").value == {"text": "private sentinel"}

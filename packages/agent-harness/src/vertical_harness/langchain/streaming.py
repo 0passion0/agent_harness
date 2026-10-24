@@ -13,13 +13,14 @@ import asyncio
 import logging
 import math
 from collections.abc import AsyncGenerator
-from contextlib import aclosing
+from contextlib import AsyncExitStack, aclosing
 from datetime import UTC, datetime
 from typing import Any, Literal
 from uuid import uuid4
 
 from langchain_core.messages import AIMessage
 from langchain_core.runnables import RunnableConfig
+from langchain_core.runnables.config import merge_configs
 from langchain_core.runnables.schema import CustomStreamEvent, StandardStreamEvent
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command, Interrupt
@@ -27,7 +28,9 @@ from pydantic import JsonValue, TypeAdapter
 from typing_extensions import TypeForm
 
 from vertical_harness.core.context import RunContext
+from vertical_harness.langchain.callbacks import WorkflowLoggingHandler
 from vertical_harness.langchain.stream_event import StreamEvent, StreamEventType
+from vertical_harness.log.logging import HarnessLogging
 
 # 模块级日志记录器，记录事件流与执行调用周期
 logger = logging.getLogger(__name__)
@@ -41,6 +44,17 @@ class AgentStreaming:
 
     纯静态/类方法集合，供 Desktop IPC 与 CLI 统一调用。
     """
+
+    @staticmethod
+    def _config(config: RunnableConfig) -> RunnableConfig:
+        """为每次执行独立配置观测器，不修改调用方或图级共享 callbacks。
+
+        :param config: 原生运行配置，保留已有 callback manager 和 run_id。
+        :return: 含关联标识和独立计数器的新配置。
+        """
+        configured = merge_configs(config, {"callbacks": [WorkflowLoggingHandler()]})
+        configured["run_id"] = config.get("run_id") or uuid4()
+        return configured
 
     @staticmethod
     def _project(
@@ -190,13 +204,17 @@ class AgentStreaming:
             Any: 图执行完成后最终的状态字典。
         """
         logger.debug("ainvoke_agent_started")
-        async with asyncio.timeout(cls._run_timeout(agent, timeout_seconds)):
-            result = await agent.ainvoke(
-                inputs,
-                config=config,
-                context=context,
-                durability=durability if agent.checkpointer else None,
-            )
+        config = cls._config(config)
+        with HarnessLogging.log_context(
+            str(config["run_id"]), thread_id=config.get("configurable", {}).get("thread_id")
+        ):
+            async with asyncio.timeout(cls._run_timeout(agent, timeout_seconds)):
+                result = await agent.ainvoke(
+                    inputs,
+                    config=config,
+                    context=context,
+                    durability=durability if agent.checkpointer else None,
+                )
         logger.debug("ainvoke_agent_completed")
         return result
 
@@ -236,8 +254,8 @@ class AgentStreaming:
         thread_id = config.get("configurable", {}).get("thread_id")
         if not isinstance(thread_id, str) or not thread_id.strip():
             raise ValueError("Streaming requires a nonempty string thread_id")
-        run_id = config.get("run_id") or uuid4()
-        run_config: RunnableConfig = {**config, "run_id": run_id}
+        run_config = cls._config(config)
+        run_id = run_config["run_id"]
         root_id = str(run_id)
         seq = 0
         interrupts: tuple[Interrupt, ...] = ()
@@ -252,7 +270,12 @@ class AgentStreaming:
         if not isinstance(source, AsyncGenerator):
             raise TypeError("The v2 event stream must be a closeable async generator")
         try:
-            async with asyncio.timeout(cls._run_timeout(agent, timeout_seconds)), aclosing(source):
+            async with (
+                AsyncExitStack() as stack,
+                asyncio.timeout(cls._run_timeout(agent, timeout_seconds)),
+                aclosing(source),
+            ):
+                stack.enter_context(HarnessLogging.log_context(str(run_id), thread_id=thread_id))
                 async for raw in source:
                     if seq == 0:
                         root_id = raw["run_id"]

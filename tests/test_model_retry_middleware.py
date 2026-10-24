@@ -146,6 +146,37 @@ def test_retry_wait_is_cancellable(monkeypatch):
     handler.assert_awaited_once()
 
 
+@pytest.mark.parametrize(
+    "code,message",
+    [
+        ("insufficient_quota", "private provider detail"),
+        (None, "quota exceeded"),
+    ],
+)
+def test_quota_errors_override_server_retry_advice(code, message):
+    handler = Mock(
+        side_effect=status_error(
+            429, code=code, message=message, headers={"x-should-retry": "true"}
+        )
+    )
+    with pytest.raises(APIStatusError):
+        ModelRetryMiddleware().wrap_model_call(model_request(), handler)
+    handler.assert_called_once()
+
+def test_retry_metrics_never_include_exception_payload(monkeypatch, caplog):
+    import logging
+
+    monkeypatch.setattr("vertical_harness.middleware.model_retry.time.sleep", Mock())
+    handler = Mock(side_effect=[status_error(503, message="PRIVATE_TOKEN"), "done"])
+    with caplog.at_level(logging.INFO, logger="vertical_harness.middleware.model_retry"):
+        assert ModelRetryMiddleware().wrap_model_call(model_request(), handler) == "done"
+    record = next(r for r in caplog.records if r.msg == "model_retrying")
+    assert record.event_fields["attempt"] == 1
+    assert record.event_fields["delay_seconds"] > 0
+    assert record.event_fields["error_type"] == "APIStatusError"
+    assert "PRIVATE" not in caplog.text + str(record.event_fields)
+
+
 def test_timeout_budget_is_local_to_model_call(monkeypatch):
     monkeypatch.setattr("vertical_harness.middleware.model_retry.time.sleep", Mock())
     middleware = ModelRetryMiddleware()

@@ -14,7 +14,7 @@ from contextlib import contextmanager
 from logging.handlers import RotatingFileHandler
 from typing import TYPE_CHECKING
 
-from vertical_harness.utils.structured_formatter import _RUN_ID, StructuredFormatter
+from vertical_harness.utils.structured_formatter import _RUN_ID, _THREAD_ID, StructuredFormatter
 
 if TYPE_CHECKING:
     from vertical_harness.config.settings import HarnessSettings
@@ -33,7 +33,7 @@ class HarnessLogging:
 
     @staticmethod
     @contextmanager
-    def log_context(run_id: str) -> Iterator[None]:
+    def log_context(run_id: str, *, thread_id: str | None = None) -> Iterator[None]:
         """设置当前协程/线程上下文中的 run_id 标识符，并在退出时重置。
 
         Args:
@@ -43,10 +43,12 @@ class HarnessLogging:
             None: 激活该运行标识绑定的代码上下文。
         """
         token = _RUN_ID.set(run_id)
+        thread_token = _THREAD_ID.set(thread_id if thread_id is not None else _THREAD_ID.get())
         try:
             yield
         finally:
             _RUN_ID.reset(token)
+            _THREAD_ID.reset(thread_token)
 
     @staticmethod
     def configure_logging(settings: HarnessSettings) -> None:

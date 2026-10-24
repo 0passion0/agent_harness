@@ -100,7 +100,10 @@ class AgentRuntime:
         """
         with TracingSession.tracing_session():
             yield AgentComposer.build_agent(
-                self.settings, checkpointer=self.checkpointer, shell_execution=self.shell
+                self.settings,
+                checkpointer=self.checkpointer,
+                store=self.store,
+                shell_execution=self.shell,
             )
 
     async def aclose(self) -> None:

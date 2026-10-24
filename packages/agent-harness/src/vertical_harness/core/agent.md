@@ -7,3 +7,4 @@ AgentComposer 只装配原生图，模型选择由 ModelRouting 负责，RunCont
 - 请求准备按路由、指令、裁剪顺序执行，再进入原生摘要及预算检查。
 - 主任务与原生子任务共享权限、技能、审批和预算；只读模式禁用委派。
 - open_agent/aopen_agent 创建的资源由自身关闭；显式借用的 Shell 执行器由调用方关闭。
+- Store 通过原生 store 参数注入；业务工具、子代理与结构化输出通过 build_agent 的原生扩展参数装配，不修改核心执行循环。

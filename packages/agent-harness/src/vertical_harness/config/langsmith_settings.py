@@ -6,6 +6,8 @@ from langsmith import Client
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from vertical_harness.config.trace_redaction import TraceRedaction
+
 logger = logging.getLogger(__name__)
 
 
@@ -49,6 +51,8 @@ class LangSmithSettings(BaseSettings):
             api_key=self.api_key.get_secret_value() if self.api_key else None,
             api_url=self.endpoint,
             auto_batch_tracing=auto_batch_tracing,
+            hide_inputs=True,
+            anonymizer=TraceRedaction.anonymize,
         )
         logger.debug("langsmith_client_created", extra={"event_fields": {"project": self.project}})
         return client

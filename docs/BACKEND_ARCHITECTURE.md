@@ -34,6 +34,10 @@
 
 原生子任务继承权限、指令、技能、审批和预算。只读模式同时限制模型可见工具和执行入口。模型重试不重放不完整工具调用，不承诺跨崩溃的副作用 exactly-once。
 
+主图与每个声明式子图分别创建 Middleware 实例。增强文件工具按 `FilesystemMiddleware` 名称替换原生槽；目录指令由 `DirectoryInstructionsMiddleware` 处理，并保持已有 `HarnessFilesystemMiddleware.before_model` 检查点节点名。完整栈顺序与 Hook 矩阵见 [Deep Agents 重构报告](DEEP_AGENTS_REFACTOR.md)。
+
+`AgentComposer` 将借用的 Store 注入原生图；同步/异步上下文管理器管理自身创建的 Store 和 Checkpointer。`AgentStreaming` 每次执行创建独立观测回调，绑定 run/thread 日志上下文；不会将可变计数器挂到共享图配置。桌面读取、启动和删除已有会话前核对检查点身份，不自动认领无身份的历史线程。
+
 ## 文件与进程
 
 `FileMutation` 共享跨实例写锁、协作取消与原子字节替换。文件编辑和资源保存共用同一实现；失败清除临时文件并保留原目标。Office/PDF 通过 MarkItDown 阅读，复杂编辑通过保存的 Python 脚本执行。

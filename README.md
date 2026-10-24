@@ -4,6 +4,8 @@
 
 Python 接口统一通过类调用，例如 `AgentComposer.build_agent(settings)`、`AgentStreaming.astream_agent(...)` 和 `StoreFactory.open_store(settings)`。目录职责见 [后端架构](docs/BACKEND_ARCHITECTURE.md)，编码要求见 [后端规范](docs/BACKEND_CODING_STANDARD.md)。
 
+最新稳定依赖、实际 Middleware 顺序、State/Runtime/持久化边界、扩展入口和验证结果见 [Deep Agents 重构报告](docs/DEEP_AGENTS_REFACTOR.md)。新增业务工具可通过 `build_agent(tools=[...])` 注入，副作用工具用 `metadata={"requires_approval": True}` 接入现有桌面审批。
+
 ## 开发
 
 ```powershell

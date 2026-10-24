@@ -20,6 +20,7 @@ from uuid import UUID
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.messages.ai import UsageMetadata, add_usage
 from langgraph.errors import GraphBubbleUp
+from langgraph.types import Command
 
 # 模块级日志记录器，记录执行树各生命周期事件
 logger = logging.getLogger(__name__)
@@ -40,6 +41,9 @@ class WorkflowLoggingHandler(BaseCallbackHandler):
         self._started: dict[UUID, float] = {}
         self._lock = Lock()
         self._model_calls = 0
+        self._model_rounds = 0
+        self._tool_calls = 0
+        self._tool_errors = 0
         self._usage_reported_calls = 0
         self._usage: UsageMetadata = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
 
@@ -60,6 +64,10 @@ class WorkflowLoggingHandler(BaseCallbackHandler):
             return {
                 **deepcopy(self._usage),
                 "model_calls": self._model_calls,
+                "model_rounds": self._model_rounds,
+                "tool_calls": self._tool_calls,
+                "tool_errors": self._tool_errors,
+                "tool_error_rate": self._tool_errors / self._tool_calls if self._tool_calls else 0,
                 "usage_reported_calls": self._usage_reported_calls,
                 "complete": self._model_calls == self._usage_reported_calls,
             }
@@ -73,10 +81,15 @@ class WorkflowLoggingHandler(BaseCallbackHandler):
             **kwargs (Any): 包含 `run_id`, `parent_run_id`, `name` 等标识符的元数据字典。
         """
         run_id = kwargs["run_id"]
+        component = kwargs.get("name") or (serialized or {}).get("name")
         with self._lock:
             self._started[run_id] = perf_counter()
             if kind == "model":
                 self._model_calls += 1
+            elif kind == "tool":
+                self._tool_calls += 1
+            elif kind == "chain" and component == "model":
+                self._model_rounds += 1
         logger.debug(
             f"{kind}_started",
             extra={
@@ -85,7 +98,7 @@ class WorkflowLoggingHandler(BaseCallbackHandler):
                     "parent_operation_id": str(kwargs["parent_run_id"])
                     if kwargs.get("parent_run_id")
                     else None,
-                    "component": kwargs.get("name") or (serialized or {}).get("name"),
+                    "component": component,
                 }
             },
         )
@@ -96,6 +109,7 @@ class WorkflowLoggingHandler(BaseCallbackHandler):
         *,
         error: BaseException | None = None,
         failed: bool = False,
+        suspended: bool = False,
         **kwargs: Any,
     ) -> None:
         """记录组件结束运行的耗时、状态分类及审计日志。
@@ -112,6 +126,12 @@ class WorkflowLoggingHandler(BaseCallbackHandler):
         run_id = kwargs["run_id"]
         with self._lock:
             started = self._started.pop(run_id, None)
+            if (
+                kind == "tool"
+                and (failed or error is not None)
+                and not isinstance(error, (GraphBubbleUp, CancelledError, KeyboardInterrupt))
+            ):
+                self._tool_errors += 1
         extra: dict[str, Any] = {
             "operation_id": str(run_id),
             "parent_operation_id": str(kwargs["parent_run_id"])
@@ -120,7 +140,7 @@ class WorkflowLoggingHandler(BaseCallbackHandler):
         }
         if started is not None:
             extra["duration_ms"] = round((perf_counter() - started) * 1000, 2)
-        if isinstance(error, GraphBubbleUp):
+        if suspended or isinstance(error, GraphBubbleUp):
             event, level = f"{kind}_suspended", logging.DEBUG
         elif isinstance(error, (CancelledError, KeyboardInterrupt)):
             event, level = f"{kind}_cancelled", logging.WARNING
@@ -129,7 +149,11 @@ class WorkflowLoggingHandler(BaseCallbackHandler):
                 extra["error_type"] = type(error).__name__
             event, level = f"{kind}_failed", logging.ERROR
         else:
-            event, level = f"{kind}_completed", logging.DEBUG
+            event, level = f"{kind}_completed", logging.INFO if kind != "chain" else logging.DEBUG
+        if kind == "chain" and kwargs.get("parent_run_id") is None:
+            extra.update(self.usage)
+            if error is None:
+                level = max(level, logging.INFO)
         logger.log(level, event, extra={"event_fields": extra})
 
     def on_chain_start(self, serialized: dict[str, Any] | None, inputs: Any, **kwargs: Any) -> None:
@@ -149,7 +173,11 @@ class WorkflowLoggingHandler(BaseCallbackHandler):
             outputs (Any): 链输出结果。
             **kwargs (Any): 运行时元数据。
         """
-        self._finish("chain", **kwargs)
+        self._finish(
+            "chain",
+            suspended=isinstance(outputs, dict) and bool(outputs.get("__interrupt__")),
+            **kwargs,
+        )
 
     def on_chain_error(self, error: BaseException, **kwargs: Any) -> None:
         """执行链或图节点发生异常中断时的回调入口。
@@ -222,7 +250,14 @@ class WorkflowLoggingHandler(BaseCallbackHandler):
             output (Any): 工具返回结果对象。
             **kwargs (Any): 运行时元数据。
         """
-        self._finish("tool", failed=getattr(output, "status", None) == "error", **kwargs)
+        messages = (
+            output.update.get("messages", [])
+            if isinstance(output, Command) and isinstance(output.update, dict)
+            else [output]
+        )
+        self._finish(
+            "tool", failed=any(getattr(m, "status", None) == "error" for m in messages), **kwargs
+        )
 
     def on_tool_error(self, error: BaseException, **kwargs: Any) -> None:
         """工具执行抛出未捕获异常时的回调入口。
