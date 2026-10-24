@@ -59,15 +59,3 @@ class DesktopMessages:
         from vertical_harness.bridge.attachments import AttachmentContent
 
         return AttachmentContent.content_blocks(sources, text, root)
-
-    @staticmethod
-    def raw_message(message: Any) -> dict[str, Any]:
-        """将 LangChain 消息对象导出为排除空字段的标准 JSON 字典。
-
-        Args:
-            message: LangChain 消息实例（如 HumanMessage、AIMessage、ToolMessage 等）。
-
-        Returns:
-            dict[str, Any]: 序列化后的字典，过滤所有值为 None 的字段。
-        """
-        return message.model_dump(mode="json", exclude_none=True)

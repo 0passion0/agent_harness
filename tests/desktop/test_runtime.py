@@ -8,14 +8,16 @@ from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, MessagesState, StateGraph
 from langgraph.types import Command, interrupt
 
-from vertical_harness import HarnessSettings, RunContext
 from vertical_harness.bridge.attachments import AttachmentContent
 from vertical_harness.bridge.messages import DesktopMessages
 from vertical_harness.bridge.runtime import DesktopRuntime
 from vertical_harness.config.checkpoint_config import CheckpointConfig
 from vertical_harness.core.compose import AgentComposer
+from vertical_harness.core.context import RunContext
 from vertical_harness.langchain.streaming import AgentStreaming
 from vertical_harness.middleware.context_limit import ContextLimitMiddleware
+from vertical_harness.models import HarnessSettings
+from vertical_harness.runtime.run_manager import RunManager
 from vertical_harness.tools.user_interaction import UserInteraction
 from vertical_harness.utils.usage import UsageEstimator
 
@@ -101,7 +103,6 @@ def test_composed_desktop_agent_can_ask_questions_in_every_permission_mode(
         model="test:questions",
         workspace_root=tmp_path,
         store_backend="memory",
-        enable_memory=False,
     )
     app = AgentComposer.build_agent(
         HarnessSettings.model_validate({**(settings).model_dump(), **selected}),
@@ -206,10 +207,10 @@ def test_snapshot_keeps_multimodal_content_and_marks_usage_estimate():
         content=[{"type": "text", "text": "done"}],
         usage_metadata={"input_tokens": 8, "output_tokens": 3, "total_tokens": 11},
     )
-    dumped = DesktopMessages.raw_message(message)
+    dumped = message.model_dump(mode="json", exclude_none=True)
     assert dumped["content"] == [{"type": "text", "text": "done"}]
     assert dumped["usage_metadata"]["total_tokens"] == 11
-    assert UsageEstimator.usage_estimate([message], "deepseek:deepseek-chat")["used_tokens"] > 0
+    assert UsageEstimator.usage_estimate([message])["used_tokens"] > 0
 
 
 def test_context_usage_counts_actual_request_and_normalizes_reported_usage():
@@ -233,7 +234,6 @@ def test_context_usage_counts_actual_request_and_normalizes_reported_usage():
     ]
     report = UsageEstimator.usage_estimate(
         [],
-        "test:model",
         100,
         request_messages=messages,
         tools=[{"name": "read_file", "description": "Read a file"}],
@@ -245,7 +245,7 @@ def test_context_usage_counts_actual_request_and_normalizes_reported_usage():
     assert sum(section["ratio_of_used"] for section in sections) == pytest.approx(1)
     assert report["used_ratio"] == 1.5
     assert report["remaining_tokens"] == report["remaining_ratio"] == 0
-    pending = UsageEstimator.usage_estimate([], "test:model", options=options())
+    pending = UsageEstimator.usage_estimate([])
     assert pending["used_tokens"] == 0
     assert pending["sections"]["tools"]["tokens"] is None
 
@@ -368,7 +368,6 @@ def test_desktop_context_limit_checks_compacted_model_request(
         workspace_root=tmp_path / "workspace",
         runtime_data_dir=tmp_path / "runtime",
         store_backend="memory",
-        enable_memory=False,
     )
     history = [
         message
@@ -507,9 +506,7 @@ def test_ask_rejection_returns_tool_error_and_allows_model_to_continue(tmp_path,
             await app.ainvoke({"messages": [HumanMessage(content="write rejected.txt")]}, config)
             paused = await app.aget_state(config)
             pending = paused.tasks[0].interrupts[0]
-            result = await app.ainvoke(
-                Command(resume={pending.id: {"decisions": [{"type": "reject"}]}}), config
-            )
+            result = await app.ainvoke(Command(resume={pending.id: {"type": "reject"}}), config)
             assert result["messages"][-2].status == "error"
             assert result["messages"][-2].tool_call_id == "write-call"
             assert result["messages"][-1].content == "I will leave that file unchanged."
@@ -607,7 +604,15 @@ def test_clearing_durable_interrupt_allows_new_message_with_pending_tool_call():
             return {"messages": [AIMessage(content="second task completed")]}
 
         def action(_state):
-            interrupt({"action_requests": [{"name": "write_file"}], "kind": "approval"})
+            interrupt(
+                {
+                    "type": "tool_approval",
+                    "tool_call_id": "call-1",
+                    "name": "write_file",
+                    "args": {},
+                    "description": "Write a file",
+                }
+            )
             return {"messages": [ToolMessage(content="written", tool_call_id="call-1")]}
 
         graph.add_node("plan", plan)
@@ -628,3 +633,37 @@ def test_clearing_durable_interrupt_allows_new_message_with_pending_tool_call():
         assert resumed["messages"][-1].content == "second task completed"
 
     asyncio.run(scenario())
+
+
+@pytest.mark.parametrize(
+    "decisions",
+    [
+        {},
+        {"call": {"decisions": [{"type": "approve"}]}},
+        {"call": {"type": "edit"}},
+        {"call": {"type": []}},
+        {"call": {"type": {}}},
+        {"call": {"type": None}},
+        {"call": {"type": "approve", "args": {}}},
+        {"other": {"type": "approve"}},
+        {"call": {"type": "approve"}, "extra": {"type": "reject"}},
+    ],
+)
+def test_resume_rejects_invalid_native_decisions(decisions):
+    with pytest.raises(ValueError):
+        RunManager._validate_decisions({"call": {"type": "tool_approval"}}, decisions)
+
+
+def test_resume_validates_mixed_question_and_individual_approvals():
+    RunManager._validate_decisions(
+        {
+            "question": {"kind": "question"},
+            "approve": {"type": "tool_approval"},
+            "reject": {"type": "tool_approval"},
+        },
+        {
+            "question": "A custom answer",
+            "approve": {"type": "approve"},
+            "reject": {"type": "reject"},
+        },
+    )

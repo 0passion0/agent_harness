@@ -17,12 +17,10 @@ from typing import TYPE_CHECKING
 from vertical_harness.utils.structured_formatter import _RUN_ID, _THREAD_ID, StructuredFormatter
 
 if TYPE_CHECKING:
-    from vertical_harness.config.settings import HarnessSettings
+    from vertical_harness.models import HarnessSettings
 
 # 专属于 vertical_harness 的日志处理器名称前缀，便于识别和清理
 _HANDLER_PREFIX: str = "vertical_harness."
-# 默认结构化日志格式化器类
-_Formatter = StructuredFormatter
 
 
 class HarnessLogging:
@@ -61,7 +59,7 @@ class HarnessLogging:
             settings (HarnessSettings): 宿主配置实例，读取 `log_level`, `log_format`,
                 `log_file`, `log_max_bytes` 及 `log_backup_count`。
         """
-        formatter = _Formatter(json_output=settings.log_format == "json")
+        formatter = StructuredFormatter(json_output=settings.log_format == "json")
         handlers: list[logging.Handler] = []
         if settings.log_file is not None:
             path = settings.log_file.expanduser().resolve()

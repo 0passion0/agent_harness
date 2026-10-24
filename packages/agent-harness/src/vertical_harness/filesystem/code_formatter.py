@@ -24,9 +24,9 @@ from langchain_core.tools import ToolException
 from pydantic import ConfigDict, TypeAdapter
 from typing_extensions import TypeForm
 
-from vertical_harness.config.formatter_entry import FormatterEntry
 from vertical_harness.execution.process_control import ProcessControl
 from vertical_harness.filesystem.file_mutation import FileMutation
+from vertical_harness.models import FormatterEntry
 
 # 模块级日志记录器，记录格式化执行失败或退出码异常
 logger = logging.getLogger(__name__)

@@ -11,11 +11,11 @@ from uuid import uuid4
 from pydantic import ValidationError
 
 from vertical_harness.config.checkpoint_config import CheckpointConfig
-from vertical_harness.config.settings import HarnessSettings
 from vertical_harness.core.compose import AgentComposer
 from vertical_harness.core.context import RunContext
 from vertical_harness.langchain.streaming import AgentStreaming
 from vertical_harness.log.logging import HarnessLogging
+from vertical_harness.models import HarnessSettings
 
 logger = logging.getLogger(__name__)
 

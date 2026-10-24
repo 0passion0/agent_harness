@@ -278,8 +278,8 @@ def test_sdk_stream_continues_from_checkpointed_partial_content(monkeypatch):
     assert [message.content for message in messages] == [
         "hello", "partial", ModelRetryMiddleware._continuation, "recovered",
     ]
-    assert messages[1].additional_kwargs["opencode_stream_retry"] == {"attempt": 1, "timeouts": 0}
-    assert messages[2].additional_kwargs["opencode_synthetic"] == "interrupted-stream"
+    assert messages[1].additional_kwargs["harness_stream_retry"] == {"attempt": 1, "timeouts": 0}
+    assert messages[2].additional_kwargs["harness_synthetic"] == "interrupted-stream"
     sent = provider.bodies[1]["messages"]
     assert sent[-2] == {"role": "assistant", "content": "partial"}
     assert sent[-1]["content"] == ModelRetryMiddleware._continuation
@@ -323,9 +323,9 @@ def test_stream_continuations_share_retry_budget(monkeypatch):
 
 def test_new_user_input_resets_stream_retry_budget():
     partial = AIMessage(content="partial", additional_kwargs={
-        "opencode_stream_retry": {"attempt": 10, "timeouts": 3},
+        "harness_stream_retry": {"attempt": 10, "timeouts": 3},
     })
-    continuation = HumanMessage(content="continue", additional_kwargs={"opencode_synthetic": "interrupted-stream"})
+    continuation = HumanMessage(content="continue", additional_kwargs={"harness_synthetic": "interrupted-stream"})
     request = model_request().override(messages=[partial, continuation])
     assert ModelRetryMiddleware._retry_state(request) == (10, 3)
     assert ModelRetryMiddleware._retry_state(

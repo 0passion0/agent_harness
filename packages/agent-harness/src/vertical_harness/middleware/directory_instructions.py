@@ -22,11 +22,6 @@ class DirectoryInstructionsMiddleware(AgentMiddleware[Any, Any, Any]):
     backend: DocumentFilesystemBackend
     permissions: list[FilesystemPermission]
 
-    @property
-    def name(self) -> str:
-        """保留已有检查点中的 before_model 节点身份。"""
-        return "HarnessFilesystemMiddleware"
-
     def before_model(self, state: Any, runtime: Any) -> dict[str, Any] | None:
         """按已成功读取的文件加载尚未进入状态的目录指令。
 
@@ -37,10 +32,7 @@ class DirectoryInstructionsMiddleware(AgentMiddleware[Any, Any, Any]):
             path
             for message in messages
             if isinstance(message, HumanMessage)
-            for path in (
-                message.additional_kwargs.get("harness_instructions", [])
-                or message.additional_kwargs.get("opencode_instructions", [])
-            )
+            for path in message.additional_kwargs.get("harness_instructions", [])
         }
         candidates: dict[str, str] = {}
         for message in reversed(messages):
@@ -84,7 +76,6 @@ class DirectoryInstructionsMiddleware(AgentMiddleware[Any, Any, Any]):
                     ),
                     additional_kwargs={
                         "harness_instructions": list(candidates),
-                        "opencode_instructions": list(candidates),
                     },
                 )
             ]

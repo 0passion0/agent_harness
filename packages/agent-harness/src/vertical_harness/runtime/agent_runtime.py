@@ -17,11 +17,11 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.store.base import BaseStore
 
-from vertical_harness.config.settings import HarnessSettings
 from vertical_harness.core.compose import AgentComposer
 from vertical_harness.core.context import RunContext
 from vertical_harness.execution.shell_execution import ShellExecution
 from vertical_harness.log.observability import TracingSession
+from vertical_harness.models import HarnessSettings
 from vertical_harness.storage.checkpoint import CheckpointFactory
 from vertical_harness.storage.store import StoreFactory
 
@@ -90,7 +90,9 @@ class AgentRuntime:
         return instance
 
     @asynccontextmanager
-    async def open_agent(self) -> AsyncIterator[CompiledStateGraph[Any, RunContext, Any, Any]]:
+    async def open_agent(
+        self, *, settings: HarnessSettings | None = None
+    ) -> AsyncIterator[CompiledStateGraph[Any, RunContext, Any, Any]]:
         """基于当前配置周期的检查点与 Shell 资源，借用构建一次性状态图执行实例。
 
         在 LangSmith 链路追踪会话内部，调用 `AgentComposer.build_agent` 编译状态图并产出。
@@ -100,7 +102,7 @@ class AgentRuntime:
         """
         with TracingSession.tracing_session():
             yield AgentComposer.build_agent(
-                self.settings,
+                settings if settings is not None else self.settings,
                 checkpointer=self.checkpointer,
                 store=self.store,
                 shell_execution=self.shell,

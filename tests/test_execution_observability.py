@@ -12,11 +12,11 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.types import Command
 
 from test_deepagents_architecture import Model, build, call, settings
-from vertical_harness.config.langsmith_settings import LangSmithSettings
 from vertical_harness.config.trace_redaction import TraceRedaction
 from vertical_harness.langchain.callbacks import WorkflowLoggingHandler
 from vertical_harness.langchain.streaming import AgentStreaming
 from vertical_harness.log.logging import HarnessLogging
+from vertical_harness.models import LangSmithSettings
 from vertical_harness.tools.search import WebSearch
 
 

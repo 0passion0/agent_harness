@@ -7,10 +7,11 @@ from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.types import Command
 from pydantic import Field
 
-from vertical_harness import AgentComposer, HarnessSettings
 from vertical_harness.core import compose
+from vertical_harness.core.compose import AgentComposer
 from vertical_harness.langchain.streaming import AgentStreaming
 from vertical_harness.langchain.tool_details import ToolDetails
+from vertical_harness.models import HarnessSettings
 
 
 class ToolModel(FakeMessagesListChatModel):
@@ -64,7 +65,6 @@ def make_agent(tmp_path, monkeypatch, mode, tool_name="write_file", args=None):
         model="test:deepagents",
         workspace_root=tmp_path,
         store_backend="memory",
-        enable_memory=False,
         enable_planning=False,
     )
     return AgentComposer.build_agent(
@@ -207,14 +207,12 @@ def test_delegated_writes_require_and_resume_desktop_approval(tmp_path, monkeypa
     agent, _model = make_agent(tmp_path, monkeypatch, "ask")
     config = {"configurable": {"thread_id": "delegated-approval"}}
     pending = agent.invoke({"messages": [HumanMessage(content="Delegate a file update")]}, config)
-    assert pending["__interrupt__"][0].value == {
-        "kind": "approval",
-        "action_requests": [
-            {"name": "write_file", "args": {"file_path": "/result.txt", "content": "verified"}}
-        ],
-    }
+    assert pending["__interrupt__"][0].value.items() >= {
+        "type": "tool_approval", "tool_call_id": "child-tool", "name": "write_file",
+        "args": {"file_path": "/result.txt", "content": "verified"},
+    }.items()
     assert not (tmp_path / "result.txt").exists()
-    resumed = agent.invoke(Command(resume={"decisions": [{"type": decision}]}), config)
+    resumed = agent.invoke(Command(resume={"type": decision}), config)
     assert resumed["messages"][-1].content == "All done"
     assert (tmp_path / "result.txt").exists() == (decision == "approve")
 
@@ -254,11 +252,11 @@ def test_delegated_approval_streams_to_desktop_and_resumes(tmp_path, monkeypatch
         ) as events:
             pending = [event async for event in events]
         assert pending[-1].type == "run.interrupted"
-        assert pending[-1].data["interrupts"][0]["value"]["kind"] == "approval"
+        assert pending[-1].data["interrupts"][0]["value"]["type"] == "tool_approval"
         assert not (tmp_path / "result.txt").exists()
         async with aclosing(
             AgentStreaming.astream_agent(
-                agent, Command(resume={"decisions": [{"type": "approve"}]}), config=config
+                agent, Command(resume={"type": "approve"}), config=config
             )
         ) as events:
             resumed = [event async for event in events]

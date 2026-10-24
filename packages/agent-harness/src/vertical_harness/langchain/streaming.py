@@ -29,8 +29,8 @@ from typing_extensions import TypeForm
 
 from vertical_harness.core.context import RunContext
 from vertical_harness.langchain.callbacks import WorkflowLoggingHandler
-from vertical_harness.langchain.stream_event import StreamEvent, StreamEventType
 from vertical_harness.log.logging import HarnessLogging
+from vertical_harness.models import StreamEvent, StreamEventType
 
 # 模块级日志记录器，记录事件流与执行调用周期
 logger = logging.getLogger(__name__)

@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from vertical_harness.config.settings import HarnessSettings
+from vertical_harness.models import HarnessSettings
 
 
 def test_context_budget_accepts_environment_integer(monkeypatch):

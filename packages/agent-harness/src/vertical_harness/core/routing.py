@@ -13,8 +13,8 @@ from langchain.chat_models import init_chat_model
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_deepseek import ChatDeepSeek
 
-from vertical_harness.config.settings import HarnessSettings
 from vertical_harness.middleware.routing import ModelRouterMiddleware
+from vertical_harness.models import HarnessSettings
 
 # 模块级日志记录器，记录模型初始化与动态路由构建事件
 logger = logging.getLogger(__name__)

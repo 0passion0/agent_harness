@@ -72,11 +72,6 @@ function text(value: unknown): string {
 
 
 
-/** 断言当前无运行中任务 */
-function idle(): void {
-  if (desktop.isRunning()) throw new Error('请先结束当前任务')
-}
-
 /**
  * 校验并解析工作区内的本地文件绝对物理路径，严禁路径逃逸。
  *
@@ -139,7 +134,6 @@ async function start(): Promise<void> {
 
   // ===== 2. 工作区绑定与数据目录路由 =====
   handle('workspace:select', async () => {
-    idle()
     const result = await dialog.showOpenDialog(window, { properties: ['openDirectory', 'createDirectory'] })
     return result.canceled ? null : desktop.bindWorkspace(realpathSync(result.filePaths[0]))
   })
@@ -154,7 +148,6 @@ async function start(): Promise<void> {
   // 3.3 技能 ZIP 归档导入原生对话框路由
   handle('skills:import', async (scope, projectId) => {
     // 第一步：确保主状态处于空闲（idle）状态，断言校验作用域与项目参数合法性
-    idle()
     if (scope !== 'global' && scope !== 'project') throw new Error('配置范围无效')
     if (typeof projectId !== 'string') throw new Error('项目参数无效')
     // 第二步：调起系统原生单选文件选择器，筛选 .zip 归档文件

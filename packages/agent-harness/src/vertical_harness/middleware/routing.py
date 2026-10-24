@@ -14,8 +14,8 @@ from typing import Any
 
 from langchain.agents.middleware import AgentMiddleware, ModelRequest, ModelResponse
 
-from vertical_harness.config.settings import HarnessSettings
 from vertical_harness.config.task_tier import TaskTier
+from vertical_harness.models import HarnessSettings
 
 # 模块级日志记录器，记录动态路由决策事件
 logger = logging.getLogger(__name__)

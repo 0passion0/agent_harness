@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
@@ -15,7 +15,7 @@ function setup() {
   const events: EventFrame[] = [], snapshots = new Map<string, { messages: any[]; interrupts: Interrupt[]; run_id?: string }>()
   const request = vi.fn(async (method: string, params: any) => {
     if (method === 'environment') return { model: 'deepseek:deepseek-flash', analysis_enabled: true, exa_configured: true, python_executable: 'python', python_version: '3.12', node_executable: 'node', node_version: '22', platform: 'win32' }
-    if (method === 'catalog.get') return { }
+    if (method === 'catalog.get' || method.startsWith('harness.')) return { }
     if (method === 'snapshot') return { thread_id: params.thread_id, run_id: null, artifacts: [], token_usage: tokenReport, ...(snapshots.get(params.thread_id) ?? { messages: [], interrupts: [] }) }
     if (method === 'configure') return { model: params.options.model_code }
     if (method === 'run.start' || method === 'run.resume') return { run_id: params.run_id }
@@ -28,7 +28,69 @@ function setup() {
 }
 function event(run: string, thread: string, type: string, data = {}): EngineEvent { return { run_id: run, thread_id: thread, type, data, operation_id: 'call', name: 'test', agent_name: null } }
 
-it('manages resources by explicit project without switching chats and blocks edits during runs', async () => {
+it('runs independent sessions, restores live output on navigation and stops only the selected run', async () => {
+  const s = setup(); await s.application.initialize(); await s.command('project.create', { name: '并发项目' })
+  const first = await s.command('session.snapshot') as any, one = randomUUID(), two = randomUUID()
+  await s.command('run.start', { text: '第一任务' }, one)
+  await expect(s.command('run.start', { text: '重复任务' })).rejects.toThrow('当前会话')
+  const second = await s.command('session.clear') as any
+  await s.command('run.start', { text: '第二任务' }, two)
+  s.application.receive({ event: 'agent.event', data: event(one, first.thread_id, 'model.delta', { text: '第一会话输出' }) })
+  s.application.receive({ event: 'agent.event', data: event(two, second.thread_id, 'model.delta', { text: '第二会话输出' }) })
+  await s.application.serial(async () => {})
+  expect(await s.command('session.list')).toEqual(expect.arrayContaining([
+    expect.objectContaining({ id: first.thread_id, status: 'running' }),
+    expect.objectContaining({ id: second.thread_id, status: 'running' })
+  ]))
+  expect(await s.command('session.resume', { session_id: first.thread_id })).toMatchObject({
+    active_run: { id: one, phase: 'running', records: [expect.objectContaining({ text: '第一会话输出' })] }
+  })
+  await s.command('run.stop', { run_id: one })
+  expect(s.request).toHaveBeenLastCalledWith('run.stop', { run_id: one, thread_id: first.thread_id })
+  s.application.receive({ event: 'run.cancelled', data: { run_id: one, thread_id: first.thread_id } })
+  await s.application.serial(async () => {})
+  expect(await s.command('session.resume', { session_id: second.thread_id })).toMatchObject({ active_run: { id: two, phase: 'running' } })
+  await s.command('context.configure', { max_tokens: '64000' })
+  await expect(s.command('model.test')).resolves.toBeDefined()
+  await expect(s.command('session.export', { session_id: second.thread_id })).resolves.toBeDefined()
+})
+
+it('archives background completions in the original project without changing the selected project', async () => {
+  const s = setup(); await s.application.initialize(); await s.command('project.create', { name: '原项目' })
+  const original = s.application.state().active_project_id!, first = await s.command('session.snapshot') as any, run = randomUUID()
+  await s.command('run.start', { text: '后台任务' }, run)
+  await s.command('project.create', { name: '当前项目' })
+  const selected = s.application.state().active_project_id!
+  const current = await s.command('session.snapshot') as any
+  await s.command('run.start', { text: '前台任务' })
+  s.application.receive({ event: 'agent.event', data: event(run, first.thread_id, 'model.completed', { message_id: 'background-model', usage: { input_tokens: 7, output_tokens: 3, total_tokens: 10 } }) })
+  s.application.receive({ event: 'agent.event', data: event(run, first.thread_id, 'run.completed') })
+  await s.application.serial(async () => {})
+  expect(s.application.state().active_project_id).toBe(selected)
+  expect(await s.command('session.snapshot')).toMatchObject({ session_id: current.thread_id, active_run: { phase: 'running' } })
+  const archived = JSON.parse(readFileSync(path.join(s.directory, 'projects', original, 'sessions', `${first.thread_id}.json`), 'utf8'))
+  expect(archived.runs).toHaveLength(1)
+  expect(archived.runs[0]).toMatchObject({ id: run, status: 'complete' })
+  expect(s.events.find(frame => frame.event === 'run.finished' && frame.run_id === run)).toMatchObject({ session_id: first.thread_id })
+  await s.command('project.select', { project_id: original })
+  const usage = await s.command('usage.stats', { period: '', model: '' }) as any
+  expect(usage.totals.total_tokens).toBe(10)
+})
+
+it('deletes one running session while retaining another live session', async () => {
+  const s = setup(); await s.application.initialize(); await s.command('project.create', { name: '删除隔离' })
+  const first = await s.command('session.snapshot') as any, one = randomUUID()
+  await s.command('run.start', { text: '删除此任务' }, one)
+  const second = await s.command('session.clear') as any, two = randomUUID()
+  await s.command('run.start', { text: '保留此任务' }, two)
+  await s.command('session.delete', { session_id: first.thread_id })
+  s.application.receive({ event: 'agent.event', data: event(one, first.thread_id, 'run.completed') })
+  await s.application.serial(async () => {})
+  expect(existsSync(path.join(s.directory, 'projects', s.application.state().active_project_id!, 'sessions', `${first.thread_id}.json`))).toBe(false)
+  expect(await s.command('session.snapshot')).toMatchObject({ session_id: second.thread_id, active_run: { id: two } })
+})
+
+it('manages resources by explicit project without switching chats and permits edits during runs', async () => {
   const s = setup(); await s.application.initialize()
   await expect(s.command('harness.inspect', { scope: 'project', project_id: 'unknown' })).rejects.toThrow('项目')
   s.request.mockResolvedValueOnce({} as any)
@@ -48,8 +110,8 @@ it('manages resources by explicit project without switching chats and blocks edi
   await s.application.importSkills('global', '', 'C:/skill.zip')
   expect(s.request).toHaveBeenLastCalledWith('harness.import', { scope: 'global', archive_path: 'C:/skill.zip', workspace_root: null })
   await s.command('run.start', { text: 'run' })
-  await expect(s.command('harness.remove', { scope: 'global', project_id: '', kind: 'skill', name: 'example' })).rejects.toThrow('任务')
-  await expect(s.application.importSkills('global', '', 'C:/skill.zip')).rejects.toThrow('任务')
+  await expect(s.command('harness.remove', { scope: 'global', project_id: '', kind: 'skill', name: 'example' })).resolves.toEqual({})
+  await expect(s.application.importSkills('global', '', 'C:/skill.zip')).resolves.toEqual({})
 })
 
 it('creates projects and restores isolated sessions from disk', async () => {
@@ -77,7 +139,9 @@ it('keeps source run IDs, validates attachments before start, streams and saves 
   const [attachment] = s.application.storage().importAttachments([file])
   await s.command('run.attachments', { text: '读取数据', attachment_ids: [attachment.id] }, run)
   expect(s.request).toHaveBeenCalledWith('run.start', expect.objectContaining({ run_id: run, text: '读取数据', attachments: [expect.objectContaining({ name: 'input.csv' })] }))
-  await expect(s.command('project.create', { name: '运行中' })).rejects.toThrow('任务')
+  const originalProject = s.application.state().active_project_id!
+  await s.command('project.create', { name: '运行中' })
+  await s.command('project.select', { project_id: originalProject })
   s.application.receive({ event: 'agent.event', data: event(run, snapshot.thread_id, 'model.delta', { text: '结果' }) })
   s.snapshots.set(snapshot.thread_id, { messages: [{ type: 'human', data: { id: 'user-1', content: '读取数据' } }, { type: 'ai', data: { id: 'model-1', content: '结果', usage_metadata: { input_tokens: 10, output_tokens: 2, total_tokens: 12 } } }], interrupts: [] })
   s.application.receive({ event: 'agent.event', data: event(run, snapshot.thread_id, 'run.completed') })
@@ -97,13 +161,13 @@ it('resumes research questions with text and approvals with exact decisions usin
   expect(s.events.at(-1)).toMatchObject({ event: 'interaction.request', data: { kind: 'question', question: '分析目标？' } })
   await s.command('interaction.answer', { run_id: run, interaction_id: 'research', answer: '比较两组均值' })
   expect(s.request).toHaveBeenCalledWith('run.resume', { thread_id: snapshot.thread_id, run_id: run, decisions: { research: '比较两组均值' } })
-  s.application.receive({ event: 'agent.event', data: event(run, snapshot.thread_id, 'run.interrupted', { interrupts: [{ id: 'approval', value: { action_requests: [{ name: 'execute_python', args: { code: 'print(1)' } }] } }] }) })
+  s.application.receive({ event: 'agent.event', data: event(run, snapshot.thread_id, 'run.interrupted', { interrupts: [{ id: 'approval', value: { type: 'tool_approval', tool_call_id: 'python', name: 'execute_python_file', args: { file_path: '/analysis.py' }, description: 'Execute script' } }] }) })
   await s.application.serial(async () => {})
-  expect(s.events.at(-1)).toMatchObject({ event: 'interaction.request', data: { kind: 'approval', action_requests: [{ name: 'execute_python', args: { code: 'print(1)' } }] } })
+  expect(s.events.at(-1)).toMatchObject({ event: 'interaction.request', data: { kind: 'approval', action_requests: [{ name: 'execute_python_file', args: { file_path: '/analysis.py' } }] } })
   expect((s.events.at(-1) as Extract<EventFrame, { event: 'interaction.request' }>).data.question).not.toContain('print(1)')
   await expect(s.command('interaction.answer', { run_id: run, interaction_id: 'approval', answer: 'anything' })).rejects.toThrow('审批')
   await s.command('interaction.answer', { run_id: run, interaction_id: 'approval', answer: 'reject' })
-  expect(s.request).toHaveBeenCalledWith('run.resume', { thread_id: snapshot.thread_id, run_id: run, decisions: { approval: { decisions: [{ type: 'reject' }] } } })
+  expect(s.request).toHaveBeenCalledWith('run.resume', { thread_id: snapshot.thread_id, run_id: run, decisions: { approval: { type: 'reject' } } })
 })
 
 it.each(['0', '475001', '1.5'])('rejects an invalid context budget %s before saving', async max => {
@@ -216,7 +280,7 @@ it.each([true, false])('restores a durable paused run after backend exit when in
   const snapshot = await s.command('session.snapshot') as any, run = randomUUID()
   await s.command('run.start', { text: '继续' }, run)
   s.application.receive({ event: 'agent.event', data: event(run, snapshot.thread_id, 'custom.progress', { kind: 'workflow.node', node: 'review', status: 'running' }) })
-  const interrupts = [{ id: 'question-1', value: { question: '补充说明？' } }]
+  const interrupts: Interrupt[] = [{ id: 'question-1', value: { kind: 'question', question: '补充说明？', options: [] } }]
   if (delivered) s.application.receive({ event: 'agent.event', data: event(run, snapshot.thread_id, 'run.interrupted', { interrupts }) })
   await s.application.serial(async () => {})
   s.snapshots.set(snapshot.thread_id, { messages: [], interrupts, run_id: run })

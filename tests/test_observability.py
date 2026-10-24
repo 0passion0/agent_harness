@@ -5,8 +5,8 @@ from unittest.mock import Mock
 from langsmith import tracing_context
 from langsmith.run_helpers import get_tracing_context
 
-from vertical_harness.config.langsmith_settings import LangSmithSettings
 from vertical_harness.log.observability import TracingSession
+from vertical_harness.models import LangSmithSettings
 
 
 def test_dotenv_configuration_and_tracing_lifecycle(tmp_path, monkeypatch):

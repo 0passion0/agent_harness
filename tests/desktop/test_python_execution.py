@@ -8,10 +8,10 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.types import Command
 
-from vertical_harness import HarnessSettings
 from vertical_harness.core.compose import AgentComposer
 from vertical_harness.execution.process_control import ProcessControl
 from vertical_harness.execution.python_execution import PythonExecution
+from vertical_harness.models import HarnessSettings
 
 
 @pytest.mark.parametrize("stop", ["cancel", "timeout"])
@@ -243,7 +243,6 @@ def test_python_permission_modes_in_composed_graph(tmp_path, monkeypatch, mode, 
         model="test:python",
         workspace_root=tmp_path,
         store_backend="memory",
-        enable_memory=False,
     )
     options = {
         "runtimes": {"python": sys.executable},
@@ -267,11 +266,11 @@ def test_python_permission_modes_in_composed_graph(tmp_path, monkeypatch, mode, 
         if mode == "ask":
             assert not (tmp_path / "output.txt").exists()
             pending = state["__interrupt__"][0]
-            assert pending.value["action_requests"][0]["args"] == {"file_path": "/analysis.py"}
+            assert pending.value["args"] == {"file_path": "/analysis.py"}
             state = await agent.ainvoke(
                 Command(
                     resume={
-                        pending.id: {"decisions": [{"type": "approve" if approve else "reject"}]}
+                        pending.id: {"type": "approve" if approve else "reject"}
                     }
                 ),
                 config,

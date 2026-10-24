@@ -15,8 +15,8 @@ from typing import Annotated, Any, Literal
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from vertical_harness.config.formatter_entry import FormatterEntry
 from vertical_harness.config.store_backend import StoreBackendType
+from vertical_harness.models.formatter_entry import FormatterEntry
 
 # 模块级日志记录器，记录配置校验与解析事件
 logger = logging.getLogger(__name__)

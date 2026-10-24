@@ -145,9 +145,9 @@ export class LocalStore {
    * @returns 项目数据目录物理绝对路径
    * @throws Error 当尚未选择任何项目时抛出
    */
-  projectDirectory(): string {
-    if (!this.activeProject) throw new Error('请先创建或选择项目')
-    return path.join(this.directory, 'projects', this.activeProject.id)
+  projectDirectory(projectId = this.activeProject?.id): string {
+    if (!this.index.projects.some(project => project.id === projectId)) throw new Error('请先创建或选择项目')
+    return path.join(this.directory, 'projects', projectId!)
   }
 
   /**
@@ -170,8 +170,8 @@ export class LocalStore {
    * @returns 会话对象
    * @throws Error 当会话不存在或不属于当前项目时抛出
    */
-  session(id: string): Session {
-    const session = this.index.sessions.find(item => item.id === id && item.project_id === this.activeProject?.id)
+  session(id: string, projectId = this.activeProject?.id): Session {
+    const session = this.index.sessions.find(item => item.id === id && item.project_id === projectId)
     if (!session) throw new Error('会话不属于当前项目')
     return session
   }
@@ -245,8 +245,8 @@ export class LocalStore {
    * @param id - 会话 ID
    * @param text - 用户首次输入的提示词文本
    */
-  touch(id: string, text?: string): void {
-    const session = this.session(id)
+  touch(id: string, text?: string, projectId = this.activeProject?.id): void {
+    const session = this.session(id, projectId)
     if (text && session.title === '新会话') session.title = text.slice(0, 60)
     session.updated = new Date().toISOString()
     this.save()

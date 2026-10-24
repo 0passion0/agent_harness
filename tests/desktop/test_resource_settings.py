@@ -35,7 +35,7 @@ def test_new_desktop_turn_refreshes_skill_metadata(tmp_path, monkeypatch):
     loop = AgentLoop()
     received = []
 
-    async def capture(_self, thread_id, run_id, inputs):
+    async def capture(_self, thread_id, run_id, inputs, settings):
         received.append(inputs)
 
     monkeypatch.setattr(RunManager, "_run", capture)

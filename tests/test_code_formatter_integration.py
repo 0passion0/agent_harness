@@ -7,11 +7,11 @@ from langgraph.checkpoint.memory import InMemorySaver
 from pydantic import ValidationError
 
 from test_harness_workflows import WorkflowModel, call
-from vertical_harness.config import HarnessSettings
 from vertical_harness.core import compose
 from vertical_harness.core.context import RunContext
 from vertical_harness.filesystem.code_formatter import CodeFormatter
 from vertical_harness.filesystem.document_backend import DocumentFilesystemBackend
+from vertical_harness.models import HarnessSettings
 
 
 def formatter_config(exit_code=0):

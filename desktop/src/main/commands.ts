@@ -93,17 +93,6 @@ export function assertFilePaths(value: unknown): asserts value is string[] {
 }
 
 /**
- * 判断当前智能体运行阶段是否允许切换工作区目录。
- * 仅在空闲 (idle) 或未连接 (disconnected) 状态下允许切换，防止运行中导致文件句柄竞争。
- *
- * @param phase - 当前生命周期阶段
- * @returns 是否允许切换
- */
-export function canSwitchWorkspace(phase: 'idle' | 'running' | 'stopping' | 'question' | 'disconnected'): boolean {
-  return phase === 'idle' || phase === 'disconnected'
-}
-
-/**
  * 解析成果虚拟路径并调起系统应用打开交付文件。
  *
  * 第一步：校验虚拟路径安全前缀（必须以 `/workspace/` 开头）。

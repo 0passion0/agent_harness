@@ -171,7 +171,7 @@ export type Snapshot = {
   artifacts: ArtifactRef[]
   /** 每一轮运行的历史执行详情记录 */
   runs: Array<{ requests: Json[]; tools: Record<string, Json>; elapsed: number; id?: string; started_at?: string; finished_at?: string; status?: 'complete' | 'failed' | 'cancelled'; records?: RunRecord[]; user_message_id?: string }>
-  active_run?: { id: string; started_at: string; records: RunRecord[]; user_message_id?: string }
+  active_run?: { id: string; started_at: string; records: RunRecord[]; phase: 'running' | 'question'; question?: Question; user_message_id?: string }
   /** 本会话总体的 Token 用量与估算数据 */
   totals: Record<string, Json>
   /** 是否有尚未归档沉淀的历史增量 */
@@ -188,6 +188,7 @@ export type SessionItem = {
   id: string
   /** 会话标题 */
   title: string
+  status?: 'running' | 'question'
   /** 最后修改/更新时间（ISO 字符串） */
   updated: string
 }
@@ -410,7 +411,8 @@ export type EventFrame =
   | { event: 'run.event'; session_id: string; run_id: string; data: RunRecord }
   | { event: 'interaction.request'; session_id: string; run_id: string; data: Question }
   | { event: 'run.finished'; session_id: string; run_id: string; data: { status: 'complete' | 'cancelled' | 'failed'; snapshot: Snapshot } }
-  | { event: 'backend.exited' | 'protocol.error'; data: { message: string } }
+  | { event: 'backend.exited'; data: { message: string } }
+  | { event: 'protocol.error'; session_id?: string; data: { message: string } }
 
 /**
  * 通过 Electron preload contextBridge 向渲染进程暴露的原生能力 API 契约。

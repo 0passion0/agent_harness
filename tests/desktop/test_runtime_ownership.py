@@ -5,10 +5,10 @@ import pytest
 from langchain_core.messages import AIMessage, HumanMessage
 from test_bridge import configure
 
-from vertical_harness.config.settings import HarnessSettings
 from vertical_harness.core import compose
 from vertical_harness.core.context import RunContext
 from vertical_harness.desktop import AgentLoop
+from vertical_harness.models import HarnessSettings
 from vertical_harness.runtime.agent_runtime import AgentRuntime
 from vertical_harness.runtime.run_manager import RunManager
 from vertical_harness.runtime.session_service import SessionService
@@ -134,7 +134,7 @@ def test_memory_resources_survive_multiple_operations_and_prestart_cancel(tmp_pa
                 str(uuid4()), str(uuid4()), HumanMessage(content="cancel before first scheduling")
             )
             assert await manager.cancel()
-            assert manager.active is None
+            assert not manager.is_running
             assert not await manager.cancel()
             assert events == []
         finally:

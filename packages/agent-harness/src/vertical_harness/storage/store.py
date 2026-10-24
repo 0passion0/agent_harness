@@ -9,7 +9,6 @@
 from __future__ import annotations
 
 import logging
-import sqlite3
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager, contextmanager
 
@@ -17,8 +16,8 @@ from langgraph.store.base import BaseStore
 from langgraph.store.memory import InMemoryStore
 from langgraph.store.sqlite import AsyncSqliteStore, SqliteStore
 
-from vertical_harness.config.settings import HarnessSettings
 from vertical_harness.config.store_backend import StoreBackendType
+from vertical_harness.models import HarnessSettings
 
 # 模块级日志记录器，记录状态存储打开与就绪状态
 logger = logging.getLogger(__name__)
@@ -46,37 +45,6 @@ class StoreFactory:
             target.parent.mkdir(parents=True, exist_ok=True)
             return str(target)
         return target
-
-    @classmethod
-    def create_store(cls, settings: HarnessSettings) -> BaseStore:
-        """根据已验证的配置创建立即可用的原生 LangGraph BaseStore 存储实例。
-
-        Args:
-            settings (HarnessSettings): 宿主全局配置对象。
-
-        Returns:
-            BaseStore: 包含表结构的初始化就绪 BaseStore 实例。
-
-        Raises:
-            Exception: 当 SQLite 初始化异常时关闭连接并抛出。
-        """
-        if settings.store_backend == StoreBackendType.MEMORY:
-            logger.debug("store_created", extra={"event_fields": {"backend": "memory"}})
-            return InMemoryStore()
-        logger.debug("store_opening", extra={"event_fields": {"backend": "sqlite"}})
-        conn = sqlite3.connect(
-            cls._prepare_conn_string(settings),
-            check_same_thread=False,
-            isolation_level=None,
-        )
-        try:
-            store = SqliteStore(conn)
-            store.setup()
-        except Exception:
-            conn.close()
-            raise
-        logger.info("store_ready", extra={"event_fields": {"backend": "sqlite"}})
-        return store
 
     @classmethod
     @contextmanager

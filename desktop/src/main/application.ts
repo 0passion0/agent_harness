@@ -9,7 +9,7 @@
 
 import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs'
 import path from 'node:path'
-import type { ApplicationState, Command, ConfigScope, EventFrame, HarnessConfig, Json, Question, RunRecord, SessionTokenReport, Snapshot } from '../shared/protocol'
+import type { ApplicationState, Command, ConfigScope, EventFrame, HarnessConfig, Json, Question, RunRecord, SessionItem, SessionTokenReport, Snapshot } from '../shared/protocol'
 import type { Backend, EngineFrame, EngineEvent, Interrupt } from './backend'
 import { DesktopStore } from './desktop-store'
 import { LocalStore, writeAtomic } from './local-store'
@@ -37,6 +37,8 @@ type Saved = {
 type Running = {
   id: string
   thread: string
+  project: string
+  files: DesktopStore
   started: number
   records: RunRecord[]
   interrupts: Interrupt[]
@@ -77,8 +79,7 @@ export class DesktopApplication {
   /** 后端报告的 Python/Node 运行时环境信息 */
   private environment: Environment | null = null
   /** 当前正在执行或暂停等待交互的任务句柄 */
-  private running: Running | null = null
-  /** 系统已注册的插件与技能目录 */
+  private running = new Map<string, Running>()
   /** 任务串行化 Promise 执行队列（防止并发写索引导致竞争） */
   private queue: Promise<unknown> = Promise.resolve()
 
@@ -169,28 +170,10 @@ export class DesktopApplication {
    * @date 2026-10-22
    */
   async importSkills(scope: ConfigScope, projectId: string, archive: string): Promise<HarnessConfig> {
-    // 第一步：确保主状态处于空闲（idle）状态
-    this.idle()
     // 第二步：解析工作区根路径并向后端引擎发起 harness.import 请求
     return this.backend.request('harness.import', {
       scope, archive_path: archive, workspace_root: this.resourceWorkspace(scope, projectId)
     })
-  }
-
-  /**
-   * 判断当前是否有任务处于运行中或等待交互状态。
-   */
-  isRunning(): boolean {
-    return this.running !== null
-  }
-
-  /**
-   * 断言当前处于空闲状态，若有运行中的任务则阻止切换项目或工作区。
-   *
-   * @throws Error 当正在执行任务时抛出
-   */
-  private idle(): void {
-    if (this.running) throw new Error('请先结束当前任务')
   }
 
   /**
@@ -203,6 +186,13 @@ export class DesktopApplication {
     const workspace = local.activeProject?.path ?? path.join(directory, 'workspace')
     mkdirSync(workspace, { recursive: true })
     this.files = new DesktopStore(directory, workspace, globalDir)
+  }
+
+  private sessions(query = ''): SessionItem[] {
+    return this.local.sessions(query).map(session => {
+      const run = this.running.get(session.id)
+      return run ? { ...session, status: run.interrupts.length ? 'question' : 'running' } : session
+    })
   }
 
   /**
@@ -240,14 +230,14 @@ export class DesktopApplication {
   /**
    * 将当前项目的设置、自定义提示词、启用的技能及 MCP 配置同步发送至后端。
    */
-  private async configure(): Promise<void> {
-    const local = this.account(), files = this.storage(), settings = files.readSettings()
+  private async configure(project = this.account().activeProject!.id, files = this.storage()): Promise<void> {
+    const settings = files.readSettings()
     const config = files.inspectConfig('project')
     await this.backend.request('configure', {
-      tenant_id: local.activeProject!.id,
+      tenant_id: project,
       user_id: 'default',
-      workspace_root: this.workspace(),
-      runtime_data_dir: local.projectDirectory(),
+      workspace_root: files.workspace,
+      runtime_data_dir: files.directory,
       options: {
         model_code: settings.model_code || this.environment!.model,
         runtimes: settings.runtimes,
@@ -285,25 +275,25 @@ export class DesktopApplication {
   }
 
   /** 获取指定会话已保存执行历史 JSON 文件的绝对物理路径 */
-  private recordPath(session: string): string {
-    this.account().session(session)
-    return path.join(this.account().projectDirectory(), 'sessions', `${session}.json`)
+  private recordPath(session: string, project = this.account().activeProject!.id): string {
+    this.account().session(session, project)
+    return path.join(this.account().projectDirectory(project), 'sessions', `${session}.json`)
   }
 
   /** 读取指定会话的历史保存记录 */
-  private saved(session: string): Saved {
-    const file = this.recordPath(session)
+  private saved(session: string, project = this.account().activeProject!.id): Saved {
+    const file = this.recordPath(session, project)
     return existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) as Saved : { runs: [], attachment_ids: [], analysis: {}, last_run_id: null }
   }
 
   /** 原子持久化指定会话的执行历史记录 */
-  private save(session: string, value: Saved): void {
-    writeAtomic(this.recordPath(session), JSON.stringify(value))
+  private save(session: string, value: Saved, project = this.account().activeProject!.id): void {
+    writeAtomic(this.recordPath(session, project), JSON.stringify(value))
   }
 
   /** 统计指定会话累计 Token 与模型用量 */
-  private totals(sessionId: string): Snapshot['totals'] {
-    const usage = this.storage().usageStats('', '', { projectId: this.account().activeProject!.id, sessionId })
+  private totals(sessionId: string, project = this.account().activeProject!.id, files = this.storage()): Snapshot['totals'] {
+    const usage = files.usageStats('', '', { projectId: project, sessionId })
     return {
       ...usage.totals,
       models: usage.models.map(model => ({ ...model, cache_hit_tokens: model.cache_read })),
@@ -322,23 +312,25 @@ export class DesktopApplication {
    * @param restoreInterrupts - 是否恢复未完成中断状态至内存 running 句柄中
    * @returns 组装好的会话完整快照对象
    */
-  private async snapshot(sessionId?: string, restoreInterrupts = true): Promise<Snapshot> {
+  private async snapshot(sessionId?: string, restoreInterrupts = true, owner?: Running): Promise<Snapshot> {
     const local = this.account()
-    if (!local.activeProject) return emptySnapshot()
-    const session = sessionId ? local.session(sessionId) : local.currentSession()
-    await this.configure()
+    const project = owner?.project ?? local.activeProject?.id
+    const files = owner?.files ?? this.storage()
+    if (!project) return emptySnapshot()
+    const session = sessionId ? local.session(sessionId, project) : local.currentSession()
+    await this.configure(project, files)
     const result = await this.backend.request<SnapshotResult>('snapshot', { thread_id: session.id })
-    const saved = this.saved(session.id)
+    const saved = this.saved(session.id, project)
 
     // 记录 AI 回复中的 Token 消耗信息
     for (const message of result.messages.filter(message => message.type === 'ai')) {
       const usage = message.data.usage_metadata as { input_tokens: number; output_tokens: number; total_tokens: number } | null
       const metadata = message.data.response_metadata as Record<string, Json> | undefined
       if (message.data.id) {
-        this.storage().recordUsage(local.activeProject!.id, session.id, {
+        files.recordUsage(project, session.id, {
           request_id: message.data.id as string,
           requested_at: new Date().toISOString(),
-          model: metadata?.model_name as string || metadata?.model as string || this.state().model!.model,
+          model: metadata?.model_name as string || metadata?.model as string || files.readSettings().model_code || this.environment!.model,
           source: 'model',
           usage: usage ?? null,
           cost_estimate: null
@@ -348,7 +340,7 @@ export class DesktopApplication {
 
     // 扫描登记成果文件
     const runIds = new Set([...saved.runs.map(run => run.id), saved.last_run_id])
-    const published = this.storage().listArtifacts()
+    const published = files.listArtifacts()
     const artifacts = published.filter(item => runIds.has(item.source_run_id))
     for (const file of result.artifacts) {
       const relative = `/workspace/${file}`
@@ -359,16 +351,16 @@ export class DesktopApplication {
         continue
       }
       if (!saved.last_run_id) throw new Error('报告缺少对应的任务记录')
-      artifacts.push(this.storage().publishArtifact(relative, saved.last_run_id))
+      artifacts.push(files.publishArtifact(relative, saved.last_run_id))
     }
 
-    const totals = this.totals(session.id)
+    const totals = this.totals(session.id, project, files)
     const snapshot: Snapshot = {
       session_id: session.id,
       thread_id: session.id,
       thread_ids: [session.id],
       messages: result.messages,
-      attachments: saved.attachment_ids.map(id => this.storage().attachment(id)),
+      attachments: saved.attachment_ids.map(id => files.attachment(id)),
       artifacts,
       runs: saved.runs,
       totals,
@@ -376,29 +368,26 @@ export class DesktopApplication {
       token_usage: result.token_usage
     }
 
-    if (restoreInterrupts && !this.running && !result.interrupts.length && saved.active_run) {
+    if (restoreInterrupts && !this.running.has(session.id) && !result.interrupts.length && saved.active_run) {
       const userMessage = [...result.messages].reverse().find(message => message.type === 'human')
-      this.saveRun({ ...saved.active_run, thread: session.id }, 'failed', saved, userMessage?.data.id as string | undefined)
+      this.saveRun({ ...saved.active_run, thread: session.id, project, files }, 'failed', saved, userMessage?.data.id as string | undefined)
     }
 
-    if (result.interrupts.length && saved.active_run) {
-      snapshot.active_run = {
-        id: saved.active_run.id,
-        started_at: new Date(saved.active_run.started).toISOString(),
-        records: saved.active_run.records,
-        user_message_id: [...result.messages].reverse().find(message => message.type === 'human')?.data.id as string | undefined
-      }
-    }
-
-    if (restoreInterrupts && result.interrupts.length && !this.running) {
+    if (restoreInterrupts && result.interrupts.length && !this.running.has(session.id)) {
       if (!result.run_id) throw new Error('暂停任务缺少运行 ID')
-      this.running = {
-        id: result.run_id,
-        thread: session.id,
+      this.running.set(session.id, {
+        id: result.run_id, thread: session.id, project, files,
         started: saved.active_run?.started ?? Date.now(),
-        records: saved.active_run?.records ?? [],
-        interrupts: result.interrupts,
-        answers: {}
+        records: saved.active_run?.records ?? [], interrupts: result.interrupts, answers: {}
+      })
+    }
+    const run = this.running.get(session.id)
+    if (run && restoreInterrupts) {
+      snapshot.active_run = {
+        id: run.id, started_at: new Date(run.started).toISOString(), records: [...run.records],
+        phase: run.interrupts.length ? 'question' : 'running',
+        question: run.interrupts.length ? this.question(run) : undefined,
+        user_message_id: [...result.messages].reverse().find(message => message.type === 'human')?.data.id as string | undefined
       }
     }
     return snapshot
@@ -407,29 +396,34 @@ export class DesktopApplication {
   /**
    * 从当前挂起的中断列表中提取待处理的问题交互数据。
    */
-  private question(): Question {
-    const item = this.running!.interrupts.find(interrupt => !(interrupt.id in this.running!.answers))!
-    const actions = item.value.action_requests
-    const options = Array.isArray(item.value.options) && item.value.options.every(option => typeof option === 'string') ? item.value.options as string[] : undefined
+  private question(run: Running): Question {
+    const item = run.interrupts.find(interrupt => !(interrupt.id in run.answers))!
+    if ('type' in item.value) {
+      return {
+        interaction_id: item.id,
+        kind: 'approval',
+        action_requests: [{ name: item.value.name, args: item.value.args }],
+        question: '以下操作需要你的确认，允许后将继续执行。'
+      }
+    }
     return {
       interaction_id: item.id,
-      kind: actions ? 'approval' : 'question',
-      options,
-      action_requests: actions,
-      question: actions ? '以下操作需要你的确认，允许后将继续执行。' : String(item.value.question)
+      kind: 'question',
+      options: item.value.options,
+      question: item.value.question
     }
   }
 
   /**
    * 向前端派发交互请求事件通知。
    */
-  private notifyQuestion(): void {
-    if (this.running?.interrupts.some(item => !(item.id in this.running!.answers))) {
+  private notifyQuestion(run = this.running.get(this.local.currentSession().id)): void {
+    if (run?.interrupts.some(item => !(item.id in run.answers))) {
       this.emit({
         event: 'interaction.request',
-        session_id: this.running.thread,
-        run_id: this.running.id,
-        data: this.question()
+        session_id: run.thread,
+        run_id: run.id,
+        data: this.question(run)
       })
     }
   }
@@ -441,7 +435,6 @@ export class DesktopApplication {
    * @returns 绑定的工作区路径
    */
   async bindWorkspace(workspace: string): Promise<string> {
-    this.idle()
     const local = this.account()
     const existing = local.projects.find(project => project.path === workspace)
     if (existing) {
@@ -467,7 +460,7 @@ export class DesktopApplication {
     const { method, params } = command
     if (method === 'protocol.hello') return { protocol: '2.0' }
     if (method === 'app.snapshot') {
-      if (!this.running) await this.configurePreferences()
+      await this.configurePreferences()
       return this.state()
     }
     if (method === 'app.environment') return { ...this.environment, data_dir: this.directory, project_path: this.local.activeProject?.path ?? null }
@@ -476,11 +469,10 @@ export class DesktopApplication {
     const local = this.local, files = this.files
     switch (method) {
       case 'session.list':
-        return local.sessions()
+        return this.sessions()
       case 'session.search':
-        return local.sessions(params.query)
+        return this.sessions(params.query)
       case 'session.snapshot': {
-        this.idle()
         const value = await this.snapshot()
         setImmediate(() => {
           this.emit({ event: 'ready', data: value })
@@ -489,7 +481,6 @@ export class DesktopApplication {
         return value
       }
       case 'project.create':
-        this.idle()
         if (!params.name.trim()) throw new Error('项目名称不能为空')
         local.createProject(params.name)
         this.selectFiles()
@@ -497,7 +488,6 @@ export class DesktopApplication {
         this.emit({ event: 'app.ready', data: this.state() })
         return this.state()
       case 'project.select':
-        this.idle()
         local.selectProject(params.project_id)
         this.selectFiles()
         this.emit({ event: 'ready', data: await this.snapshot() })
@@ -505,7 +495,6 @@ export class DesktopApplication {
         this.emit({ event: 'app.ready', data: this.state() })
         return this.state()
       case 'session.resume':
-        this.idle()
         local.resume(params.session_id)
         {
           const value = await this.snapshot()
@@ -513,26 +502,24 @@ export class DesktopApplication {
           return value
         }
       case 'session.clear':
-        this.idle()
         local.createSession()
         return this.snapshot()
       case 'session.rename':
         if (!params.title.trim()) throw new Error('会话标题不能为空')
         local.rename(params.session_id, params.title)
-        return local.sessions()
+        return this.sessions()
       case 'session.delete': {
-        this.idle()
         local.session(params.session_id)
         await this.configure()
         await this.backend.request('session.delete', { thread_id: params.session_id })
+        this.running.delete(params.session_id)
         const file = this.recordPath(params.session_id)
         local.deleteSession(params.session_id)
         rmSync(file, { force: true })
         this.emit({ event: 'ready', data: await this.snapshot() })
-        return local.sessions()
+        return this.sessions()
       }
       case 'session.export': {
-        this.idle()
         const value = await this.snapshot(params.session_id, false)
         return {
           text: value.messages.map(message => `${message.type === 'human' ? '用户' : '助手'}：\n${typeof message.data.content === 'string' ? message.data.content : JSON.stringify(message.data.content)}\n`).join('\n')
@@ -544,12 +531,13 @@ export class DesktopApplication {
         return this.backend.request('session.token_usage', { thread_id: local.currentSession().id })
       case 'run.start':
       case 'run.attachments': {
-        this.idle()
-        if (!params.text.trim()) throw new Error('任务不能为空')
+            if (!params.text.trim()) throw new Error('任务不能为空')
         const attachments = method === 'run.attachments' ? command.params.attachment_ids.map(id => files.attachment(id)) : []
         const session = local.currentSession()
+        if (this.running.has(session.id)) throw new Error('当前会话已有任务，请新建或切换会话')
         await this.configure()
-        this.running = { id: command.id, thread: session.id, started: Date.now(), records: [], interrupts: [], answers: {} }
+        const run: Running = { id: command.id, thread: session.id, project: local.activeProject!.id, files, started: Date.now(), records: [], interrupts: [], answers: {} }
+        this.running.set(session.id, run)
         try {
           await this.backend.request('run.start', {
             thread_id: session.id,
@@ -562,35 +550,38 @@ export class DesktopApplication {
             }))
           })
         } catch (error) {
-          this.running = null
+          this.running.delete(session.id)
           throw error
         }
         const saved = this.saved(session.id)
         saved.last_run_id = command.id
         saved.attachment_ids = [...new Set([...saved.attachment_ids, ...attachments.map(item => item.id)])]
-        saved.active_run = { id: command.id, started: this.running.started, records: [] }
+        saved.active_run = { id: command.id, started: run.started, records: [] }
         this.save(session.id, saved)
         local.touch(session.id, params.text)
         return { run_id: command.id }
       }
-      case 'run.stop':
-        if (!this.running || this.running.id !== params.run_id) throw new Error('当前任务不匹配')
-        await this.backend.request('run.stop', { run_id: params.run_id, thread_id: this.running.thread })
-        if (this.running?.interrupts.length) {
+      case 'run.stop': {
+        const run = [...this.running.values()].find(item => item.id === params.run_id)
+        if (!run) throw new Error('当前任务不匹配')
+        await this.configure(run.project, run.files)
+        await this.backend.request('run.stop', { run_id: run.id, thread_id: run.thread })
+        if (run.interrupts.length) {
           setImmediate(() => {
-            void this.serial(() => this.finish('cancelled')).catch(error => this.emit({ event: 'protocol.error', data: { message: String(error) } }))
+            void this.serial(() => this.finish(run, 'cancelled')).catch(error => this.emit({ event: 'protocol.error', data: { message: String(error) } }))
           })
         }
         return {}
+      }
       case 'interaction.answer': {
-        const run = this.running
+        const run = [...this.running.values()].find(item => item.id === params.run_id)
         if (!run || run.id !== params.run_id) throw new Error('交互请求已失效')
         const interrupt = run.interrupts.find(item => item.id === params.interaction_id && !(item.id in run.answers))
         if (!interrupt) throw new Error('交互请求已失效')
         let answer: Json
-        if (interrupt.value.action_requests) {
+        if ('type' in interrupt.value) {
           if (!['approve', 'reject'].includes(params.answer)) throw new Error('无效审批决定')
-          answer = { decisions: interrupt.value.action_requests.map(() => ({ type: params.answer })) }
+          answer = { type: params.answer }
         } else {
           if (!params.answer.trim()) throw new Error('答复不能为空')
           answer = params.answer
@@ -601,42 +592,36 @@ export class DesktopApplication {
           setImmediate(() => this.notifyQuestion())
           return {}
         }
+        await this.configure(run.project, run.files)
         await this.backend.request('run.resume', { thread_id: run.thread, run_id: run.id, decisions: answers })
         run.interrupts = []
         run.answers = {}
         return { run_id: run.id }
       }
       case 'model.configure':
-        this.idle()
         if (!params.model_code.trim()) throw new Error('模型不能为空')
         files.saveSettings({ model_code: params.model_code })
         break
       case 'model.test':
-        this.idle()
         await this.configurePreferences()
         await this.backend.request('model.test', {})
         return this.state()
       case 'context.configure': {
-        this.idle()
         const max = Number(params.max_tokens)
         if (!Number.isSafeInteger(max) || max < 1 || max > 475000) throw new Error('上下文窗口必须为 1 到 475,000 之间的整数')
         files.saveSettings({ max_context_tokens: max })
         break
       }
       case 'runtime.configure':
-        this.idle()
         files.saveSettings({ runtimes: { python: params.python, node: params.node } })
         break
       case 'permission.set':
-        this.idle()
         if (!['read_only', 'ask', 'full'].includes(params.mode)) throw new Error('权限模式无效')
         files.saveSettings({ permission_mode: params.mode })
         break
       case 'harness.inspect':
       case 'harness.save':
       case 'harness.remove':
-        // 第一步：修改类指令要求主应用处于空闲状态
-        if (method !== 'harness.inspect') this.idle()
         // 第二步：解析目标工作区根路径并转发后端 RPC 执行
         return this.backend.request(method, { ...params, workspace_root: this.resourceWorkspace(params.scope, params.project_id) })
       case 'harness.projects':
@@ -662,51 +647,52 @@ export class DesktopApplication {
   receive(frame: EngineFrame): void {
     void this.serial(async () => {
       if (frame.event === 'backend.exited') {
-        if (this.running) {
-          const saved = this.saved(this.running.thread)
-          saved.active_run = { id: this.running.id, started: this.running.started, records: this.running.records }
-          this.save(this.running.thread, saved)
+        for (const run of this.running.values()) {
+          const saved = this.saved(run.thread, run.project)
+          saved.active_run = { id: run.id, started: run.started, records: run.records }
+          this.save(run.thread, saved, run.project)
         }
-        this.running = null
+        this.running.clear()
         this.emit(frame)
         return
       }
-      if (!this.running || this.running.id !== frame.data.run_id || this.running.thread !== frame.data.thread_id) return
+      const run = this.running.get(frame.data.thread_id)
+      if (!run || run.id !== frame.data.run_id) return
       if (frame.event === 'run.cancelled') {
-        await this.finish('cancelled')
+        await this.finish(run, 'cancelled')
         return
       }
       const event = frame.data
       if (event.type === 'run.interrupted') {
-        this.running.interrupts = event.data.interrupts as unknown as Interrupt[]
-        const saved = this.saved(this.running.thread)
-        saved.active_run = { id: this.running.id, started: this.running.started, records: this.running.records }
-        this.save(this.running.thread, saved)
-        this.notifyQuestion()
+        run.interrupts = event.data.interrupts as unknown as Interrupt[]
+        const saved = this.saved(run.thread, run.project)
+        saved.active_run = { id: run.id, started: run.started, records: run.records }
+        this.save(run.thread, saved, run.project)
+        this.notifyQuestion(run)
         return
       }
       if (event.type === 'run.completed' || event.type === 'run.failed') {
         if (event.type === 'run.failed') {
-          this.emit({ event: 'protocol.error', data: { message: String(event.data.message ?? event.data.error_type) } })
+          this.emit({ event: 'protocol.error', session_id: run.thread, data: { message: String(event.data.message ?? event.data.error_type) } })
         }
-        await this.finish(event.type === 'run.completed' ? 'complete' : 'failed')
+        await this.finish(run, event.type === 'run.completed' ? 'complete' : 'failed')
         return
       }
       const record = this.convert(event)
       if (event.type === 'model.completed') {
         const usage = event.data.usage as { input_tokens: number; output_tokens: number; total_tokens: number } | undefined
-        this.storage().recordUsage(this.account().activeProject!.id, this.running.thread, {
+        run.files.recordUsage(run.project, run.thread, {
           request_id: event.data.message_id as string || event.operation_id,
           requested_at: event.data.requested_at as string || new Date().toISOString(),
-          model: event.data.model as string || this.state().model!.model,
+          model: event.data.model as string || run.files.readSettings().model_code || this.environment!.model,
           source: 'model',
           usage: usage ?? null,
           cost_estimate: null
         })
-        record.totals = this.totals(this.running.thread)
+        record.totals = this.totals(run.thread, run.project, run.files)
       }
-      this.running.records.push(record)
-      this.emit({ event: 'run.event', session_id: this.running.thread, run_id: this.running.id, data: record })
+      run.records.push(record)
+      this.emit({ event: 'run.event', session_id: run.thread, run_id: run.id, data: record })
     }).catch(error => {
       this.emit({ event: 'protocol.error', data: { message: String(error) } })
     })
@@ -745,18 +731,17 @@ export class DesktopApplication {
    *
    * @param status - 终态标识 ('complete' 成功、'failed' 失败或 'cancelled' 取消)
    */
-  private async finish(status: 'complete' | 'failed' | 'cancelled'): Promise<void> {
-    const run = this.running!
-    const snapshot = await this.snapshot(run.thread, false)
-    const saved = this.saved(run.thread)
+  private async finish(run: Running, status: 'complete' | 'failed' | 'cancelled'): Promise<void> {
+    const snapshot = await this.snapshot(run.thread, false, run)
+    const saved = this.saved(run.thread, run.project)
     const userMessage = [...snapshot.messages].reverse().find(message => message.type === 'human')
     this.saveRun(run, status, saved, userMessage?.data.id as string | undefined)
     snapshot.runs = saved.runs
-    this.running = null
+    this.running.delete(run.thread)
     this.emit({ event: 'run.finished', session_id: run.thread, run_id: run.id, data: { status, snapshot } })
   }
 
-  private saveRun(run: Pick<Running, 'id' | 'thread' | 'started' | 'records'>, status: 'complete' | 'failed' | 'cancelled', saved: Saved, userMessageId?: string): void {
+  private saveRun(run: Pick<Running, 'id' | 'thread' | 'project' | 'files' | 'started' | 'records'>, status: 'complete' | 'failed' | 'cancelled', saved: Saved, userMessageId?: string): void {
     const records = run.records as Json[]
     const requests = new Map(run.records.filter(record => record.kind === 'model_start' || record.kind === 'model_end').map(record => [record.operation_id, record]))
     saved.runs.push({
@@ -771,8 +756,8 @@ export class DesktopApplication {
       elapsed: (Date.now() - run.started) / 1000
     })
     delete saved.active_run
-    this.save(run.thread, saved)
-    this.account().touch(run.thread)
+    this.save(run.thread, saved, run.project)
+    this.account().touch(run.thread, undefined, run.project)
   }
 }
 

@@ -10,8 +10,9 @@ from langchain_core.language_models.fake_chat_models import FakeMessagesListChat
 from langchain_core.messages import AIMessage, ToolMessage
 from langgraph.errors import GraphInterrupt
 
-from vertical_harness import HarnessSettings, WorkflowLoggingHandler
+from vertical_harness.langchain.callbacks import WorkflowLoggingHandler
 from vertical_harness.log.logging import HarnessLogging
+from vertical_harness.models import HarnessSettings
 
 
 class ToolCallingModel(FakeMessagesListChatModel):

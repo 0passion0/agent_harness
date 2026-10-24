@@ -7,8 +7,8 @@ from langchain_core.tools import tool
 from langgraph.checkpoint.memory import InMemorySaver
 from pydantic import Field
 
-from vertical_harness.config import HarnessSettings
 from vertical_harness.core import compose
+from vertical_harness.models import HarnessSettings
 
 
 @pytest.mark.parametrize("use_async", [False, True])
@@ -45,7 +45,6 @@ def test_run_can_continue_past_thirty_model_calls(monkeypatch, tmp_path, use_asy
         model="test:model",
         workspace_root=tmp_path,
         store_backend="memory",
-        enable_memory=False,
         enable_planning=False,
     )
     agent = compose.AgentComposer.build_agent(settings, checkpointer=InMemorySaver())

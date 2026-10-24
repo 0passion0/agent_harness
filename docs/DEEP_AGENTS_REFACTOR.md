@@ -1,6 +1,6 @@
 # Deep Agents 生产架构审计与重构
 
-核验日期：2026-10-24。源代码与本地安装包实现为准；本文不修改生成的 OpenWiki。
+核验日期：2026-10-24。本文 A 节描述首次审计基线；后续按用户明确要求删除历史兼容逻辑，当前变化与最终验证见 [原生化优化记录](NATIVE_CLEANUP.md)。源代码与本地安装包实现为准；本文不修改生成的 OpenWiki。
 
 ## A. 实际基线
 
@@ -56,8 +56,8 @@ sequenceDiagram
 | 问题位置 | 当前实现 | 架构缺陷 | 推荐方案 | 优先级 | 风险 |
 |---|---|---|---|---|---|
 | `core/compose.py:build_agent`、`runtime/agent_runtime.py:open_agent` | Runtime 打开 Store，但建图不传 `store=`；CLI 只打开 Checkpointer | ToolRuntime 无法使用已托管的跨线程 Store | 原生 `store=` 注入；同步/异步资源管理器负责关闭 | P1 | 不改 SQLite 表或用量 namespace |
-| `core/compose.py:build_agent` | 主、子图传同一 middleware 列表和实例 | 将来在实例中增加可变字段会串扰；作用域隐含 | 使用已有装配方法分别创建栈 | P1 | 保留中间件名称与检查点键 |
-| `middleware/filesystem.py`、`core/compose.py:_middleware` | 自定义实例名为 HarnessFilesystemMiddleware，未替换原生 FilesystemMiddleware | 同时注册两套文件工具与结果包装 | 工具实现按原生名称替换；目录指令迁入独立 Middleware，保留旧节点名称 | P1 | 重绑定工具时必须保留 apply_patch；不改变历史节点身份 |
+| `core/compose.py:build_agent` | 主、子图传同一 middleware 列表和实例 | 将来在实例中增加可变字段会串扰；作用域隐含 | 使用已有装配方法分别创建栈 | P1 | 每个图独立实例；不保留历史别名 |
+| `middleware/filesystem.py`、`core/compose.py:_middleware` | 自定义实例名为 HarnessFilesystemMiddleware，未替换原生 FilesystemMiddleware | 同时注册两套文件工具与结果包装 | 工具实现按原生名称替换；目录指令迁入独立 Middleware，使用自身节点名称 | P1 | 重绑定工具时必须保留 apply_patch；旧节点上的暂停任务不能直接恢复 |
 | `core/compose.py:build_agent` | 工具列表和唯一子代理硬编码 | 新增业务 Tool 必须改核心入口 | 增量接收原生 Tool、Middleware、SubAgent、response_format | P1 | 不增加 Registry 或调度器 |
 | `langchain/callbacks.py`、`langchain/streaming.py` | WorkflowLoggingHandler 已实现但生产入口未注册；log_context 也未绑定 | 实际运行缺少请求关联和耗时统计 | 每次调用创建独立 callback，复用框架父子 run 树 | P1 | 不能把 callback 绑定成共享图级计数器 |
 | `middleware/model_retry.py` | 自定义指数退避，不发 retry 指标；quota 判定在服务端强制重试提示之后 | 无法审计真实重试；欠费可能重复请求 | 保留断流保护，结构化记录重试；quota 优先拒绝 | P1 | 只重试模型，不能包住 ToolNode |
@@ -65,8 +65,8 @@ sequenceDiagram
 | `tools/search.py:web_search` | 错误返回普通 str | 工具错误率统计为成功 | 使用 ToolException 和框架 handle_tool_error，保留可读错误文本 | P2 | 正常来源输出不变 |
 | `runtime/session_service.py`、`runtime/run_manager.py` | 审批恢复校验身份，快照/新轮次/删除未校验已存在检查点所有者 | 同一持久化库换身份后可接触其他身份的 thread | 在应用会话边界核对现有 checkpoint metadata | P1 | 无历史身份元数据的 CLI 检查点不能随意重新归属 |
 | `middleware/summarization.py` | 在原生固定摘要槽内调用 prepare/aprepare | 存在跨关注点依赖，但直接平铺会让摘要先于路由和指令执行 | 保留必要适配；原生机制负责压缩，不另造 loop/AOP 引擎 | P2 | `test_model_context.py` 覆盖时序与检查点索引 |
-| `middleware/approval.py` | 自定义 per-call interrupt | 与官方 HITL 相似，但桌面要求 kind/action_requests/decisions 及旧暂停检查点 | 保留薄协议适配；中断、调度、恢复全用 LangGraph | P2 | 直接换 native HITL 会改变载荷及恢复位置，不属于安全的内部重构 |
-| `storage/store.py`、`storage/checkpoint.py` | create_* 与 open_* 两类资源接口 | create_* 调用者承担连接关闭，易误用 | 生产入口统一 open_*；保留公共 create_* 契约及现有测试 | P2 | 本轮不无依据删除对外类方法 |
+| 原 `middleware/approval.py`（已删除） | 自定义 per-call interrupt | 重复官方 HITL，绑定历史桌面协议 | 官方 HumanInTheLoopMiddleware per_call，桌面直接提交原生决策 | P1 | 旧暂停审批不能直接恢复；升级前完成或取消 |
+| `storage/store.py`、`storage/checkpoint.py` | create_* 与 open_* 两类资源接口 | create_* 调用者承担连接关闭，易误用 | 删除裸连接 create_*，所有入口统一 open_*/aopen_* | P2 | 直接调用 create_* 的调用者必须迁移上下文管理器 |
 
 AST 依赖检查已有 `test_backend_boundaries.py`、`test_class_structure.py`。没有发现生产 AgentExecutor、旧 Chain、第二套模型循环或 MCP 全局单例；不虚构需要删除的旧系统。
 
@@ -76,7 +76,7 @@ PyPI JSON 实时核实并通过 uv 更新锁：Deep Agents 0.7.28→0.7.32，Lan
 
 依据：[Deep Agents 定制](https://docs.langchain.com/oss/python/deepagents/customization)、[Middleware Hook 顺序](https://docs.langchain.com/oss/python/langchain/middleware/custom)、[官方预置策略](https://docs.langchain.com/oss/python/langchain/middleware/built-in)，以及 `.venv/Lib/site-packages/deepagents/graph.py`、`langchain/agents/factory.py` 的实际实现。
 
-参考图的修正：before hook 正序、after hook 逆序、wrap 第一个在最外层；Deep Agents 的原生槽位按 `.name` 替换而非任意平铺。`after_agent` 不是 finally；失败、取消、持久化失败由应用入口传播和清理。本地 wrap_tool_call 看不到 Provider 内部工具。官方 HITL 有 batched/per_call 模式，均与当前桌面中断协议不同。没有业务需求支持 Beta Profiles/Dynamic Subagents/Event streaming，继续稳定的 v2 事件协议。
+参考图的修正：before hook 正序、after hook 逆序、wrap 第一个在最外层；Deep Agents 的原生槽位按 `.name` 替换而非任意平铺。`after_agent` 不是 finally；失败、取消、持久化失败由应用入口传播和清理。本地 wrap_tool_call 看不到 Provider 内部工具。官方 HITL 的 per_call 模式已正式发布；桌面已迁移到该原生协议。没有业务需求支持 Beta Profiles/Dynamic Subagents/Event streaming，继续稳定的 v2 事件协议。
 
 ```mermaid
 flowchart TD
@@ -127,10 +127,10 @@ docs/                                 DEEP_AGENTS_REFACTOR.md（本报告）
 2. 原生 `SubAgentMiddleware` 与父子通知组件。
 3. `SummarizationMiddleware`：由 HarnessSummarizationMiddleware 按名替换，只有一层。
 4. 原生 `PatchToolCallsMiddleware`。
-5. 可选 `TodoListMiddleware` → 调用者显式扩展 → `ExecutionLimitsMiddleware` → `DesktopPermissionMiddleware` → `ContextLimitMiddleware` → `ModelRetryMiddleware` → ask 模式下的 `DesktopApprovalMiddleware` → `DirectoryInstructionsMiddleware`。
+5. 可选 `TodoListMiddleware` → 调用者显式扩展 → `ExecutionLimitsMiddleware` → `DesktopPermissionMiddleware` → `ContextLimitMiddleware` → `ModelRetryMiddleware` → ask 模式下的 `HumanInTheLoopMiddleware(interrupt_mode="per_call")` → `DirectoryInstructionsMiddleware`。
 6. 框架根据模型装配的尾部策略：profile extras、可选 Skills、原生 prompt caching、UnsupportedContent。宿主没有重复加入这些能力，也没有启用 Beta Profile 注册机制。
 
-DirectoryInstructionsMiddleware 的 `.name` 固定为 `HarnessFilesystemMiddleware`，这是已有检查点节点 `HarnessFilesystemMiddleware.before_model` 的身份；不是运行两套文件实现。权限重绑定重新创建工具时，`_create_tools` 同时注册 apply_patch，避免原生复制步骤丢失补丁工具。
+DirectoryInstructionsMiddleware 使用自然名称，节点为 `DirectoryInstructionsMiddleware.before_model`；文件工具仍仅占一层原生槽，不保留旧节点别名。权限重绑定重新创建工具时，`_create_tools` 同时注册 apply_patch，避免原生复制步骤丢失补丁工具。
 
 | 组件 / 源文件 | Hook / 输入输出 | State 修改 | 异步 / 幂等 / 并发 / 错误 |
 |---|---|---|---|
@@ -145,8 +145,8 @@ DirectoryInstructionsMiddleware 的 `.name` 固定为 `HarnessFilesystemMiddlewa
 | `permission.py` | wrap_model_call 隐藏禁用工具；wrap_tool_call 再次检查 | 无 | 同步/异步；PermissionError 传播；只读禁用委派与执行 |
 | `context_limit.py` | wrap_model_call 检查最终请求窗口 | 无 | 按当前 request.model 容量估算；ContextOverflowError 进入原生摘要恢复 |
 | `model_retry.py` | wrap_model_call + after_model | 部分文本携带既有重试标记；after_model 插入续写消息 / jump_to=model | 最多 10 次重试、3 次超时重试；尊重 Retry-After；欠费不可重试；取消/GraphBubbleUp 不捕获；计数在调用局部或消息中 |
-| `approval.py` | wrap_tool_call：原生 interrupt 后继续 handler 或拒绝 ToolMessage | 仅原生 interrupt checkpoint | 不重试工具；approve/reject 协议保留；扩展副作用工具用 metadata.requires_approval 标记 |
-| `directory_instructions.py` | before_model：从成功 read_file 结果定位目录指令 | 返回增量 HumanMessage，沿用已有标记键 | async to_thread；根据已持久消息去重；权限检查后读取；仅忽略可预期路径/I/O 失败 |
+| 官方 HumanInTheLoopMiddleware | wrap_tool_call：每个调用单独 interrupt 后继续 handler 或返回拒绝 ToolMessage | 原生 interrupt checkpoint | 不重试工具；原生 approve/reject 单决策对象；扩展副作用工具用 metadata.requires_approval 标记 |
+| `directory_instructions.py` | before_model：从成功 read_file 结果定位目录指令 | 返回增量 HumanMessage，仅写入并识别 harness_instructions | async to_thread；根据已持久消息去重；权限检查后读取；仅忽略可预期路径/I/O 失败 |
 | 原生 Skills / caching / Patch | before_agent、before_model、wrap 等由框架定义 | 原生技能索引及消息修复 | 不复制实现、不改变其状态键 |
 | `langchain/callbacks.py` | callbacks 观测完整模型、工具、链与子图树 | 无 | 每个 AgentStreaming 调用独立实例；锁保护并行 callbacks；错误只记录类型和耗时 |
 | 扩展 Middleware | 原生 before_agent / before_model / wrap / after_model / after_agent | 按 schema/reducer 返回更新 | 主图扩展不隐式继承给子图；每个 SubAgent 声明显式扩展 |
@@ -203,7 +203,7 @@ sequenceDiagram
 | Filesystem Backend | DocumentFilesystemBackend + 全局 Skills CompositeBackend | 真实工作区与只读全局技能路由；文件权限不是进程沙箱；不将 Store 当作文件系统 |
 | run_id | 每次执行关联 callbacks、Trace 与事件；审批恢复保持该轮桌面 run_id | 恢复执行使用新的 asyncio Task 身份，避免旧完成回调释放新任务 |
 
-没有新增持久化业务字段或表，不需批量迁移。旧的合成消息标记是已存在数据契约，不是旧 LangChain API 兼容分支。目录指令节点身份保留，旧的工具审批中断载荷与 resume 位置保留。
+没有新增持久化业务字段或表。只识别 harness_* 消息标记，不再识别 opencode_*；目录指令使用自身节点名，审批使用原生 tool_approval。旧暂停任务不能在新图中继续，不提供运行时兼容分支；用户数据库和文件不做自动改写。
 
 桌面访问已有线程时身份不匹配或缺失将拒绝；**不自动认领无身份的历史检查点**。CLI 原有无身份检查点继续由 CLI 使用；若需要导入桌面，先离线备份并核实来源和所有者后，在受控迁移中写入正确身份元数据，不能仅传一个 user_id 绕过检查。未对用户数据运行这种迁移，也未删除任何用户数据库或产物。CLI/直接库调用由可信宿主管理 thread ID，桌面身份检查不等于数据库行级多租户认证服务。
 
@@ -224,7 +224,7 @@ sequenceDiagram
 
 LangSmith 默认关闭。开启后使用框架父子 span、节点路径和 usage；上传端隐藏 inputs，outputs 仅保留数字 Token 用量，metadata 使用模型及关联白名单，原始 error 替换为固定说明。SDK 自带的流 token event 过滤继续生效。费用由 LangSmith 按 provider/model 定价计算，私有模型须在服务端配置价格；本轮没有编造价格表、美元硬配额或真实账单验证。原有输入窗口、步数和总耗时上限继续执行。没有现成 OTel Collector，不额外增加双份观测出口；结构化日志和 LangSmith 为当前部署的观测接口。
 
-官方通用 Retry/HITL/CallLimit 已核对，但不能覆盖现有断流保护、按真实用户消息重置的步数语义和桌面审批协议。故保留这些小范围适配。Fallback 通过原生 ModelFallbackMiddleware 显式扩展，置于最终窗口检查和模型重试之外；默认不配置降级。通用 Fallback 不知道已经发出的流式文本或不完整工具参数，**不得未经断流保护验证就在生产流式调用中启用**。新增 Tool 不自动重试外部写；已完成的并行任务可由原生 checkpoint pending writes 避免在审批恢复时再次执行，但不承诺“外部提交成功、checkpoint 未写入”崩溃窗口的 exactly-once。外部写必须采用服务端幂等键或事务 outbox。
+审批已完全使用官方 HITL per_call。官方通用 Retry/CallLimit 不能覆盖现有流式断线续写保护和按真实用户消息重置的步数语义，因而仅保留这些必要适配。Fallback 通过原生 ModelFallbackMiddleware 显式扩展，置于最终窗口检查和模型重试之外；默认不配置降级。通用 Fallback 不知道已经发出的流式文本或不完整工具参数，**不得未经断流保护验证就在生产流式调用中启用**。新增 Tool 不自动重试外部写；已完成的并行任务可由原生 checkpoint pending writes 避免在审批恢复时再次执行，但不承诺“外部提交成功、checkpoint 未写入”崩溃窗口的 exactly-once。外部写必须采用服务端幂等键或事务 outbox。
 
 ### 已清除的技术债与外部变化
 
@@ -277,4 +277,4 @@ Trace 树测试使用真实框架和 LangSmith SDK，仅在 HTTP 请求边界拦
 
 升级实测产物仅位于 `.pytest_cache/deepagents-upgrade-fixture/`；日志为 `.pytest_cache/deepagents-upgrade-seed.log` 和 `deepagents-upgrade-restore.log`。这是一次性测试环境，不属于生产包或需要维护的旧运行时。独立 wheel 日志为 `deepagents-wheel-import.log`、`deepagents-wheel-check.log`。早期全量回归的五项失败及修复重跑均保留，未将失败日志改写成通过。
 
-边界：没有 MCP 配置/客户端，因此没有可执行的 MCP 集成回归；没有远程部署配置，因此不把本地 stdio 测试称为 SSE/WebSocket/分布式负载测试。没有进行真实付费 Provider、LangSmith 服务端账单/权限/保留期、Linux 本机或远程 CI 验证。SQLite 为单机持久化，16 路不同线程测试不证明同一 thread 的多写者或跨进程授权检查具备原子性；桌面仍由每个 RunManager 限制一个活跃运行。持续外部写的崩溃去重需要服务端幂等契约，不能以测试中审批恢复不重放代替。生产数据应由部署方备份、按业务保留期清理；本次只操作临时测试数据，不增加自动删除策略。
+边界：没有 MCP 配置/客户端，因此没有可执行的 MCP 集成回归；没有远程部署配置，因此不把本地 stdio 测试称为 SSE/WebSocket/分布式负载测试。没有进行真实付费 Provider、LangSmith 服务端账单/权限/保留期、Linux 本机或远程 CI 验证。SQLite 为单机持久化，16 路不同线程测试不证明同一 thread 的多写者或跨进程授权检查具备原子性；桌面现按会话允许并行运行，同一 thread 仍互斥；更新见 [并行会话说明](MODELS_AND_CONCURRENT_SESSIONS.md)。持续外部写的崩溃去重需要服务端幂等契约，不能以测试中审批恢复不重放代替。生产数据应由部署方备份、按业务保留期清理；本次只操作临时测试数据，不增加自动删除策略。

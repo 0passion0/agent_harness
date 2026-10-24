@@ -11,8 +11,7 @@ from typing import Any
 
 from dotenv import dotenv_values
 
-from vertical_harness.config.langsmith_settings import LangSmithSettings
-from vertical_harness.config.settings import HarnessSettings
+from vertical_harness.models import HarnessSettings, LangSmithSettings
 from vertical_harness.tools.search import WebSearch
 
 

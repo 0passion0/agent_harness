@@ -101,9 +101,7 @@ class ExecutionLimitsMiddleware(AgentMiddleware):
         """
         return bool(
             message.additional_kwargs.get("harness_synthetic")
-            or message.additional_kwargs.get("opencode_synthetic")
             or message.additional_kwargs.get("harness_instructions")
-            or message.additional_kwargs.get("opencode_instructions")
         )
 
     @classmethod
@@ -118,11 +116,7 @@ class ExecutionLimitsMiddleware(AgentMiddleware):
         """
         count = 0
         for message in reversed(messages):
-            if (
-                cls._synthetic(message)
-                or message.additional_kwargs.get("harness_stream_retry")
-                or message.additional_kwargs.get("opencode_stream_retry")
-            ):
+            if cls._synthetic(message) or message.additional_kwargs.get("harness_stream_retry"):
                 continue
             if isinstance(message, HumanMessage):
                 break
@@ -274,7 +268,6 @@ class ExecutionLimitsMiddleware(AgentMiddleware):
                     content=CONTINUE_AFTER_OUTPUT_LIMIT,
                     additional_kwargs={
                         "harness_synthetic": "output-limit",
-                        "opencode_synthetic": "output-limit",
                     },
                 )
             ],

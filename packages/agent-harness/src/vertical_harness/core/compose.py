@@ -20,14 +20,17 @@ from deepagents.backends import CompositeBackend, FilesystemBackend
 from deepagents.backends.protocol import BackendProtocol
 from deepagents.middleware.subagents import SubAgent
 from deepagents.middleware.summarization import SummarizationMiddleware
-from langchain.agents.middleware import AgentMiddleware, TodoListMiddleware
+from langchain.agents.middleware import (
+    AgentMiddleware,
+    HumanInTheLoopMiddleware,
+    TodoListMiddleware,
+)
 from langchain.agents.structured_output import ResponseFormat
 from langchain_core.tools import BaseTool
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.store.base import BaseStore
 
-from vertical_harness.config.settings import HarnessSettings
 from vertical_harness.core.context import RunContext
 from vertical_harness.core.routing import ModelRouting
 from vertical_harness.execution.python_execution import PythonExecution
@@ -35,7 +38,6 @@ from vertical_harness.execution.shell_execution import ShellExecution
 from vertical_harness.filesystem.code_formatter import CodeFormatter
 from vertical_harness.filesystem.document_backend import DocumentFilesystemBackend
 from vertical_harness.log.observability import TracingSession
-from vertical_harness.middleware.approval import DesktopApprovalMiddleware
 from vertical_harness.middleware.context_limit import ContextLimitMiddleware
 from vertical_harness.middleware.context_pruning import ContextPruningMiddleware
 from vertical_harness.middleware.directory_instructions import DirectoryInstructionsMiddleware
@@ -46,6 +48,7 @@ from vertical_harness.middleware.permission import DesktopPermissionMiddleware
 from vertical_harness.middleware.project_instructions import ProjectInstructionsMiddleware
 from vertical_harness.middleware.routing import ModelRouterMiddleware
 from vertical_harness.middleware.summarization import HarnessSummarizationMiddleware
+from vertical_harness.models import HarnessSettings
 from vertical_harness.storage.checkpoint import CheckpointFactory
 from vertical_harness.storage.store import StoreFactory
 from vertical_harness.tools.search import WebSearch
@@ -209,6 +212,7 @@ class AgentComposer:
         permissions: list[FilesystemPermission],
         *,
         extensions: Sequence[AgentMiddleware[Any, Any, Any]] = (),
+        approval_tools: Sequence[BaseTool] = (),
     ) -> list[AgentMiddleware[Any, Any, Any]]:
         """分别为每个图创建策略实例，原生文件与摘要槽按名称替换。
 
@@ -256,7 +260,29 @@ class AgentComposer:
 
         # 4. 交互审批中间件（仅当用户配置为 ask 模式时挂载）
         if settings.permission_mode == "ask":
-            middleware.append(DesktopApprovalMiddleware())
+            approval_names = {
+                "write_file",
+                "edit_file",
+                "apply_patch",
+                "delete",
+                "execute_python_file",
+                "shell",
+                "write_todos",
+                *(
+                    tool.name
+                    for tool in approval_tools
+                    if (tool.metadata or {}).get("requires_approval")
+                ),
+            }
+            middleware.append(
+                HumanInTheLoopMiddleware(
+                    interrupt_on={
+                        name: {"allowed_decisions": ["approve", "reject"]}
+                        for name in approval_names
+                    },
+                    interrupt_mode="per_call",
+                )
+            )
 
         middleware.append(DirectoryInstructionsMiddleware(backend, permissions))
 
@@ -334,7 +360,13 @@ class AgentComposer:
         model = ModelRouting.init_configured_model(settings)
         permissions = cls._permissions(settings)
         main_middleware = cls._middleware(
-            settings, model, backend, system_skills, permissions, extensions=middleware
+            settings,
+            model,
+            backend,
+            system_skills,
+            permissions,
+            extensions=middleware,
+            approval_tools=tools,
         )
         system_prompt = BASE_PROMPT + "\n" + settings.agent_content
         child_specs: list[SubAgent] = [
@@ -361,6 +393,9 @@ class AgentComposer:
                     system_skills,
                     permissions,
                     extensions=spec.get("middleware", ()),
+                    approval_tools=[
+                        tool for tool in spec.get("tools", tools) if isinstance(tool, BaseTool)
+                    ],
                 ),
             }
 

@@ -13,10 +13,10 @@ from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.types import Command
 from pydantic import Field, ValidationError
 
-from vertical_harness.config import HarnessSettings
 from vertical_harness.core import compose
 from vertical_harness.core.context import RunContext
 from vertical_harness.execution.shell_execution import ShellExecution
+from vertical_harness.models import HarnessSettings
 
 
 class WorkflowModel(FakeMessagesListChatModel):
@@ -297,7 +297,7 @@ def test_output_limit_continues_on_native_graph_and_is_bounded(tmp_path, monkeyp
     )
     assert result["messages"][-1].content == "complete"
     assert (
-        sum(bool(item.additional_kwargs.get("opencode_synthetic")) for item in result["messages"])
+        sum(bool(item.additional_kwargs.get("harness_synthetic")) for item in result["messages"])
         == 2
     )
     assert len(model.seen) == 3
@@ -333,9 +333,9 @@ def test_shell_obeys_existing_permission_and_approval(tmp_path, monkeypatch, mod
         return
     result = agent.invoke(request, config)
     if mode == "ask":
-        assert result["__interrupt__"][0].value["action_requests"][0]["name"] == "shell"
+        assert result["__interrupt__"][0].value["name"] == "shell"
         assert not (tmp_path / "runs").exists()
-        result = agent.invoke(Command(resume={"decisions": [{"type": "approve"}]}), config)
+        result = agent.invoke(Command(resume={"type": "approve"}), config)
         message = next(item for item in result["messages"] if isinstance(item, ToolMessage))
         assert json.loads(message.content)["exit_code"] == 0
 

@@ -12,8 +12,8 @@ from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import MessagesState, StateGraph
 from langgraph.types import Command, interrupt
 
-from vertical_harness import HarnessSettings
 from vertical_harness.langchain.streaming import AgentStreaming
+from vertical_harness.models import HarnessSettings
 
 
 def test_model_completed_reports_usage_without_stream_double_counting():
@@ -77,9 +77,7 @@ def _settings(tmp_path):
         model="test:model",
         workspace_root=tmp_path,
         store_backend="memory",
-        enable_memory=False,
         enable_planning=False,
-        enable_skill_gating=False,
     )
 
 

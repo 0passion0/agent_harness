@@ -33,7 +33,7 @@ const controller = vi.hoisted(() => ({
   workspace: '', draft: '', setDraft: vi.fn(),
   attachments: [], setAttachments: vi.fn(), sessions: [], sessionSearch: '',
   searchSessions: vi.fn(), plugins: [], pluginStates: {}, config: {}, error: '',
-  clearError: vi.fn(), busy: false, chooseWorkspace: vi.fn(), loadSession: vi.fn(),
+  clearError: vi.fn(), busy: false, navigationBusy: false, chooseWorkspace: vi.fn(), loadSession: vi.fn(),
   send: vi.fn(), stop: vi.fn(), answer: vi.fn(), openArtifact: vi.fn(),
   importDroppedFiles: vi.fn(), reportError: vi.fn()
 }))
@@ -76,6 +76,19 @@ describe('Empty project state in chat window', () => {
     controller.application.projects = []
     controller.project = null
     controller.busy = false
+    controller.state.phase = 'idle'
+  })
+
+  it('keeps new-task navigation and the sidebar enabled while a session runs', () => {
+    controller.busy = true
+    controller.state.phase = 'running'
+    const root = App() as ReactElement
+    const create = findElement(root, el => el.props?.['aria-label'] === '新建任务')
+    expect(create.props.disabled).toBe(false)
+    create.props.onClick()
+    expect(controller.loadSession).toHaveBeenCalledWith('session.clear')
+    const sidebar = findElement(root, el => 'onSelectProject' in (el.props ?? {}))
+    expect(sidebar.props.busy).toBe(false)
   })
 
   it('renders "新建项目" button and calls chooseWorkspace when there are no projects', () => {

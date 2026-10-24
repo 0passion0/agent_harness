@@ -8,9 +8,9 @@ from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.messages.utils import count_tokens_approximately
 from pydantic import Field
 
-from vertical_harness.config import HarnessSettings
 from vertical_harness.core import compose
 from vertical_harness.core.context import RunContext
+from vertical_harness.models import HarnessSettings
 
 
 class ContextModel(FakeMessagesListChatModel):

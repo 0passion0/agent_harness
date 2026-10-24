@@ -5,8 +5,9 @@ from langchain_core.language_models.fake_chat_models import FakeMessagesListChat
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from pydantic import Field
 
-from vertical_harness import HarnessSettings, RunContext
 from vertical_harness.core import compose, routing
+from vertical_harness.core.context import RunContext
+from vertical_harness.models import HarnessSettings
 from vertical_harness.storage.store import StoreFactory
 
 
@@ -24,8 +25,6 @@ def settings(root, **kwargs):
         model="test:model",
         workspace_root=root,
         store_backend="memory",
-        enabled_plugins=[],
-        enable_memory=False,
         enable_planning=False,
         **kwargs,
     )
@@ -69,8 +68,6 @@ def test_private_database_cannot_be_read_or_deleted(tmp_path, monkeypatch, async
         model="test:model",
         workspace_root=tmp_path,
         store_db_path=tmp_path / "store.sqlite",
-        enabled_plugins=[],
-        enable_memory=False,
         enable_planning=False,
     )
     with StoreFactory.open_store(config) as store:

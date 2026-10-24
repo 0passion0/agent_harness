@@ -29,5 +29,5 @@ test('session readiness clears the previous project conversation', () => {
 test('late run acknowledgement does not hide an approval request', () => {
   const question = { interaction_id: 'i', kind: 'approval', question: 'Approve?' }
   const previous = { ...initialState, phase: 'question' as const, runId: 'backend-run', question }
-  expect(reduceAgent(previous, { event: 'run.accepted', run_id: 'command-id' })).toBe(previous)
+  expect(reduceAgent(previous, { event: 'run.accepted', session_id: 's', run_id: 'command-id' })).toBe(previous)
 })

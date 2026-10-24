@@ -11,8 +11,8 @@ import pytest
 from langchain_core.tools import ToolException
 from pydantic import ValidationError
 
-from vertical_harness.config.formatter_entry import FormatterEntry
 from vertical_harness.filesystem.code_formatter import CodeFormatter
+from vertical_harness.models import FormatterEntry
 
 
 class TestCodeFormatter:

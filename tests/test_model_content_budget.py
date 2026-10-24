@@ -3,8 +3,8 @@ from langchain.agents.middleware import ModelRequest
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_deepseek import ChatDeepSeek
 
-from vertical_harness.config.settings import HarnessSettings
 from vertical_harness.core import routing
+from vertical_harness.models import HarnessSettings
 
 
 def test_deepseek_tool_images_are_filtered_before_payload_serialization(monkeypatch):
@@ -76,7 +76,6 @@ def test_agent_bounds_file_reads_and_preserves_private_path_denial(tmp_path, mon
         workspace_root=tmp_path,
         store_backend="memory",
         store_db_path=tmp_path / "private.sqlite",
-        enable_memory=False,
         enable_user_preferences=False,
     )
     agent = compose.AgentComposer.build_agent(settings)

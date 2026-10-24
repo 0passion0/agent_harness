@@ -9,11 +9,11 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.types import Command
 
-from vertical_harness import HarnessSettings
 from vertical_harness.core import compose
 from vertical_harness.core.compose import AgentComposer
 from vertical_harness.filesystem.document_backend import DocumentFilesystemBackend
 from vertical_harness.filesystem.file_mutation import FileMutation
+from vertical_harness.models import HarnessSettings
 
 
 class ToolModel(FakeMessagesListChatModel):
@@ -37,7 +37,6 @@ def build_agent(tmp_path, monkeypatch, calls, mode="full"):
         model="test:files",
         workspace_root=tmp_path,
         store_backend="memory",
-        enable_memory=False,
     )
     return AgentComposer.build_agent(
         HarnessSettings.model_validate({**(settings).model_dump(), **{"permission_mode": mode}}),
@@ -116,8 +115,8 @@ def test_patch_uses_existing_permissions_and_checkpoint_resume(
     result = agent.invoke({"messages": [HumanMessage(content="Create file")]}, config)
     if mode == "ask":
         assert not (tmp_path / "new.txt").exists()
-        assert result["__interrupt__"][0].value["action_requests"][0]["name"] == "apply_patch"
-        result = agent.invoke(Command(resume={"decisions": [{"type": decision}]}), config)
+        assert result["__interrupt__"][0].value["name"] == "apply_patch"
+        result = agent.invoke(Command(resume={"type": decision}), config)
     message = next(m for m in result["messages"] if isinstance(m, ToolMessage))
     assert message.status == ("success" if decision == "approve" else "error")
     assert (tmp_path / "new.txt").exists() == (decision == "approve")
@@ -258,10 +257,10 @@ def test_directory_recovery_and_durable_nearby_instructions(tmp_path, monkeypatc
     instructions = [
         m
         for m in agent.get_state(config).values["messages"]
-        if isinstance(m, HumanMessage) and "opencode_instructions" in m.additional_kwargs
+        if isinstance(m, HumanMessage) and "harness_instructions" in m.additional_kwargs
     ]
     assert len(instructions) == 1
-    assert instructions[0].additional_kwargs["opencode_instructions"] == [str(folder / "AGENTS.md")]
+    assert instructions[0].additional_kwargs["harness_instructions"] == [str(folder / "AGENTS.md")]
     assert "Only modify this directory." in instructions[0].content
     assert "Root already" not in instructions[0].content
 

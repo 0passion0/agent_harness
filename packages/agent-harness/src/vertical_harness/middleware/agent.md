@@ -1,12 +1,13 @@
 # 框架策略
 
-中间件保持扁平组织，保留原生名称和持久化状态键；不得承担宿主任务管理。
+中间件保持扁平组织，仅采用当前名称和状态标记；不得承担宿主任务管理。
 
-- 文件工具按 FilesystemMiddleware 名称替换原生槽；目录指令独立，但保留 HarnessFilesystemMiddleware.before_model 的节点身份。
+- 文件工具按 FilesystemMiddleware 名称替换原生槽；目录指令使用独立的 DirectoryInstructionsMiddleware.before_model 节点。
 - 主图与每个子图分别创建策略实例；主图的扩展不会自动成为子图扩展。
 
 - 路由、指令和确定性裁剪通过 prepare/aprepare 依次准备请求，摘要仍占用框架原生位置。
 - 裁剪保留最近结果、完整归档和检查点消息；摘要保留不可信历史约束和压缩元数据日志。
 - 预算按实际模型窗口检查；只读既限制可见工具也限制执行入口。
+- 审批采用官方 HumanInTheLoopMiddleware 的 per_call 模式，每个工具单独中断和恢复；不保留旧审批载荷。
 - 审批和取消中断不得被普通错误捕获；模型重试不得重放不完整工具调用。
 - 文件中间件调用 filesystem 能力，框架私有依赖集中在适配处并用回归验证。

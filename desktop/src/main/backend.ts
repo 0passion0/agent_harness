@@ -20,10 +20,16 @@ import { bundledPython, selectScriptPython } from './python-runtime'
 export type Interrupt = {
   /** 中断交互唯一标识符 */
   id: string
-  /** 中断附带的上下文数据，包含可选的工具调用申请 action_requests 等 */
   value: {
-    action_requests?: { name: string; args: Json }[]
-    [key: string]: Json | undefined
+    type: 'tool_approval'
+    tool_call_id: string
+    name: string
+    args: Json
+    description: string
+  } | {
+    kind: 'question'
+    question: string
+    options: string[]
   }
 }
 

@@ -73,10 +73,10 @@ def test_delete_session_reconfigure_and_shutdown_own_background_lifetime(tmp_pat
                 == "running"
             )
             await loop.dispatch("configure", request(tmp_path))
-            assert loop.runtime.shell is not original
+            assert loop.runtime.shell is original
             assert (
                 original.status(second["shell_id"], runtime(loop, second_thread))["status"]
-                == "cancelled"
+                == "running"
             )
             current = await start(loop, first_thread)
             await loop.dispatch("shutdown", {})
@@ -113,7 +113,7 @@ def test_cleanup_waits_for_active_run_before_closing_jobs(tmp_path, monkeypatch,
 
         monkeypatch.setattr(loop.runs, "_run", active_run)
         loop.runs.start(thread_id, str(uuid4()), HumanMessage(content="cleanup"))
-        task = loop.runs.active.task
+        task = loop.runs.active(thread_id).task
         try:
             await ready.wait()
             if method == "eof":

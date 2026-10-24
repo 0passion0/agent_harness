@@ -72,10 +72,7 @@ class ProjectInstructionsMiddleware(AgentMiddleware):
         changed = False
         for message in request.messages:
             if not isinstance(message, HumanMessage) or not (
-                paths := (
-                    message.additional_kwargs.get("harness_instructions")
-                    or message.additional_kwargs.get("opencode_instructions")
-                )
+                paths := message.additional_kwargs.get("harness_instructions")
             ):
                 messages.append(message)
                 continue
@@ -96,14 +93,7 @@ class ProjectInstructionsMiddleware(AgentMiddleware):
                 messages.append(message)
                 continue
             changed = True
-            kwargs_update: dict[str, object] = {}
-            if (
-                "harness_instructions" in message.additional_kwargs
-                or "opencode_instructions" not in message.additional_kwargs
-            ):
-                kwargs_update["harness_instructions"] = list(files)
-            if "opencode_instructions" in message.additional_kwargs:
-                kwargs_update["opencode_instructions"] = list(files)
+            kwargs_update: dict[str, object] = {"harness_instructions": list(files)}
             # 原生摘要按检查点消息索引截断，失效指令也必须保留一个不含旧内容的槽位。
             if not files:
                 kwargs_update["harness_synthetic"] = "project-instructions"

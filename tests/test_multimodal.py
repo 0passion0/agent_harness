@@ -8,8 +8,9 @@ from langchain_core.messages import AIMessage, HumanMessage
 from langchain_deepseek import ChatDeepSeek
 from pydantic import Field
 
-from vertical_harness import HarnessSettings, cli
+from vertical_harness import cli
 from vertical_harness.core import compose
+from vertical_harness.models import HarnessSettings
 
 PNG = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aD1sAAAAASUVORK5CYII="
@@ -33,8 +34,6 @@ def test_cli_images_reach_model_as_images(tmp_path, monkeypatch, capsys, prompt)
         _env_file=None,
         model="test:model",
         workspace_root=tmp_path / "workspace",
-        enabled_plugins=[],
-        enable_memory=False,
         enable_planning=False,
     )
     model = RecordingModel(

@@ -71,7 +71,7 @@ export default function App() {
   const c = useAgentController()
   const {
     state, application, project, workspace, draft, setDraft, attachments, setAttachments, sessions,
-    sessionSearch, searchSessions, error, clearError, busy,
+    sessionSearch, searchSessions, error, clearError, busy, navigationBusy,
     chooseWorkspace, loadSession, send, stop, answer, openArtifact
   } = c
 
@@ -147,7 +147,7 @@ export default function App() {
         requestAnimationFrame(() => search.current?.focus())
       } else if (mod && event.key.toLowerCase() === 'n') {
         event.preventDefault()
-        if (!busy && connected) {
+        if (!navigationBusy && connected) {
           setView('task')
           void loadSession('session.clear')
         }
@@ -167,7 +167,7 @@ export default function App() {
     }
     addEventListener('keydown', shortcut)
     return () => removeEventListener('keydown', shortcut)
-  }, [busy, connected, loadSession])
+  }, [navigationBusy, connected, loadSession])
 
   // 监听插件打开工作台事件
   useEffect(() => {
@@ -249,7 +249,7 @@ export default function App() {
           className="rail-nav"
           aria-label="新建任务"
           title="新建任务"
-          disabled={busy || !connected}
+          disabled={navigationBusy || !connected}
           onClick={() => { setView('task'); void loadSession('session.clear') }}
         >
           <Plus size={20} />
@@ -283,7 +283,7 @@ export default function App() {
         currentId={state.snapshot?.session_id}
         projectId={application?.active_project_id ?? null}
         projects={application?.projects ?? []}
-        busy={busy}
+        busy={navigationBusy}
         connected={connected}
         onChooseWorkspace={chooseWorkspace}
         onSelectProject={id => void c.applyApplication('project.select', { project_id: id })}
@@ -350,7 +350,7 @@ export default function App() {
           key={settingsTab}
           initialTab={settingsTab}
           application={application}
-          busy={busy}
+          busy={navigationBusy}
           apply={c.applyApplication}
           testProfile={c.testProfile}
         /> : <>

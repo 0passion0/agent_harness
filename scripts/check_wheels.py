@@ -11,7 +11,10 @@ from pathlib import Path
 from langchain_core.messages import AIMessage
 from wheel_model import Model
 
-from vertical_harness import AgentComposer, HarnessSettings, ModelRouting, RunContext
+from vertical_harness.core.compose import AgentComposer
+from vertical_harness.core.context import RunContext
+from vertical_harness.core.routing import ModelRouting
+from vertical_harness.models import HarnessSettings
 
 os.environ["LANGSMITH_TRACING"] = "false"
 os.environ["LANGCHAIN_TRACING_V2"] = "false"

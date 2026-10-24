@@ -4,7 +4,7 @@
 
 Python 接口统一通过类调用，例如 `AgentComposer.build_agent(settings)`、`AgentStreaming.astream_agent(...)` 和 `StoreFactory.open_store(settings)`。目录职责见 [后端架构](docs/BACKEND_ARCHITECTURE.md)，编码要求见 [后端规范](docs/BACKEND_CODING_STANDARD.md)。
 
-最新稳定依赖、实际 Middleware 顺序、State/Runtime/持久化边界、扩展入口和验证结果见 [Deep Agents 重构报告](docs/DEEP_AGENTS_REFACTOR.md)。新增业务工具可通过 `build_agent(tools=[...])` 注入，副作用工具用 `metadata={"requires_approval": True}` 接入现有桌面审批。
+最新稳定依赖、实际 Middleware 顺序、State/Runtime/持久化边界、扩展入口和验证结果见 [Deep Agents 重构报告](docs/DEEP_AGENTS_REFACTOR.md)。Pydantic 数据模型统一由 `vertical_harness.models` 导出。不同会话及项目可并行运行，切换会话、设置和文件操作不被后台任务锁定，详见 [并行会话说明](docs/MODELS_AND_CONCURRENT_SESSIONS.md)。新增业务工具可通过 `build_agent(tools=[...])` 注入，副作用工具用 `metadata={"requires_approval": True}` 接入原生逐工具审批。
 
 ## 开发
 
@@ -26,7 +26,7 @@ Office/PDF 使用 Microsoft MarkItDown 提取 Markdown，仅用于阅读。修�
 
 ## 数据与升级
 
-数据库默认位于工作区同级的 .runtime 目录，桌面使用应用数据目录。本次职责重构保留当前数据库结构、检查点和审批格式，不需要清除会话索引或检查点。升级前备份应用数据；项目文件、附件和产物保留。
+数据库默认位于工作区同级的 .runtime 目录，桌面使用应用数据目录。保留数据库表结构、项目文件、附件和产物。当前实现只接受原生逐工具审批，不保留旧审批协议、旧节点身份和旧消息标记。升级前先完成或取消旧版暂停任务并备份应用数据；旧暂停任务不能在新图中直接恢复。当前契约和调用迁移见 [原生化优化记录](docs/NATIVE_CLEANUP.md)。
 
 ## 验证与打包
 

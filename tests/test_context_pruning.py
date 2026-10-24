@@ -93,8 +93,8 @@ def test_pruning_matches_the_async_path(tmp_path) -> None:
 def test_pruning_keeps_checkpoint_history_intact(tmp_path, monkeypatch) -> None:
     from pydantic import Field
 
-    from vertical_harness.config import HarnessSettings
     from vertical_harness.core import compose
+    from vertical_harness.models import HarnessSettings
 
     class RecordingModel(FakeMessagesListChatModel):
         seen: list = Field(default_factory=list)

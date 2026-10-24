@@ -15,7 +15,7 @@ from contextlib import closing, contextmanager
 from langsmith import tracing_context
 from langsmith.run_helpers import get_tracing_context
 
-from vertical_harness.config.langsmith_settings import LangSmithSettings
+from vertical_harness.models import LangSmithSettings
 
 # 模块级日志记录器，记录链路追踪的启动、活跃与刷盘事件
 logger = logging.getLogger(__name__)

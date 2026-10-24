@@ -175,7 +175,7 @@ def test_nearby_instructions_refresh_without_mutating_history(tmp_path):
     instructions = HumanMessage(
         content=f"Instructions from: {path}\nold guidance",
         id="guidance-id",
-        additional_kwargs={"opencode_instructions": [str(path)], "custom": "retained"},
+        additional_kwargs={"harness_instructions": [str(path)], "custom": "retained"},
         response_metadata={"provider": "retained"},
     )
     original = request().override(messages=[instructions, HumanMessage(content="continue")])
@@ -214,7 +214,7 @@ def test_nearby_instructions_remove_only_files_no_longer_available(tmp_path):
     empty.touch()
     paths = [str(allowed), str(denied), str(empty), str(nested / "removed.md")]
     instructions = HumanMessage(
-        content="old guidance", additional_kwargs={"opencode_instructions": paths}
+        content="old guidance", additional_kwargs={"harness_instructions": paths}
     )
     original = request().override(messages=[instructions])
     middleware = ProjectInstructionsMiddleware(
@@ -227,8 +227,8 @@ def test_nearby_instructions_remove_only_files_no_longer_available(tmp_path):
     middleware.wrap_model_call(original, handler)
     refreshed = handler.call_args.args[0].messages[0]
     assert refreshed.content == f"Instructions from: {allowed}\ncurrent guidance"
-    assert refreshed.additional_kwargs["opencode_instructions"] == [str(allowed)]
-    assert instructions.additional_kwargs["opencode_instructions"] == paths
+    assert refreshed.additional_kwargs["harness_instructions"] == [str(allowed)]
+    assert instructions.additional_kwargs["harness_instructions"] == paths
 
 
 def test_nearby_instructions_outside_current_workspace_are_not_read(tmp_path, monkeypatch):
@@ -237,7 +237,7 @@ def test_nearby_instructions_outside_current_workspace_are_not_read(tmp_path, mo
     outside = tmp_path / "AGENTS.md"
     outside.write_text("outside guidance", encoding="utf-8")
     instructions = HumanMessage(
-        content="old guidance", additional_kwargs={"opencode_instructions": [str(outside)]}
+        content="old guidance", additional_kwargs={"harness_instructions": [str(outside)]}
     )
     original = request().override(messages=[instructions, HumanMessage(content="continue")])
     middleware = ProjectInstructionsMiddleware(
@@ -261,7 +261,7 @@ def test_unchanged_nearby_instructions_preserve_request_identity(tmp_path):
     path.write_text("current guidance", encoding="utf-8")
     instructions = HumanMessage(
         content=f"Instructions from: {path}\ncurrent guidance",
-        additional_kwargs={"opencode_instructions": [str(path)]},
+        additional_kwargs={"harness_instructions": [str(path)]},
     )
     original = request().override(messages=[instructions])
     middleware = ProjectInstructionsMiddleware(

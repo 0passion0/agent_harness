@@ -65,7 +65,7 @@ export const initialState: AgentState = {
 type Action =
   | EventFrame
   | { event: 'run.batch'; frames: Extract<EventFrame, { event: 'run.event' }>[] }
-  | { event: 'run.accepted'; run_id: string; text?: string }
+  | { event: 'run.accepted'; session_id: string; run_id: string; text?: string }
   | { event: 'run.stopping' | 'error.clear' }
   | { event: 'interaction.answered'; interaction_id: string }
   | { event: 'snapshot.loaded'; data: Snapshot }
@@ -90,6 +90,7 @@ export function recordText(data: RunRecord): string {
  * @returns 转移后的全新不可变状态对象
  */
 export function reduceAgent(state: AgentState, action: Action): AgentState {
+  if ('session_id' in action && action.session_id && state.snapshot && action.session_id !== state.snapshot.session_id) return state
   switch (action.event) {
     // 批量处理合并的高频流式事件，降低 React 重渲染压力
     case 'run.batch':
@@ -106,7 +107,15 @@ export function reduceAgent(state: AgentState, action: Action): AgentState {
     // 会话完全就绪或加载了新的会话快照
     case 'ready':
     case 'snapshot.loaded':
-      return { ...initialState, phase: 'idle', snapshot: action.data, events: action.data.active_run?.records ?? [] }
+      return {
+        ...initialState,
+        phase: action.data.active_run?.phase ?? 'idle',
+        runId: action.data.active_run?.id ?? null,
+        question: action.data.active_run?.question ?? null,
+        snapshot: action.data,
+        tools: Object.fromEntries((action.data.active_run?.records ?? []).filter(record => record.call_id).map(record => [record.call_id!, record])),
+        events: action.data.active_run?.records ?? []
+      }
 
     // 用户提交的任务被后端受理接受
     case 'run.accepted':

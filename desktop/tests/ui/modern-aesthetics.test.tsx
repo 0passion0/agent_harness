@@ -129,7 +129,7 @@ test('keeps tool history before the final answer, after reload and in the correc
     messages: [{type:'human', data:{id:'u1',content:'第一轮问题'}},{type:'ai',data:{content:'第一轮答案'}},{type:'human',data:{id:'u2',content:'第二轮问题'}}],
     runs: [{id:'r',user_message_id:'u1',status:'complete',records,tools:{},requests:[],elapsed:1}]
   }
-  let state = reduceAgent(initialState, {event:'run.accepted',run_id:'r'})
+  let state = reduceAgent(initialState, {event:'run.accepted',session_id: 's', run_id:'r'})
   for (const data of records) state = reduceAgent(state, {event:'run.event',session_id:'s',run_id:'r',data})
   expect(state.tools.one.arguments).toEqual({path:'data.csv'})
   state = reduceAgent(state, {event:'run.finished',session_id:'s',run_id:'r',data:{status:'complete',snapshot}})

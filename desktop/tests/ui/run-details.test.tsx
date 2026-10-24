@@ -10,10 +10,10 @@ test('updates tokens and credits during a run without changing or double countin
   const totals = { complete: false, total_tokens: 150, cost_estimate: {
     minimum_cny: '0.01524', maximum_cny: '0.03048', minimum_credits: '1.524', maximum_credits: '3.048', rate_dates: ['2026-10-15'] } }
   let state = reduceAgent(initialState, { event: 'ready', data: snapshot })
-  state = reduceAgent(state, { event: 'run.accepted', run_id: 'r' })
+  state = reduceAgent(state, { event: 'run.accepted', session_id: 's', run_id: 'r' })
   state = reduceAgent(state, { event: 'run.event', session_id: 's', run_id: 'r', data: { kind: 'model_end', totals } })
   state = reduceAgent(state, { event: 'run.event', session_id: 's', run_id: 'r', data: { kind: 'text', text: 'answer' } })
-  state = reduceAgent(state, { event: 'run.accepted', run_id: 'r' })
+  state = reduceAgent(state, { event: 'run.accepted', session_id: 's', run_id: 'r' })
   const html = renderToStaticMarkup(<RunDetails state={state} />)
   expect(html).toContain('会话累计 Token：150（用量未完整返回）')
   expect(html).toContain('1.524–3.048 研值')
@@ -24,7 +24,7 @@ test('updates tokens and credits during a run without changing or double countin
   state = reduceAgent(state, { event: 'run.finished', session_id: 's', run_id: 'r', data: { status: 'complete', snapshot: saved } })
   expect(state.liveTotals).toBeNull()
   expect(renderToStaticMarkup(<RunDetails state={state} />)).toContain('会话累计 Token：150</p>')
-  expect(reduceAgent({ ...state, liveTotals: totals }, { event: 'run.accepted', run_id: 'next' }).liveTotals).toBeNull()
+  expect(reduceAgent({ ...state, liveTotals: totals }, { event: 'run.accepted', session_id: 's', run_id: 'next' }).liveTotals).toBeNull()
   expect(reduceAgent({ ...state, liveTotals: totals }, { event: 'ready', data: snapshot }).liveTotals).toBeNull()
 })
 

@@ -48,7 +48,7 @@ def test_streamed_tool_details_reach_the_original_cards(monkeypatch, tmp_path):
     app = graph.compile().with_config({"recursion_limit": 9999})
 
     @asynccontextmanager
-    async def open_agent(_state):
+    async def open_agent(_state, *, settings=None):
         yield app
 
     frames = []
@@ -79,7 +79,7 @@ def test_streamed_tool_details_reach_the_original_cards(monkeypatch, tmp_path):
         if agent_loop.runs is not None:
             monkeypatch.setattr(agent_loop.runs, "notify", agent_loop.server.notify)
         thread_id, run_id = str(uuid4()), str(uuid4())
-        await agent_loop.runs._run(thread_id, run_id, {"messages": [HumanMessage(content="write")]})
+        await agent_loop.runs._run(thread_id, run_id, {"messages": [HumanMessage(content="write")]}, agent_loop.runtime.settings)
 
     asyncio.run(scenario())
     start = next(frame for frame in frames if frame["type"] == "tool.started")

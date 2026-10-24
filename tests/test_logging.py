@@ -4,15 +4,14 @@ import asyncio
 import json
 import logging
 from logging.handlers import RotatingFileHandler
-from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
 from langchain_core.tools import tool
 from pydantic import ValidationError
 
-from vertical_harness import HarnessSettings
 from vertical_harness.log.logging import HarnessLogging
+from vertical_harness.models import HarnessSettings
 from vertical_harness.storage import store as store_module
 from vertical_harness.storage.store import StoreFactory
 
@@ -227,15 +226,16 @@ def test_store_context_exit_does_not_misreport_caller_failure(capsys):
 
 
 def test_store_setup_failure_releases_connection(monkeypatch):
+    import sqlite3
+
     connection = Mock()
     failure = RuntimeError("setup failed")
-    monkeypatch.setattr(store_module.sqlite3, "connect", lambda *args, **kwargs: connection)
-    monkeypatch.setattr(
-        store_module,
-        "SqliteStore",
-        Mock(return_value=SimpleNamespace(setup=Mock(side_effect=failure))),
-    )
-    with pytest.raises(RuntimeError) as exc:
-        store_module.StoreFactory.create_store(settings(store_db_path=":memory:"))
+    monkeypatch.setattr(sqlite3, "connect", lambda *args, **kwargs: connection)
+    monkeypatch.setattr(store_module.SqliteStore, "setup", Mock(side_effect=failure))
+    with (
+        pytest.raises(RuntimeError) as exc,
+        store_module.StoreFactory.open_store(settings(store_db_path=":memory:")),
+    ):
+        pytest.fail("Store setup must fail before exposing the connection")
     assert exc.value is failure
     connection.close.assert_called_once_with()

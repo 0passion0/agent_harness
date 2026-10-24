@@ -55,7 +55,7 @@ test('interleaves narration and tools, keeping delayed results in their original
 })
 
 test('batched streaming keeps model boundaries and more than 800 deltas without a card per token', () => {
-  let state = reduceAgent(initialState, { event: 'run.accepted', run_id: 'r' })
+  let state = reduceAgent(initialState, { event: 'run.accepted', session_id: 's', run_id: 'r' })
   state = reduceAgent(state, { event: 'run.batch', frames: records.map(data => ({ event: 'run.event', session_id: 's', run_id: 'r', data })) })
   expectOrder(render(state))
   state = reduceAgent(state, { event: 'run.batch', frames: Array.from({ length: 900 }, () => ({ event: 'run.event' as const, session_id: 's', run_id: 'r', data: { kind: 'text', operation_id: 'next', text: 'x' } })) })
@@ -84,7 +84,7 @@ test('saved and reloaded runs show narration once, preserving later turns and re
 })
 
 test('paused snapshot resumes in place without duplicating checkpoint narration', () => {
-  const paused: Snapshot = { ...snapshot, messages: snapshot.messages.slice(0, 3), runs: [], active_run: { id: 'r', user_message_id: 'u1', started_at: 'now', records: records.slice(0, 5) } }
+  const paused: Snapshot = { ...snapshot, messages: snapshot.messages.slice(0, 3), runs: [], active_run: { id: 'r', user_message_id: 'u1', started_at: 'now', phase: 'question' as const, records: records.slice(0, 5) } }
   let state = reduceAgent(initialState, { event: 'snapshot.loaded', data: paused })
   expect(render(state).match(/先检查当前实现。/g)).toHaveLength(1)
   expect(render(state)).toContain('等待你的答复')

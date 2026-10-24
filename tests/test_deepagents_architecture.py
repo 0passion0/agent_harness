@@ -1,6 +1,7 @@
 """通过真实 Deep Agents 图验证装配、生命周期与原生扩展边界。"""
 
 import asyncio
+from dataclasses import dataclass
 
 import pytest
 from deepagents.middleware.filesystem import FilesystemMiddleware
@@ -13,12 +14,12 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.tools import ToolException, tool
 from langgraph.store.memory import InMemoryStore
 from langgraph.types import Command
-from pydantic import BaseModel, Field
+from pydantic import Field
 
-from vertical_harness.config.settings import HarnessSettings
 from vertical_harness.core import compose
 from vertical_harness.core.context import RunContext
 from vertical_harness.langchain.streaming import AgentStreaming
+from vertical_harness.models import HarnessSettings
 from vertical_harness.runtime.agent_runtime import AgentRuntime
 
 
@@ -81,7 +82,8 @@ class Lifecycle(AgentMiddleware):
         self.records.append(f"{self.label}.after_agent")
 
 
-class Answer(BaseModel):
+@dataclass
+class Answer:
     total: int
 
 
@@ -420,7 +422,7 @@ def test_custom_subagent_is_dispatched_by_native_task_tool(tmp_path, monkeypatch
     )
 
 
-def test_extension_tool_uses_desktop_approval_without_core_name_changes(tmp_path, monkeypatch):
+def test_extension_tool_uses_native_approval_without_core_name_changes(tmp_path, monkeypatch):
     executed = []
 
     @tool
@@ -439,18 +441,21 @@ def test_extension_tool_uses_desktop_approval_without_core_name_changes(tmp_path
     )
     config = {"configurable": {"thread_id": "extension-approval"}}
     pending = agent.invoke({"messages": [HumanMessage("publish")]}, config)
-    assert pending["__interrupt__"][0].value == {
-        "kind": "approval",
-        "action_requests": [{"name": "publish", "args": {}}],
-    }
+    assert (
+        pending["__interrupt__"][0].value.items()
+        >= {
+            "type": "tool_approval",
+            "tool_call_id": "call",
+            "name": "publish",
+            "args": {},
+        }.items()
+    )
     assert executed == []
-    agent.invoke(Command(resume={"decisions": [{"type": "approve"}]}), config)
+    agent.invoke(Command(resume={"type": "approve"}), config)
     assert executed == [True]
 
 
-def test_final_native_stacks_have_one_filesystem_and_keep_checkpoint_node_identity(
-    tmp_path, monkeypatch
-):
+def test_final_native_stacks_have_one_filesystem_and_distinct_hook_names(tmp_path, monkeypatch):
     import deepagents.graph as native
     import deepagents.middleware.subagents as children
 
@@ -475,7 +480,65 @@ def test_final_native_stacks_have_one_filesystem_and_keep_checkpoint_node_identi
         assert len({m.name for m in stack}) == len(stack)
         files = next(m for m in stack if isinstance(m, FilesystemMiddleware))
         assert "apply_patch" in {t.name for t in files.tools}
-    assert "HarnessFilesystemMiddleware.before_model" in graph.nodes
+    assert "DirectoryInstructionsMiddleware.before_model" in graph.nodes
+
+
+@pytest.mark.parametrize("asynchronous", [False, True])
+def test_parallel_native_approvals_are_bound_to_individual_calls(
+    tmp_path, monkeypatch, asynchronous
+):
+    executed = []
+
+    @tool
+    def publish(value: str) -> str:
+        """Publish an approved value."""
+        executed.append(value)
+        return value
+
+    publish.metadata = {"requires_approval": True}
+    model = Model(
+        responses=[
+            AIMessage(
+                content="",
+                tool_calls=[call("publish", {"value": value}, value) for value in ("yes", "no")],
+            ),
+            AIMessage("done"),
+        ]
+    )
+    monkeypatch.setattr(compose.ModelRouting, "init_configured_model", lambda _: model)
+    graph = compose.AgentComposer.build_agent(
+        settings(tmp_path, permission_mode="ask"), tools=[publish]
+    )
+    config = {"configurable": {"thread_id": "parallel-approvals"}}
+    inputs = {"messages": [HumanMessage("publish")]}
+
+    async def run():
+        pending = await graph.ainvoke(inputs, config)
+        assert executed == []
+        decisions = {
+            item.id: {"type": "approve" if item.value["tool_call_id"] == "yes" else "reject"}
+            for item in pending["__interrupt__"]
+        }
+        assert len(decisions) == 2
+        return await graph.ainvoke(Command(resume=decisions), config)
+
+    if asynchronous:
+        result = asyncio.run(run())
+    else:
+        pending = graph.invoke(inputs, config)
+        assert executed == []
+        decisions = {
+            item.id: {"type": "approve" if item.value["tool_call_id"] == "yes" else "reject"}
+            for item in pending["__interrupt__"]
+        }
+        assert len(decisions) == 2
+        result = graph.invoke(Command(resume=decisions), config)
+    assert executed == ["yes"]
+    assert {m.tool_call_id for m in result["messages"] if isinstance(m, ToolMessage)} == {
+        "yes",
+        "no",
+    }
+    assert result["messages"][-1].content == "done"
 
 
 def test_resume_does_not_repeat_a_completed_parallel_tool(tmp_path, monkeypatch):
@@ -515,7 +578,7 @@ def test_resume_does_not_repeat_a_completed_parallel_tool(tmp_path, monkeypatch)
     async def run():
         pending = await agent.ainvoke({"messages": [HumanMessage("inspect then publish")]}, config)
         assert pending["__interrupt__"] and executed == ["inspect"]
-        result = await agent.ainvoke(Command(resume={"decisions": [{"type": "approve"}]}), config)
+        result = await agent.ainvoke(Command(resume={"type": "approve"}), config)
         assert result["messages"][-1].content == "done"
         assert executed == ["inspect", "publish"]
 

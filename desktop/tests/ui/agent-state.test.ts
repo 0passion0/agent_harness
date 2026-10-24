@@ -13,7 +13,7 @@ describe('agent state', () => {
   it('preserves the current conversation and running state during app refresh', () => {
     const snapshot = { session_id: 's', thread_id: 't', thread_ids: ['t'], messages: [], attachments: [], artifacts: [], runs: [], totals: {}, unsettled_history: false }
     let state = reduceAgent(initialState, { event: 'ready', data: snapshot })
-    state = reduceAgent(state, { event: 'run.accepted', run_id: 'r' })
+    state = reduceAgent(state, { event: 'run.accepted', session_id: 's', run_id: 'r' })
     const refreshed = reduceAgent(state, { event: 'app.ready', data: {} as never })
     expect(refreshed.snapshot).toBe(snapshot)
     expect(refreshed.runId).toBe('r')
@@ -41,13 +41,13 @@ describe('agent state', () => {
     const snapshot = { session_id: 's', thread_id: 't', thread_ids: ['t'], messages: [], attachments: [], artifacts: [], runs: [], totals: {}, unsettled_history: false }
     let state = reduceAgent(initialState, { event: 'ready', data: snapshot })
     state = reduceAgent(state, { event: 'run.finished', session_id: 's', run_id: 'r', data: { status: 'complete', snapshot } })
-    state = reduceAgent(state, { event: 'run.accepted', run_id: 'r' })
+    state = reduceAgent(state, { event: 'run.accepted', session_id: 's', run_id: 'r' })
     expect(state.phase).toBe('idle')
     expect(state.lastRunSaved).toBe(true)
   })
   it('restores active workflow records from a reloaded snapshot', () => {
     const record = { kind: 'workflow.node', seq: 2, operation_id: 'op', node: 'search', status: 'running' }
-    const snapshot = { session_id: 's', thread_id: 't', thread_ids: ['t'], messages: [], attachments: [], artifacts: [], runs: [], active_run: { id: 'r', started_at: 'now', records: [record] }, totals: {}, unsettled_history: false }
+    const snapshot = { session_id: 's', thread_id: 't', thread_ids: ['t'], messages: [], attachments: [], artifacts: [], runs: [], active_run: { id: 'r', started_at: 'now', phase: 'question' as const, records: [record] }, totals: {}, unsettled_history: false }
     expect(reduceAgent(initialState, { event: 'ready', data: snapshot }).events).toEqual([record])
   })
   it('allows dismissing protocol errors without losing the conversation', () => {
@@ -66,14 +66,14 @@ describe('stream event aggregation', () => {
   it('retains lifecycle logs through long replies and saved finish, then resets for a new run or session', () => {
     const snapshot = { session_id: 's', thread_id: 't', thread_ids: ['t'], messages: [], attachments: [], artifacts: [], runs: [], totals: {}, unsettled_history: false }
     const start = { kind: 'model_start', model: 'test-model', index: 1 }
-    let state = reduceAgent(initialState, { event: 'run.accepted', run_id: 'r' })
+    let state = reduceAgent(initialState, { event: 'run.accepted', session_id: 's', run_id: 'r' })
     state = reduceAgent(state, { event: 'run.event', session_id: 's', run_id: 'r', data: start })
     state = reduceAgent(state, { event: 'run.batch', frames: Array.from({ length: 900 }, () => ({ event: 'run.event' as const, session_id: 's', run_id: 'r', data: { kind: 'text', text: 'x' } })) })
     expect(state.runLog).toEqual([start, { kind: 'text', text: 'x'.repeat(900) }])
     expect(state.events).toHaveLength(800)
     state = reduceAgent(state, { event: 'run.finished', session_id: 's', run_id: 'r', data: { status: 'complete', snapshot } })
     expect(state.runLog).toEqual([start, { kind: 'text', text: 'x'.repeat(900) }, { kind: 'run_finished', status: 'complete' }])
-    expect(reduceAgent(state, { event: 'run.accepted', run_id: 'next' }).runLog).toEqual([])
+    expect(reduceAgent(state, { event: 'run.accepted', session_id: 's', run_id: 'next' }).runLog).toEqual([])
     expect(reduceAgent(state, { event: 'snapshot.loaded', data: snapshot }).runLog).toEqual([])
   })
   it('preserves streamed text order when batched and bounds diagnostic records', () => {

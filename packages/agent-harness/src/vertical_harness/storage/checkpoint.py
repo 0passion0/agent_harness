@@ -9,7 +9,6 @@
 from __future__ import annotations
 
 import logging
-import sqlite3
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager, contextmanager
 from typing import Any
@@ -19,7 +18,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
-from vertical_harness.config.settings import HarnessSettings
+from vertical_harness.models import HarnessSettings
 
 # 模块级日志记录器，记录检查点数据库打开与就绪状态
 logger = logging.getLogger(__name__)
@@ -47,40 +46,6 @@ class CheckpointFactory:
             target.parent.mkdir(parents=True, exist_ok=True)
             return str(target)
         return target
-
-    @classmethod
-    def create_checkpointer(cls, settings: HarnessSettings) -> BaseCheckpointSaver[Any]:
-        """根据已验证的配置创建立即可用的 LangGraph 检查点保存器（支持 Time Travel 与 Fork）。
-
-        若目标为 `":memory:"` 则直接返回 `InMemorySaver`；
-        若为文件，则建立 SQLite 连接并执行表结构初始化 `setup()`。
-
-        Args:
-            settings (HarnessSettings): 宿主全局配置对象。
-
-        Returns:
-            BaseCheckpointSaver[Any]: 初始化完毕的检查点保存器实例。
-
-        Raises:
-            Exception: 当 SQLite 初始化异常时关闭连接并抛出。
-        """
-        target = settings.resolved_checkpoint_target
-        if target == ":memory:":
-            logger.debug("checkpointer_created", extra={"event_fields": {"backend": "memory"}})
-            return InMemorySaver()
-        logger.debug("checkpointer_opening", extra={"event_fields": {"backend": "sqlite"}})
-        conn = sqlite3.connect(
-            cls._prepare_checkpoint_conn_string(settings),
-            check_same_thread=False,
-        )
-        try:
-            checkpointer = SqliteSaver(conn)
-            checkpointer.setup()
-        except Exception:
-            conn.close()
-            raise
-        logger.info("checkpointer_ready", extra={"event_fields": {"backend": "sqlite"}})
-        return checkpointer
 
     @classmethod
     @contextmanager

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import sys
+from contextlib import AsyncExitStack
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -29,7 +30,7 @@ class AgentLoop:
     Attributes:
         server (StdioServer): 标准输入输出 JSON-RPC 通信服务器实例。
         runtime (AgentRuntime | None): 配置周期的持久化资源持有者（数据库连接、Shell 执行器与可信身份），初始化前为 None。
-        runs (RunManager | None): 单次活跃运行调度器，负责协调事件流派发与审批恢复，初始化前为 None。
+        runs (RunManager | None): 会话并行运行调度器，负责协调事件流派发与审批恢复，初始化前为 None。
         sessions (SessionService | None): 会话状态快照与历史用量查询服务，初始化前为 None。
     """
 
@@ -39,10 +40,11 @@ class AgentLoop:
         self.server = StdioServer(self.dispatch, self.aclose)
         # 配置周期的资源所有者（数据库连接、Shell 执行器与可信身份）
         self.runtime: AgentRuntime | None = None
-        # 单次活跃运行管理器
+        # 当前选中项目的会话运行管理器
         self.runs: RunManager | None = None
         # 会话状态快照与历史用量服务
         self.sessions: SessionService | None = None
+        self._services: dict[tuple[str, str], tuple[AgentRuntime, RunManager, SessionService]] = {}
 
     def _configured(self) -> tuple[AgentRuntime, RunManager, SessionService]:
         """校验当前运行时配置有效性并返回服务三元组。
@@ -63,11 +65,12 @@ class AgentLoop:
         Returns:
             None
         """
-        # 借用方先结束流迭代并取消运行，最后关闭配置周期资源
-        if self.runs is not None:
-            await self.runs.cancel()
-        if self.runtime is not None:
-            await self.runtime.aclose()
+        services = tuple(self._services.values())
+        self._services.clear()
+        async with AsyncExitStack() as cleanup:
+            for runtime, _runs, _sessions in services:
+                cleanup.push_async_callback(runtime.aclose)
+            await asyncio.gather(*(runs.cancel() for _runtime, runs, _sessions in services))
 
     async def _configure(self, params: dict[str, Any]) -> dict[str, Any]:
         """解析并应用新配置，原子替换旧运行时资源；若新配置初始化失败则回滚新资源。
@@ -94,8 +97,6 @@ class AgentLoop:
         self.require(
             params, "tenant_id", "user_id", "workspace_root", "runtime_data_dir", "options"
         )
-        if self.runs is not None and self.runs.active is not None:
-            raise RuntimeError("Cannot configure while a run is active")
         if any(
             not isinstance(params[key], str)
             for key in ("tenant_id", "user_id", "workspace_root", "runtime_data_dir")
@@ -106,20 +107,35 @@ class AgentLoop:
         settings = DesktopRuntime.configured_settings(params)
         identity = RunContext(tenant_id=params["tenant_id"], user_id=params["user_id"])
         environment = await asyncio.to_thread(DesktopRuntime.runtime_environment, settings)
+        key = (identity.tenant_id, identity.user_id)
+        existing = self._services.get(key)
+        if existing is not None:
+            previous, runs, sessions = existing
+            same_resources = (
+                previous.settings.resolved_workspace_root == settings.resolved_workspace_root
+                and previous.settings.resolved_store_target == settings.resolved_store_target
+                and previous.settings.resolved_checkpoint_target
+                == settings.resolved_checkpoint_target
+                and previous.settings.store_backend == settings.store_backend
+            )
+            if same_resources:
+                previous.settings = settings
+                self.runtime, self.runs, self.sessions = existing
+                return {"model": settings.model, "environment": environment}
+            if runs.is_running:
+                raise RuntimeError("Cannot replace resources used by active runs")
         runtime = await AgentRuntime.create(settings, identity)
-
-        # 构造成功后原子替换；旧资源关闭失败需及时回收新资源，避免泄漏半初始化配置
         try:
             HarnessLogging.configure_logging(settings)
-            if self.runtime is not None:
-                await self.runtime.aclose()
+            if existing is not None:
+                await existing[0].aclose()
         except BaseException:
             await runtime.aclose()
             raise
-
         sessions = SessionService(runtime)
         runs = RunManager(runtime, sessions, self.server.notify)
-        self.runtime, self.sessions, self.runs = runtime, sessions, runs
+        self._services[key] = runtime, runs, sessions
+        self.runtime, self.runs, self.sessions = runtime, runs, sessions
         return {"model": settings.model, "environment": environment}
 
     async def _resources(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
@@ -139,12 +155,10 @@ class AgentLoop:
             dict[str, Any]: 操作执行结果数据字典。
 
         Raises:
-            RuntimeError: 在有活跃运行期间尝试修改资源时抛出。
+            RuntimeError: 资源路径或输入不合法时传播。
             ValueError: 缺少必填字段时抛出。
         """
         self.require(params, "scope", "workspace_root")
-        if method != "harness.inspect" and self.runs is not None and self.runs.active is not None:
-            raise RuntimeError("Cannot edit agent resources while a run is active")
         resources = HarnessResources(
             Path(params["workspace_root"]) if params["workspace_root"] is not None else None
         )
@@ -220,8 +234,6 @@ class AgentLoop:
                 text = params["text"]
                 if not isinstance(text, str) or not text.strip():
                     raise ValueError("text must be non-empty")
-                if runs.active is not None:
-                    raise RuntimeError("A run is already active")
                 content = DesktopMessages.attachment_message(
                     runtime.settings.resolved_workspace_root, text, params.get("attachments", [])
                 )

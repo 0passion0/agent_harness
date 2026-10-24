@@ -46,3 +46,5 @@
   .product-v3 .pref-toolbar label {flex-wrap:wrap}
   .product-v3 .task-composer textarea {min-height:70px}
 }
+
+.session-status { flex: none; margin-left: auto; color: var(--accent); font-size: 10px; white-space: nowrap; }

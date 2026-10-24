@@ -9,9 +9,9 @@ import pytest
 from langchain.agents import create_agent
 from langchain_core.messages import HumanMessage
 
-from vertical_harness import HarnessSettings
 from vertical_harness.core import routing
 from vertical_harness.middleware.model_retry import ModelRetryMiddleware
+from vertical_harness.models import HarnessSettings
 
 
 @pytest.mark.parametrize("mode", ["invoke", "ainvoke", "stream", "astream"])

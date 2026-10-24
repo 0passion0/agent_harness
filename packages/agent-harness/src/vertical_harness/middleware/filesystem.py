@@ -31,10 +31,7 @@ from langchain_core.tools import BaseTool, StructuredTool
 from vertical_harness.filesystem.document_backend import DocumentFilesystemBackend
 from vertical_harness.filesystem.file_reader import FileReader
 from vertical_harness.filesystem.structured_grep_result import StructuredGrepResult
-from vertical_harness.middleware.file_glob_schema import FileGlobSchema
-from vertical_harness.middleware.native_read_schema import NativeReadSchema
-from vertical_harness.middleware.patch_schema import PatchSchema
-from vertical_harness.middleware.search_schema import SearchSchema
+from vertical_harness.models import FileGlobSchema, NativeReadSchema, PatchSchema, SearchSchema
 
 
 class HarnessFilesystemMiddleware(FilesystemMiddleware):

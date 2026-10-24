@@ -225,6 +225,7 @@ export function SessionSidebar({
             >
               <MessageSquare size={15} />
               <span>{item.title}</span>
+              {item.status && <small className="session-status">{item.status === 'question' ? '待确认' : '运行中'}</small>}
             </button>
             <div className="session-more-wrap">
               <button

@@ -93,7 +93,6 @@ class ToolDetails(AsyncCallbackHandler):
         usage = message.usage_metadata
         self.context_reports[str(run_id)] = UsageEstimator.usage_estimate(
             [],
-            "",
             self.maximum,
             request_messages=[*messages, message],
             tools=tools,

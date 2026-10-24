@@ -5,7 +5,7 @@ from pathlib import Path
 
 from langgraph.store.sqlite import SqliteStore
 
-from vertical_harness import HarnessSettings
+from vertical_harness.models import HarnessSettings
 from vertical_harness.storage.store import StoreFactory
 
 

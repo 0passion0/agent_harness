@@ -93,7 +93,7 @@ class SessionService:
         maximum = settings.max_context_tokens
         saved = await self.runtime.store.aget(self.namespace(thread_id), "usage")
         if saved is None:
-            return UsageEstimator.usage_estimate(messages, settings.model, maximum)
+            return UsageEstimator.usage_estimate(messages, maximum)
         report = deepcopy(saved.value)
         used = report["used_tokens"]
         report.update(

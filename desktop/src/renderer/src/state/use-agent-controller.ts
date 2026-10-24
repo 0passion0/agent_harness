@@ -38,7 +38,6 @@ export function useAgentController() {
   const [error, setError] = useState('')
 
   // 引用计数与竞态保护控制器
-  const queryVersion = useRef(0)
   const sessionSearchVersion = useRef(0)
   const sessionSearchQuery = useRef('')
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -144,14 +143,12 @@ export function useAgentController() {
       }
 
       // 单轮任务执行结束
-      if (event.event === 'run.finished') {
-        activeSession.current = event.data.snapshot.session_id
+      if (event.event === 'run.finished' || event.event === 'interaction.request') {
         refreshList().catch(reason => setError(String(reason)))
       }
 
       // 后端进程异常退出
       if (event.event === 'backend.exited') {
-        queryVersion.current++
         activeSession.current = null
       }
     })
@@ -211,7 +208,6 @@ export function useAgentController() {
         ? { id: requestId(), method, params: {} }
         : { id: requestId(), method, params: { session_id: sessionId! } }) as Snapshot
       activeSession.current = snapshot.session_id
-      queryVersion.current++
       dispatch({ event: 'snapshot.loaded', data: snapshot })
       await refreshList()
     } catch (reason) {
@@ -228,6 +224,7 @@ export function useAgentController() {
     sendPending.current = true
     setSending(true)
     const id = requestId()
+    const sessionId = activeSession.current!
     const text = draft
     const selectedAttachments = [...attachments]
     setError('')
@@ -235,7 +232,8 @@ export function useAgentController() {
       await window.medpeer.command(selectedAttachments.length
         ? { id, method: 'run.attachments', params: { text, attachment_ids: selectedAttachments.map(file => file.id) } }
         : { id, method: 'run.start', params: { text } })
-      dispatch({ event: 'run.accepted', run_id: id, text })
+      dispatch({ event: 'run.accepted', session_id: sessionId, run_id: id, text })
+      void refreshList().catch(reason => setError(String(reason)))
       setDraft(current => current === text ? '' : current)
       const submitted = new Set(selectedAttachments.map(item => item.id))
       setAttachments(current => current.filter(file => !submitted.has(file.id)))
@@ -278,6 +276,7 @@ export function useAgentController() {
         params: { run_id: runId, interaction_id: interactionId, answer: text }
       })
       dispatch({ event: 'interaction.answered', interaction_id: interactionId })
+      await refreshList()
     } catch (reason) {
       setError(String(reason))
     }
@@ -383,6 +382,7 @@ export function useAgentController() {
     clearError: () => { setError(''); dispatch({ event: 'error.clear' }) },
     reportError: (message: string) => setError(message),
     busy,
+    navigationBusy: sending,
     chooseWorkspace,
     loadSession,
     send,

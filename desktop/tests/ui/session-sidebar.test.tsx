@@ -36,7 +36,7 @@ describe('sidebar project creation', () => {
     expect(props.onSelectProject).not.toHaveBeenCalled()
   })
 
-  it('disables project creation while a task is running', () => {
+  it('disables project creation while a navigation request is pending', () => {
     const { add } = sidebar({ busy: true })
     expect(add.props.disabled).toBe(true)
   })

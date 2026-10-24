@@ -81,16 +81,12 @@ class ModelRetryMiddleware(AgentMiddleware):
             tuple[int, int]: 二元组 `(attempt, timeouts)`，表示已执行的重试轮次与累计超时次数。
         """
         for message in reversed(request.messages):
-            if isinstance(message, HumanMessage) and (
-                message.additional_kwargs.get("harness_synthetic")
-                or message.additional_kwargs.get("opencode_synthetic")
+            if isinstance(message, HumanMessage) and message.additional_kwargs.get(
+                "harness_synthetic"
             ):
                 continue
             if isinstance(message, AIMessage) and (
-                retry := (
-                    message.additional_kwargs.get("harness_stream_retry")
-                    or message.additional_kwargs.get("opencode_stream_retry")
-                )
+                retry := message.additional_kwargs.get("harness_stream_retry")
             ):
                 return retry["attempt"], retry["timeouts"]
             break
@@ -130,7 +126,6 @@ class ModelRetryMiddleware(AgentMiddleware):
         message.additional_kwargs = {
             **message.additional_kwargs,
             "harness_stream_retry": {"attempt": attempt, "timeouts": timeouts},
-            "opencode_stream_retry": {"attempt": attempt, "timeouts": timeouts},
         }
         message.response_metadata = {
             **message.response_metadata,
@@ -320,10 +315,7 @@ class ModelRetryMiddleware(AgentMiddleware):
             dict[str, Any] | None: 包含续写提示并指示 `jump_to="model"` 的状态更新字典；若非中断重试则返回 None。
         """
         last_message = state["messages"][-1]
-        if not (
-            last_message.additional_kwargs.get("harness_stream_retry")
-            or last_message.additional_kwargs.get("opencode_stream_retry")
-        ):
+        if not last_message.additional_kwargs.get("harness_stream_retry"):
             return None
         return {
             "messages": [
@@ -331,7 +323,6 @@ class ModelRetryMiddleware(AgentMiddleware):
                     content=self._continuation,
                     additional_kwargs={
                         "harness_synthetic": "interrupted-stream",
-                        "opencode_synthetic": "interrupted-stream",
                     },
                 )
             ],

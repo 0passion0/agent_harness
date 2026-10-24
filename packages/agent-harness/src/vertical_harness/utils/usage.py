@@ -22,9 +22,7 @@ class UsageEstimator:
     @staticmethod
     def usage_estimate(
         messages: list[Any],
-        model: str,
         maximum: int = 475_000,
-        options: dict[str, Any] | None = None,
         *,
         request_messages: list[Any] | None = None,
         tools: list[Any] | None = None,
@@ -40,10 +38,7 @@ class UsageEstimator:
             messages: 会话历史消息列表，元素通常为 `BaseMessage` 及其子类（如 `HumanMessage`,
                 `AIMessage`, `SystemMessage`, `ToolMessage`）。当 `request_messages` 为 `None`
                 时，以此作为历史消息用量的输入数据源。
-            model: 目标大语言模型标识字符串（如 `"gpt-4o"`、`"claude-3-5-sonnet"` 等），供调用方标识
-                或未来针对特定模型的分词器微调。
             maximum: 模型允许的最大上下文窗口 Token 预算上限，默认为 475,000。
-            options: 扩展配置字典（可选），包含用户自定义的统计或过滤选项，预留给未来特性扩展。
             request_messages: 最近一次实际向底层模型发送的完整请求消息列表（包含注入的系统提示词等）。
                 若提供此参数，将标记为已采集（`captured=True`），能够精确剥离出系统提示词区块。
             tools: 绑定至模型的工具定义列表（如 LangChain `BaseTool` 实例或符合 OpenAI 规范的 JSON

@@ -1,8 +1,71 @@
 """Guard capability dependencies without prescribing private method decomposition."""
 
 import ast
+import os
+import subprocess
+import sys
 from graphlib import TopologicalSorter
 from pathlib import Path
+
+import pytest
+
+from vertical_harness import models
+
+
+def test_pydantic_models_are_centralized_and_exported_without_aliases():
+    root = Path(__file__).resolve().parents[1] / "packages/agent-harness/src/vertical_harness"
+    for path in root.rglob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.ImportFrom)
+                and node.module in {"pydantic", "pydantic_settings"}
+                and any(alias.name in {"BaseModel", "BaseSettings"} for alias in node.names)
+            ):
+                assert path.parent.name == "models", path
+            if (
+                isinstance(node, ast.ImportFrom)
+                and node.module
+                and node.module.startswith("vertical_harness.models")
+                and path.parent.name != "models"
+            ):
+                assert node.module == "vertical_harness.models", path
+                assert all(alias.asname is None for alias in node.names), path
+    for name in models.__all__:
+        model = getattr(models, name)
+        if isinstance(model, type):
+            assert model.__module__.startswith("vertical_harness.models.")
+
+
+@pytest.mark.parametrize("module", ["models", "core.context", "storage.store"])
+def test_leaf_import_does_not_load_agent_or_desktop(module, tmp_path):
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            f"import vertical_harness.{module}; import sys; "
+            "assert 'vertical_harness.desktop' not in sys.modules; "
+            "assert 'vertical_harness.core.compose' not in sys.modules",
+        ],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_desktop_module_starts_without_duplicate_import_warning(tmp_path):
+    result = subprocess.run(
+        [sys.executable, "-W", "error::RuntimeWarning", "-m", "vertical_harness.desktop"],
+        cwd=tmp_path,
+        env={**os.environ, "LANGSMITH_TRACING": "false", "LANGCHAIN_TRACING_V2": "false"},
+        input="",
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+    assert result.returncode == 0, result.stderr
 
 
 def test_backend_concrete_module_imports_are_acyclic():
